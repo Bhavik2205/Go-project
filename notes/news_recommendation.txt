@@ -1,0 +1,44 @@
+🔍 Recommendations for News Source for Trading Tool
+Given your focus on analyzing news impact on specific companies, especially those listed in India and international markets:
+
+Primary API Integration: Consider integrating Marketaux for its extensive coverage and entity tracking capabilities. Its ability to provide concise and relevant financial news makes it suitable for your use case.
+Supplementary Data Sources: Utilize Finnhub and EODHD to enrich your dataset with real-time updates and sentiment analysis, respectively. This combination can enhance the accuracy of your sentiment predictions.
+Regional Focus: For Indian markets, ensure that the APIs you choose provide adequate coverage of Indian companies. While Marketaux and Finnhub have broad coverage, verify the extent of their Indian market data.
+News Validation: Cross-reference news articles from APIs with trusted platforms like Reuters, Bloomberg, and Yahoo Finance to validate the information and gain additional insights.
+
+
+By integrating these sources, your trading tool can effectively fetch the latest news related to specific companies and assess potential impacts on their stock performance across various exchanges.
+
+
+
+
+🔍 FREE TIER STATUS COMPARISON
+API	Free Tier	Request Limit	Indian Coverage	Notes
+Marketaux	✅ 100/day	~100/day (free)	Moderate ✅	Best for relevance score
+Finnhub	✅ 60/min	60/minute (generous)	Strong ✅	Best for freshness
+EODHD	✅ 20/day	20/day (expandable)	Good ✅	Good fallback + metadata
+Yahoo	✅ unofficial/scraping	Unlimited (scraping)	Strong ✅	Scrape finance.yahoo.com
+Reuters	❌ No API	RSS feeds/scraping only	Good ✅	Validate articles manually
+Bloomberg	❌ No API	Scraping only	Limited	For headline validation
+
+📊 Final Flow (Practical Version of Yours)
+mermaid
+Copy
+Edit
+flowchart TD
+    A[Input: Company Name / Ticker] --> B[Resolve Ticker Metadata using EODHD]
+    B --> C[Fetch News from Marketaux (Primary)]
+    C --> D1[Enrich with Finnhub News (Real-Time)]
+    C --> D2[Enrich with EODHD News (Historical)]
+    D1 --> E[Merge & Deduplicate Articles]
+    D2 --> E
+    E --> F[Cross-check with Yahoo/Reuter Headlines (if needed)]
+    F --> G[Filter Trusted + Recent + Relevant]
+    G --> H[Send to Sentiment Analyzer (FinBERT)]
+🧠 Suggestions
+⚙️ Add Source Trust Scoring: Use a JSON list of trusted news domains (e.g., reuters.com, livemint.com, moneycontrol.com, etc.) to weight articles.
+
+🕰️ Keep Results Fresh: Always filter for published_at >= now - 3 days to avoid stale news.
+
+🔐 Cache Metadata: Company-ticker mappings should be cached to reduce EODHD calls.
+
