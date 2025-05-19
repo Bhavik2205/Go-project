@@ -41,7 +41,7 @@ ephem==4.1.6
 et-xmlfile==1.1.0
 filelock==3.4.1
 Flask==2.0.3
-Flask-Cors==5.0.0
+Flask-Cors==6.0.0
 flatbuffers==1.12
 frozenlist==1.2.0
 fsspec==2022.1.0
