@@ -77,3 +77,5 @@ ML-Bot/
 │   └── model/
 │       └── sentiment.go
 
+
+microsoft/onnxruntime v1.21.0

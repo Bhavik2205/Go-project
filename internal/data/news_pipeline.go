@@ -7,13 +7,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
 	"go.uber.org/zap"
 
+	"github.com/joho/godotenv"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -43,7 +46,46 @@ var (
 	)
 )
 
+func mustGetEnvAsInt(key string, fallback int) int {
+	val := os.Getenv(key)
+	if val == "" {
+		return fallback
+	}
+	if v, err := strconv.Atoi(val); err == nil {
+		return v
+	}
+	logger.Warnw("Invalid int for env var", "key", key, "value", val)
+	return fallback
+}
+
+func getBoolEnv(key string, defaultVal bool) bool {
+	valStr := os.Getenv(key)
+	if valStr == "" {
+		return defaultVal
+	}
+	val, err := strconv.ParseBool(valStr)
+	if err != nil {
+		log.Printf("Warning: unable to parse %s as bool, defaulting to %v", key, defaultVal)
+		return defaultVal
+	}
+	return val
+}
+
 func init() {
+	// Load .env file
+	if err := godotenv.Load(); err != nil {
+		fmt.Println("Warning: .env file not loaded, relying on system env variables")
+	}
+
+	for _, k := range []string{
+		"USE_MARKETAUX", "MARKETAUX_LIMIT",
+		"USE_FINNHUB", "FINNHUB_LIMIT",
+		"USE_EODHD", "EODHD_LIMIT",
+		"USE_GOOGLE_CSE", "GOOGLE_CSE_LIMIT",
+	} {
+		fmt.Printf("%s = %s\n", k, os.Getenv(k))
+	}
+
 	// Register Prometheus metrics
 	prometheus.MustRegister(newsFetchCount, newsFetchErrors, newsFetchDuration)
 
@@ -62,18 +104,21 @@ func init() {
 	// Validate API keys early
 	validateAPIKeys()
 
-	// Default config
 	config = &NewsPipelineConfig{
 		FreeMode:       true,
-		UseMarketaux:   true,
-		MarketauxLimit: 100,
-		UseFinnhub:     true,
-		FinnhubLimit:   100,
-		UseEODHD:       true,
-		EODHDLimit:     20,
-		UseGoogleCSE:   true,
-		GoogleCSELimit: 50,
+		UseMarketaux:   getBoolEnv("USE_MARKETAUX", false),
+		MarketauxLimit: mustGetEnvAsInt("MARKETAUX_LIMIT", 100),
+
+		UseFinnhub:   getBoolEnv("USE_FINNHUB", false),
+		FinnhubLimit: mustGetEnvAsInt("FINNHUB_LIMIT", 100),
+
+		UseEODHD:   getBoolEnv("USE_EODHD", false),
+		EODHDLimit: mustGetEnvAsInt("EODHD_LIMIT", 20),
+
+		UseGoogleCSE:   getBoolEnv("USE_GOOGLE_CSE", false),
+		GoogleCSELimit: mustGetEnvAsInt("GOOGLE_CSE_LIMIT", 50),
 	}
+
 }
 
 func validateAPIKeys() {
@@ -82,7 +127,7 @@ func validateAPIKeys() {
 		"FINNHUB_API_KEY",
 		"EODHD_API_KEY",
 		"GOOGLE_CSE_API_KEY",
-		"GOOGLE_CSE_ID",
+		"GOOGLE_CSE_CX_ID",
 	}
 
 	for _, k := range requiredKeys {
@@ -153,6 +198,18 @@ func RunNewsPipeline(ctx context.Context, company string, cfg *NewsPipelineConfi
 		{"Finnhub", cfgCopy.UseFinnhub, cfgCopy.SkipFinnhub, cfgCopy.FinnhubLimit, fetchFromFinnhub},
 		{"EODHD", cfgCopy.UseEODHD, cfgCopy.SkipEODHD, cfgCopy.EODHDLimit, fetchFromEODHD},
 		{"GoogleCSE", cfgCopy.UseGoogleCSE, cfgCopy.SkipGoogleCSE, cfgCopy.GoogleCSELimit, fetchFromGoogleCSE},
+	}
+
+	// ✅ Check if all sources are disabled or skipped
+	allDisabled := true
+	for _, fetcher := range fetchers {
+		if fetcher.use && !fetcher.skip && fetcher.limit > 0 {
+			allDisabled = false
+			break
+		}
+	}
+	if allDisabled {
+		return nil, fmt.Errorf("no news source is enabled; please enable at least one source in configuration")
 	}
 
 	for _, fetcher := range fetchers {
@@ -341,9 +398,9 @@ func fetchFromGoogleCSE(ctx context.Context, company string, cfg *NewsPipelineCo
 	}
 
 	apiKey := os.Getenv("GOOGLE_CSE_API_KEY")
-	cseID := os.Getenv("GOOGLE_CSE_ID")
+	cseID := os.Getenv("GOOGLE_CSE_CX_ID")
 	if apiKey == "" || cseID == "" {
-		return nil, errors.New("GOOGLE_CSE_API_KEY or GOOGLE_CSE_ID not set")
+		return nil, errors.New("GOOGLE_CSE_API_KEY or GOOGLE_CSE_CX_ID not set")
 	}
 
 	url := fmt.Sprintf("https://www.googleapis.com/customsearch/v1?q=%s&cx=%s&key=%s&num=%d&sort=date", company, cseID, apiKey, cfg.GoogleCSELimit)
