@@ -17,7 +17,7 @@ func main() {
 	apiKey := os.Getenv("ZERODHA_API_KEY")
 	apiSecret := os.Getenv("ZERODHA_API_SECRET")
 	// this expires every day, so you need to generate it each day
-	requestToken := "BdFdop3ZY9y5X9RfpiQ9sCxXxiC9TtlL" //generate this by loging in to https://kite.trade/connect/login?api_key=<your_api_key>
+	requestToken := "UuB0v3sf7tfbkg9D2LXpl5DiQk1fzPL7" //generate this by loging in to https://kite.trade/connect/login?api_key=<your_api_key>
 
 	fmt.Println("Api Key:", apiKey)
 	fmt.Println("Api Secret:", apiSecret)

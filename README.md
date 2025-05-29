@@ -32,9 +32,13 @@ equity-trading-bot/
 │   │   ├── order.go
 │   │   └── monitor.go            # Exit & trailing stop logic
 │   │
-│   └── utils/                    # Common helpers (logging, config, etc.)
-│       ├── config.go
-│       └── logger.go
+│   ├── utils/                    # Common helpers (logging, config, etc.)
+│   |   ├── config.go
+│   |   └── logger.go
+|   |
+|   └── server/                   # ⬅️ New folder for WebSocket/HTTP server
+│       ├── websocket.go
+│       └── routes.go
 │
 ├── configs/                      # YAML or JSON config files
 │   ├── zerodha.yaml

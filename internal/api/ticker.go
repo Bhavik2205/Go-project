@@ -1,32 +1,28 @@
-// api/subscribe.go
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 
+	"github.com/Bhavik2205/ML-Bot/internal/server"
 	kitemodels "github.com/zerodha/gokiteconnect/v4/models"
 	kiteticker "github.com/zerodha/gokiteconnect/v4/ticker"
 )
 
 func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo) error {
 	tokens := make([]uint32, 0, len(infos))
+	tokenToLabel := make(map[uint32]string)
+
 	for _, info := range infos {
 		tokens = append(tokens, info.Token)
-	}
-	tokenToLabel := make(map[uint32]string)
-	for _, instr := range infos {
-		tokens = append(tokens, instr.Token)
-		tokenToLabel[instr.Token] = fmt.Sprintf("%s (%s)", instr.Symbol, instr.Exchange)
+		tokenToLabel[info.Token] = fmt.Sprintf("%s (%s)", info.Symbol, info.Exchange)
 	}
 
 	z.Ticker = kiteticker.New(z.APIKey, z.AccessToken)
 
 	z.Ticker.OnConnect(func() {
 		fmt.Println("✅ Connected to Zerodha WebSocket.")
-		for _, info := range infos {
-			fmt.Printf("🔗 Subscribed to %s on %s (Token: %d)\n", info.Symbol, info.Exchange, info.Token)
-		}
 		if err := z.Ticker.Subscribe(tokens); err != nil {
 			log.Printf("❌ Subscribe error: %v", err)
 		}
@@ -35,7 +31,6 @@ func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo) error {
 		}
 	})
 
-	// Use a map to track last prices and volumes per token
 	lastPrices := make(map[uint32]float32)
 	lastVolumes := make(map[uint32]int)
 
@@ -43,13 +38,10 @@ func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo) error {
 		prevPrice := lastPrices[tick.InstrumentToken]
 		currentPrice := float32(tick.LastPrice)
 
-		// Only print if price or volume changed
 		if currentPrice != prevPrice || int(tick.VolumeTraded) != lastVolumes[tick.InstrumentToken] {
-			// Update stored values
 			lastPrices[tick.InstrumentToken] = currentPrice
 			lastVolumes[tick.InstrumentToken] = int(tick.VolumeTraded)
 
-			// Decide color for LTP: green if price up, red if down, reset if same or first tick
 			colorReset := "\033[0m"
 			colorRed := "\033[31m"
 			colorGreen := "\033[32m"
@@ -74,6 +66,14 @@ func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo) error {
 				tick.OHLC.Low,
 				tick.OHLC.Close,
 			)
+
+			enriched := map[string]interface{}{
+				"symbol": tokenToLabel[tick.InstrumentToken],
+				"tick":   tick,
+			}
+			if jsonData, err := json.Marshal(enriched); err == nil {
+				server.PushToFrontend(jsonData)
+			}
 		}
 	})
 
