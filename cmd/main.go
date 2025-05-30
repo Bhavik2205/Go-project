@@ -24,6 +24,7 @@ func main() {
 	}
 
 	client := api.NewZerodhaClient(apiKey, apiSecret, accessToken)
+	server.SetZerodhaClient(client)
 
 	user, err := client.Kite.GetUserProfile()
 	if err != nil {
@@ -32,7 +33,8 @@ func main() {
 	fmt.Printf("✅ Logged in as: %s (%s)\n", user.UserName, user.UserID)
 
 	// Start WebSocket server for frontend clients
-	go server.StartWebSocketServer()
+	// go server.StartWebSocketServer()
+	go server.StartHTTPServer()
 
 	// Multiple symbols
 	symbols := []string{"NIFTY 50", "NIFTY BANK", "RELIANCE", "TCS"}
@@ -53,7 +55,10 @@ func main() {
 		log.Fatal("❌ No valid instruments to subscribe to.")
 	}
 
-	err = client.SubscribeToTicks(infos)
+	// Pass the handler callback to push ticks to frontend via server package
+	err = client.SubscribeToTicks(infos, func(jsonData []byte) {
+		server.PushToFrontend(jsonData)
+	})
 	if err != nil {
 		log.Fatalf("❌ WebSocket error: %v", err)
 	}

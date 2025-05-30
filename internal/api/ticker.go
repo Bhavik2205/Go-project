@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/Bhavik2205/ML-Bot/internal/server"
 	kitemodels "github.com/zerodha/gokiteconnect/v4/models"
 	kiteticker "github.com/zerodha/gokiteconnect/v4/ticker"
 )
 
-func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo) error {
+// TickHandler defines a callback function type for ticks
+type TickHandler func(jsonData []byte)
+
+// SubscribeToTicks subscribes to ticks and calls the given handler on each tick
+func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, handler TickHandler) error {
 	tokens := make([]uint32, 0, len(infos))
 	tokenToLabel := make(map[uint32]string)
 
@@ -72,7 +75,9 @@ func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo) error {
 				"tick":   tick,
 			}
 			if jsonData, err := json.Marshal(enriched); err == nil {
-				server.PushToFrontend(jsonData)
+				if handler != nil {
+					handler(jsonData)
+				}
 			}
 		}
 	})

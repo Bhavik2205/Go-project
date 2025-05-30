@@ -1,0 +1,28 @@
+/internal
+  /api
+    /handlers
+      /user       → All REST handlers for user-related APIs
+      /orders     → Order REST APIs
+      /auth       → Login/signup, JWT, etc.
+    /websocket
+      /tickers    → Ticker WebSocket handlers
+      /chat       → Chat WebSocket handlers
+    router.go     → Registers all routes (REST + WS)
+  /server
+    server.go     → Starts HTTP server, CORS, middleware
+  /models
+    user.go       → Data models (e.g., User, Order)
+    ...
+  /service
+    user.go       → Business logic (validation, DB interaction, etc.)
+    ...
+  /db
+    postgres.go   → DB connection pool
+    redis.go      → Redis client
+/cmd
+  /mlbot
+    main.go       → Entry point (only contains bootstrapping)
+/pkg
+  /utils
+    helpers.go
+    json.go

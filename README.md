@@ -37,7 +37,7 @@ equity-trading-bot/
 │   |   └── logger.go
 |   |
 |   └── server/                   # ⬅️ New folder for WebSocket/HTTP server
-│       ├── websocket.go
+│       ├── broadcast.go
 │       └── routes.go
 │
 ├── configs/                      # YAML or JSON config files
@@ -275,3 +275,7 @@ Execution Engine	⏳	TBD	Once predictions are good
 Backtesting	⏳	TBD	Can run parallel to strategy
 Deployment	🧾 Final Polish	TBD	When stable
 
+
+test websocket using terminal
+1) npm i -g wscat
+2) wscat -c ws://localhost:8000/ws
