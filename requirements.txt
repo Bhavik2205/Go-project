@@ -138,7 +138,7 @@ pytest==7.0.1
 python-dateutil==2.8.2
 python-dotenv==0.20.0
 pytorch-forecasting==0.9.0
-pytorch-lightning==1.5.10.post0
+pytorch-lightning==2.4.0
 pytz==2023.3.post1
 PyYAML==6.0.1
 pyzmq==25.1.2
