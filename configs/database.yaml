@@ -1,0 +1,5 @@
+# configs/database.yaml
+# Host, Port, User, Password, DBName will be read from environment variables for security
+max_connections: 10
+idle_connections: 5
+connection_timeout_seconds: 30

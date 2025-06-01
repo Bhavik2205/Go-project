@@ -1,0 +1,56 @@
+# docker-compose.yaml
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: trading_bot_postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports: []
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: trading_bot_redis
+    command: redis-server --requirepass ${REDIS_PASSWORD} # Only if REDIS_PASSWORD is set in .env
+    ports:
+      - "${REDIS_PORT}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "INFO"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Add Prometheus and Grafana later in this file
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   container_name: trading_bot_prometheus
+  #   ports:
+  #     - "9090:9090"
+  #   volumes:
+  #     - ./prometheus:/etc/prometheus
+  #   command: --config.file=/etc/prometheus/prometheus.yml
+  #
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   container_name: trading_bot_grafana
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - GF_SECURITY_ADMIN_USER=admin
+  #     - GF_SECURITY_ADMIN_PASSWORD=admin
+  #   volumes:
+  #     - grafana_data:/var/lib/grafana
+
+volumes:
+  postgres_data:
+  grafana_data: # Needed if you uncomment grafana later

@@ -1,0 +1,3 @@
+# configs/model.yaml
+sentiment_model_path: "models/sentiment.onnx"
+# Add other model specific parameters as needed

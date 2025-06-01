@@ -1,0 +1,4 @@
+# configs/zerodha.yaml
+# API_KEY will be read from environment variable for security
+base_url: "https://api.kite.trade"
+websocket_url: "wss://ws.kite.trade/quotes"

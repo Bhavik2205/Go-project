@@ -1,0 +1,7 @@
+# configs/app.yaml
+server:
+  http_port: 8080
+  websocket_path: "/ws"
+log:
+  level: info # debug, info, warn, error
+  output: stdout # stdout, file
