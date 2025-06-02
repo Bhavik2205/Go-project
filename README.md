@@ -62,9 +62,8 @@ equity-trading-bot/
 |   |   └── errors.go             # Custom error types and handling
 |   |
 |   └── server/                   # HTTP/WebSocket server for frontend and internal communication
-│       ├── websocket.go          # WebSocket server for real-time data push
-│       ├── http.go               # HTTP server setup (for REST APIs, metrics, health checks)
-│       └── router.go             # Centralized routing for all HTTP/WebSocket handlers
+│       ├── broadcast.go          # WebSocket server for real-time data push
+│       └── routes.go             # Centralized routing for all HTTP/WebSocket handlers
 │
 ├── configs/                      # YAML configuration files
 │   ├── app.yaml                  # General application settings (ports, service names)
@@ -625,7 +624,6 @@ docker compose --env-file .env -f configs/docker-compose.yaml down -v
 
 ```bash
 docker compose --env-file .env -f configs/docker-compose.yaml config
-docker compose -f configs/docker-compose.yaml --env-file .env down
 ```
 
 You should see actual values in `POSTGRES_DB`, `REDIS_PASSWORD`, etc.
@@ -646,5 +644,58 @@ You should see actual values in `POSTGRES_DB`, `REDIS_PASSWORD`, etc.
 Uncomment and add Prometheus, Grafana, or Redis Commander as needed.
 
 ```
+
+---
+
+## **Setting Up Your Database**
+
+Before running the main application, you need to set up your PostgreSQL database and enable the TimescaleDB extension.
+
+### 1. Enable TimescaleDB Extension
+
+The `market_data` table relies on the TimescaleDB extension for efficient time-series data handling. You need to enable this extension in your PostgreSQL database *before* running any migrations.
+
+**Steps:**
+
+1.  **Ensure `psql` is installed:** Make sure the `psql` command-line client for PostgreSQL is installed and accessible in your terminal's PATH. If you don't have it, you'll need to install the PostgreSQL client tools for your operating system.
+2.  **Run the pre-migration script:** Navigate to your project's root directory in the terminal and execute the following command, replacing the placeholders with your actual database connection details (from your `.env`):
+
+    ```bash
+    psql -h <your_db_host> -p <your_db_port> -U <your_db_user> -d <your_db_name> -f internal/db/migrations/pre_migration_enable_timescaledb.sql
+    ```
+
+    **Example:**
+    ```bash
+    psql -h localhost -p 5432 -U (admin || postgres) -d trading_bot_db -f internal/db/migrations/pre_migration_enable_timescaledb.sql
+    ```
+    You'll be prompted for your database password.
+
+### 2. Run Database Migrations
+
+Once TimescaleDB is enabled, you can run the rest of your database migrations to create the necessary tables. We recommend using `golang-migrate/migrate` for this.
+
+**Steps:**
+
+1.  **Install `golang-migrate/migrate`:**
+    ```bash
+    go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+    ```
+2.  **Set your database URL:** Export your database connection string as an environment variable (replace with your actual details):
+    ```bash
+    export DATABASE_URL="postgres://<your_db_user>:<your_db_password>@<your_db_host>:<your_db_port>/<your_db_name>?sslmode=disable"
+
+    Example:
+    export DATABASE_URL="postgres://admin:secret@localhost:5432/trading_bot_db?sslmode=disable"
+    ```
+    **Example:**
+    ```bash
+    export DATABASE_URL="postgres://admin:secret@localhost:5432/trading_bot_db?sslmode=disable"
+    ```
+3.  **Apply migrations:**
+    ```bash
+    migrate -path internal/db/migrations -database "$DATABASE_URL" up
+    ```
+
+Your database will now be fully set up and ready for your bot!
 
 ---
