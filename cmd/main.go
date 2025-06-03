@@ -66,128 +66,136 @@
 // 	select {} // block forever
 // }
 
-// cmd/main.go
 package main
 
 import (
-	"fmt"
-	"log"
 	"os"
 	"time"
 
 	"github.com/Bhavik2205/ML-Bot/internal/api"
-	"github.com/Bhavik2205/ML-Bot/internal/cache" // New import
-	"github.com/Bhavik2205/ML-Bot/internal/db"    // New import
+	"github.com/Bhavik2205/ML-Bot/internal/cache"
+	"github.com/Bhavik2205/ML-Bot/internal/db"
 	"github.com/Bhavik2205/ML-Bot/internal/server"
-	"github.com/Bhavik2205/ML-Bot/internal/utils" // New import
+	"github.com/Bhavik2205/ML-Bot/internal/utils"
 	"github.com/joho/godotenv"
+	"go.uber.org/zap"
 )
 
 func main() {
+	// ─── Initialize logger as early as possible ────────────────────────────────
+	utils.InitLogger("info", "app.log") // Default to info and app.log before loading config
+	defer zap.L().Sync()
+
+	// ─── Load Environment Variables ─────────────────────────────────────────────
 	if err := godotenv.Load(); err != nil {
-		fmt.Println("⚠️ .env file not found, using system env vars")
+		zap.L().Warn("⚠️ .env file not found, using system environment variables", zap.Error(err))
 	} else {
-		fmt.Println("✅ .env file loaded successfully.") // <--- Add this
+		zap.L().Info("✅ .env file loaded successfully")
 	}
 
-	// --- Load Configurations ---
+	// ─── Load Configurations ────────────────────────────────────────────────────
 	appCfg, err := utils.LoadAppConfig("configs/app.yaml")
 	if err != nil {
-		log.Fatalf("❌ Failed to load app config: %v", err)
+		wrappedErr := utils.WrapError(1001, "Failed to load app config", err)
+		zap.L().Fatal(wrappedErr.Error())
 	}
 	dbCfg, err := utils.LoadDatabaseConfig("configs/database.yaml")
 	if err != nil {
-		log.Fatalf("❌ Failed to load database config: %v", err)
+		wrappedErr := utils.WrapError(1002, "Failed to load database config", err)
+		zap.L().Fatal(wrappedErr.Error())
 	}
-
 	redisCfg, err := utils.LoadRedisConfig()
 	if err != nil {
-		log.Fatalf("❌ Failed to load Redis config: %v", err)
+		wrappedErr := utils.WrapError(1003, "Failed to load Redis config", err)
+		zap.L().Fatal(wrappedErr.Error())
 	}
 
-	// --- Initialize Logger (using appCfg.Log) ---
-	utils.InitLogger(appCfg.Log.Level, appCfg.Log.Output) // You'd implement InitLogger in utils/logger.go
+	// ─── Re-init logger with config from file ───────────────────────────────────
+	utils.InitLogger(appCfg.Log.Level, appCfg.Log.Output)
+	zap.L().Info("📦 ML-Bot service starting up...")
 
-	// --- Initialize Database ---
+	// ─── Initialize Database ────────────────────────────────────────────────────
 	dbClient, err := db.NewPostgresClient(dbCfg)
 	if err != nil {
-		log.Fatalf("❌ Failed to initialize database: %v", err)
-	}
-	// Auto-migrate database schemas
-	if err := dbClient.AutoMigrate(&db.User{}, &db.Instrument{}); err != nil {
-		log.Fatalf("❌ Database auto-migration failed: %v", err)
+		wrappedErr := utils.WrapError(2001, "Failed to connect to PostgreSQL", err)
+		zap.L().Fatal(wrappedErr.Error())
 	}
 
-	// --- Initialize Redis ---
+	// ─── Initialize Redis ───────────────────────────────────────────────────────
 	redisClient, err := cache.NewRedisClient(redisCfg)
 	if err != nil {
-		log.Fatalf("❌ Failed to initialize Redis: %v", err)
+		wrappedErr := utils.WrapError(2002, "Failed to connect to Redis", err)
+		zap.L().Fatal(wrappedErr.Error())
 	}
 
-	// Example: Set and get something from Redis
-	err = redisClient.Set("test_key", "Hello from Redis!", 1*time.Minute)
-	if err != nil {
-		log.Printf("❌ Failed to set Redis key: %v", err)
+	// Optional Redis test
+	if err := redisClient.Set("test_key", "Hello from Redis!", time.Minute); err != nil {
+		zap.L().Warn("⚠️ Redis SET test failed", zap.Error(err))
 	}
-	val, err := redisClient.Get("test_key")
-	if err == nil {
-		log.Printf("✅ Retrieved from Redis: %s", val)
+	if val, err := redisClient.Get("test_key"); err == nil {
+		zap.L().Info("✅ Redis GET success", zap.String("value", val))
 	}
 
-	// --- Zerodha Client Initialization ---
+	// ─── Load Zerodha Credentials ───────────────────────────────────────────────
 	apiKey := os.Getenv("ZERODHA_API_KEY")
 	apiSecret := os.Getenv("ZERODHA_API_SECRET")
+	if apiKey == "" || apiSecret == "" {
+		err := utils.WrapError(3001, "ZERODHA_API_KEY or ZERODHA_API_SECRET not set in environment", nil)
+		zap.L().Fatal(err.Error())
+	}
 
 	accessToken, err := api.LoadAccessTokenFromFile(".access_token")
 	if err != nil {
-		log.Fatal(err)
+		wrappedErr := utils.WrapError(3002, "Failed to load Zerodha access token", err)
+		zap.L().Fatal(wrappedErr.Error())
 	}
 
 	client := api.NewZerodhaClient(apiKey, apiSecret, accessToken)
-	server.SetZerodhaClient(client) // Pass Zerodha client to server
 
-	// --- Pass DB and Redis clients to handlers/services that need them ---
-	// You will need to refactor your handlers to accept DB and Redis clients
-	// For example, modify stockHandler.HandleInstrumentLookup to take dbClient or redisClient
-	// For now, let's just illustrate by passing them where relevant:
-	server.SetDBClient(dbClient)       // You'll need to add this setter in server/routes.go
-	server.SetRedisClient(redisClient) // You'll need to add this setter in server/routes.go
+	// ─── Inject Dependencies ────────────────────────────────────────────────────
+	server.SetZerodhaClient(client)
+	server.SetDBClient(dbClient)
+	server.SetRedisClient(redisClient)
 
+	// ─── Validate Zerodha Session ───────────────────────────────────────────────
 	user, err := client.Kite.GetUserProfile()
 	if err != nil {
-		log.Fatalf("❌ Invalid session or token expired: %v", err)
+		wrappedErr := utils.WrapError(3003, "Invalid Zerodha session or token expired", err)
+		zap.L().Fatal(wrappedErr.Error())
 	}
-	fmt.Printf("✅ Logged in as: %s (%s)\n", user.UserName, user.UserID)
+	zap.L().Info("✅ Zerodha login success", zap.String("username", user.UserName), zap.String("userID", user.UserID))
 
-	// Start WebSocket server for frontend clients
-	go server.StartHTTPServer(appCfg.Server.HTTPPort) // Pass HTTP port from config
+	// ─── Start HTTP Server ──────────────────────────────────────────────────────
+	go server.StartHTTPServer(appCfg.Server.HTTPPort)
 
-	// Multiple symbols
+	// ─── Subscribe to Market Symbols ────────────────────────────────────────────
 	symbols := []string{"NIFTY 50", "NIFTY BANK", "RELIANCE", "TCS"}
 	preferredExchanges := []string{"NSE"}
+	var instruments []*api.InstrumentInfo
 
-	var infos []*api.InstrumentInfo
 	for _, symbol := range symbols {
 		info, err := client.FindInstrumentToken(symbol, preferredExchanges)
 		if err != nil {
-			log.Printf("❌ Failed to find token for %s: %v", symbol, err)
+			zap.L().Warn("⚠️ Failed to subscribe to symbol", zap.String("symbol", symbol), zap.Error(err))
 			continue
 		}
-		fmt.Printf("🔍 Subscribing to %s on %s (Token: %d)\n", info.Symbol, info.Exchange, info.Token)
-		infos = append(infos, info)
+		zap.L().Info("🔔 Subscribing", zap.String("symbol", info.Symbol), zap.String("exchange", info.Exchange), zap.Int("token", int(info.Token)))
+		instruments = append(instruments, info)
 	}
 
-	if len(infos) == 0 {
-		log.Fatal("❌ No valid instruments to subscribe to.")
+	if len(instruments) == 0 {
+		err := utils.WrapError(4001, "No valid instruments to subscribe to", nil)
+		zap.L().Fatal(err.Error())
 	}
 
-	// Pass the handler callback to push ticks to frontend via server package
-	err = client.SubscribeToTicks(infos, func(jsonData []byte) {
-		server.PushToFrontend(jsonData)
-	})
-	if err != nil {
-		log.Fatalf("❌ WebSocket error: %v", err)
+	// ─── Start Ticker Subscription ──────────────────────────────────────────────
+	if err := client.SubscribeToTicks(instruments, func(data []byte) {
+		server.PushToFrontend(data)
+	}); err != nil {
+		wrappedErr := utils.WrapError(4002, "WebSocket subscription error", err)
+		zap.L().Fatal(wrappedErr.Error())
 	}
 
-	select {} // block forever
+	// ─── Block Forever ──────────────────────────────────────────────────────────
+	select {}
 }

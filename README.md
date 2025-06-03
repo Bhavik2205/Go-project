@@ -649,7 +649,7 @@ Uncomment and add Prometheus, Grafana, or Redis Commander as needed.
 
 ## **Setting Up Your Database**
 
-Before running the main application, you need to set up your PostgreSQL database and enable the TimescaleDB extension.
+Before running the main application, you need to set up your PostgreSQL database and enable the TimescaleDB extension. (Tested on PostgreSQL 17.5)
 
 ### 1. Enable TimescaleDB Extension
 
@@ -699,3 +699,97 @@ Once TimescaleDB is enabled, you can run the rest of your database migrations to
 Your database will now be fully set up and ready for your bot!
 
 ---
+
+# `db_migrate.sh` Quick Reference Guide
+
+This script uses `golang-migrate/migrate` to manage your PostgreSQL database schema.
+
+## Purpose
+
+Automates applying, reverting, and creating database migrations for the Equity Trading Bot.
+
+## Prerequisites
+
+1.  **`migrate` CLI Tool**: Installed (`go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest`).
+
+2.  **PostgreSQL Running**: Database server is active and accessible.
+
+3.  **Database Exists**: The target database (e.g., `trading_bot_db`) is already created.
+
+4.  **TimescaleDB (if used)**: `CREATE EXTENSION IF NOT EXISTS timescaledb;` run in your database.
+
+5.  **`.env` Configured**: `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` are correctly set in `equity-trading-bot/.env` (no quotes around values).
+
+6.  **Migration Files**: SQL files (`.up.sql`, `.down.sql`) are in `internal/db/migrations/`.
+
+7.  **Script Executable**: `chmod +x scripts/db_migrate.sh`.
+
+## Usage
+
+Navigate to your project's root directory (`equity-trading-bot/`).
+
+### 1. Apply Migrations (`up`)
+
+* **Apply all pending migrations:**
+
+    ```bash
+    ./scripts/db_migrate.sh up
+    ```
+
+* **Apply next `N` migrations (e.g., next 1):**
+
+    ```bash
+    ./scripts/db_migrate.sh up 1
+    ```
+
+### 2. Revert Migrations (`down`)
+
+**WARNING: Can cause data loss. Use with extreme caution, especially in production.**
+
+* **Revert all applied migrations:**
+
+    ```bash
+    ./scripts/db_migrate.sh down
+    ```
+
+* **Revert last `N` migrations (e.g., last 1):**
+
+    ```bash
+    ./scripts/db_migrate.sh down 1
+    ```
+
+### 3. Create New Migration Files (`create`)
+
+* **Generate new `.up.sql` and `.down.sql` files:**
+
+    ```bash
+    ./scripts/db_migrate.sh create your_migration_name
+    ```
+
+    (e.g., `./scripts/db_migrate.sh create add_new_table`)
+
+### 4. Show Current Database Version (`version`)
+
+* **Display applied migration version:**
+
+    ```bash
+    ./scripts/db_migrate.sh version
+    ```
+
+### 5. Force Set Version (`force`)
+
+**EXTREME CAUTION!** Manually sets the database version. Only for recovery from failed migrations.
+
+* **Force version to `N`:**
+
+    ```bash
+    ./scripts/db_migrate.sh force N
+    ```
+
+## Important Notes
+
+* **Disable GORM `AutoMigrate`**: Once using this script, remove all `db.AutoMigrate()` calls from your Go application.
+
+* **Backup**: Always back up your database before running migrations in production.
+
+* **Environment**: Ensure `.env` is correctly configured for the script's execution environment.

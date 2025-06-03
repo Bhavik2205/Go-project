@@ -1,0 +1,14 @@
+{"level":"INFO","timestamp":"2025-06-03T17:50:23.861+0530","caller":"cmd/main.go:115","msg":"📦 ML-Bot service starting up..."}
+{"level":"INFO","timestamp":"2025-06-03T17:50:24.271+0530","caller":"cmd/main.go:136","msg":"✅ Redis GET success","value":"Hello from Redis!"}
+{"level":"INFO","timestamp":"2025-06-03T17:50:24.449+0530","caller":"cmd/main.go:166","msg":"✅ Zerodha login success","username":"Bhavik Dhiraj Patel","userID":"WWG604"}
+{"level":"INFO","timestamp":"2025-06-03T17:50:25.008+0530","caller":"cmd/main.go:182","msg":"🔔 Subscribing","symbol":"NIFTY 50","exchange":"NSE","token":256265}
+{"level":"INFO","timestamp":"2025-06-03T17:50:25.283+0530","caller":"cmd/main.go:182","msg":"🔔 Subscribing","symbol":"NIFTY BANK","exchange":"NSE","token":260105}
+{"level":"INFO","timestamp":"2025-06-03T17:50:25.487+0530","caller":"cmd/main.go:182","msg":"🔔 Subscribing","symbol":"RELIANCE","exchange":"NSE","token":738561}
+{"level":"INFO","timestamp":"2025-06-03T17:50:25.756+0530","caller":"cmd/main.go:182","msg":"🔔 Subscribing","symbol":"TCS","exchange":"NSE","token":2953217}
+{"level":"INFO","timestamp":"2025-06-03T18:47:14.821+0530","caller":"cmd/main.go:115","msg":"📦 ML-Bot service starting up..."}
+{"level":"INFO","timestamp":"2025-06-03T18:47:15.098+0530","caller":"cmd/main.go:136","msg":"✅ Redis GET success","value":"Hello from Redis!"}
+{"level":"INFO","timestamp":"2025-06-03T18:47:15.300+0530","caller":"cmd/main.go:166","msg":"✅ Zerodha login success","username":"Bhavik Dhiraj Patel","userID":"WWG604"}
+{"level":"INFO","timestamp":"2025-06-03T18:47:15.443+0530","caller":"cmd/main.go:182","msg":"🔔 Subscribing","symbol":"NIFTY 50","exchange":"NSE","token":256265}
+{"level":"INFO","timestamp":"2025-06-03T18:47:15.528+0530","caller":"cmd/main.go:182","msg":"🔔 Subscribing","symbol":"NIFTY BANK","exchange":"NSE","token":260105}
+{"level":"INFO","timestamp":"2025-06-03T18:47:15.578+0530","caller":"cmd/main.go:182","msg":"🔔 Subscribing","symbol":"RELIANCE","exchange":"NSE","token":738561}
+{"level":"INFO","timestamp":"2025-06-03T18:47:15.632+0530","caller":"cmd/main.go:182","msg":"🔔 Subscribing","symbol":"TCS","exchange":"NSE","token":2953217}

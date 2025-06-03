@@ -1,0 +1,40 @@
+Tomorrow's Tasks: File Mapping
+Verify Zerodha Ticker Stability (Observation & Minor Refinement):
+
+Files to Observe/Potentially Refine:
+cmd/main.go: To run the application and observe overall behavior.
+internal/api/zerodha.go (referencing the current Canvas): The core logic for WebSocket connection, reconnection, and error handling.
+internal/utils/logger.go: To review the structured logs for connection status, errors, and reconnections.
+logs/app.log (or your configured log file): The actual log output file to check for messages.
+Implement Real-time OHLCV Aggregation in internal/data/ingest.go:
+
+Files to Update/Use:
+internal/data/ingest.go: This is where the primary logic for aggregating ticks into OHLCV bars will reside.
+internal/api/zerodha.go (referencing the current Canvas): The tickCallback function within SubscribeToTicks will be updated to pass raw tick data to ingest.go for processing.
+Implement Technical Indicator Calculation in internal/data/ingest.go:
+
+Files to Update/Use:
+internal/data/ingest.go: New functions and logic will be added here to calculate indicators (e.g., SMA, RSI, MACD) from the aggregated OHLCV data.
+Persist Processed Market Data to TimescaleDB:
+
+Files to Update/Use:
+internal/data/ingest.go: Logic to call database methods for saving data.
+internal/db/postgres.go: You'll likely add or use existing methods (e.g., InsertMarketData) to interact with the database.
+internal/db/models.go: The MarketData struct defines the schema for the data being saved.
+Publish Processed Data to Redis Pub/Sub:
+
+Files to Update/Use:
+internal/data/ingest.go: Logic to publish the processed OHLCV and indicator data to Redis.
+internal/cache/redis.go: You'll use methods from your Redis client (e.g., Publish) to send messages to Pub/Sub channels.
+Start Redis Subscription in internal/server/websocket.go (or broadcast.go):
+
+Files to Update/Use:
+internal/server/websocket.go (or internal/server/broadcast.go if you create that file): This file will be responsible for subscribing to Redis Pub/Sub channels.
+internal/cache/redis.go: You'll use methods from your Redis client (e.g., Subscribe) to listen for messages.
+internal/server/routes.go: To ensure the WebSocket endpoint is correctly configured and can access the Redis client.
+Refine FindInstrumentToken in internal/api/zerodha.go:
+
+Files to Update/Use:
+internal/api/zerodha.go (referencing the current Canvas): The placeholder FindInstrumentToken function will be replaced with actual logic to fetch instrument details from the Zerodha Kite API.
+internal/db/postgres.go: Potentially to store or retrieve the full instrument master list from your database, which would have been populated earlier.
+internal/db/models.go: The Instrument struct defines the structure of the instrument data.

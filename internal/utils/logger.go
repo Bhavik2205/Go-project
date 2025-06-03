@@ -1,37 +1,56 @@
-// internal/utils/logger.go
 package utils
 
 import (
-	"log"
 	"os"
-	"strings"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-// InitLogger initializes the global logger based on config.
-func InitLogger(level, output string) {
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-
-	if output == "file" {
-		file, err := os.OpenFile("bot.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-		if err != nil {
-			log.Fatalf("Failed to open log file: %v", err)
-		}
-		log.SetOutput(file)
-	} else {
-		log.SetOutput(os.Stdout)
-	}
-
-	// Basic level filtering (you might want a more sophisticated approach for production)
-	switch strings.ToLower(level) {
+func InitLogger(logLevel, logFile string) {
+	var level zapcore.Level
+	switch logLevel {
 	case "debug":
-		// No special filtering for now, everything logs
+		level = zapcore.DebugLevel
 	case "info":
-		// No special filtering for now, everything logs
+		level = zapcore.InfoLevel
 	case "warn":
-		// Can add logic to filter out info/debug logs
+		level = zapcore.WarnLevel
 	case "error":
-		// Can add logic to filter out info/debug/warn logs
+		level = zapcore.ErrorLevel
 	default:
-		log.Printf("Unknown log level '%s', defaulting to info.", level)
+		level = zapcore.InfoLevel
 	}
+
+	encoderCfg := zap.NewProductionEncoderConfig()
+	encoderCfg.TimeKey = "timestamp"
+	encoderCfg.EncodeTime = zapcore.ISO8601TimeEncoder
+	encoderCfg.EncodeLevel = zapcore.CapitalLevelEncoder
+	encoder := zapcore.NewJSONEncoder(encoderCfg)
+
+	core := zapcore.NewCore(
+		encoder,
+		getLogWriter(logFile),
+		level,
+	)
+
+	logger := zap.New(core, zap.AddCaller(), zap.AddStacktrace(zapcore.ErrorLevel))
+	zap.ReplaceGlobals(logger)
+}
+
+func getLogWriter(logFile string) zapcore.WriteSyncer {
+	lumberjackLogger := &lumberjack.Logger{
+		Filename:   logFile,
+		MaxSize:    100, // MB
+		MaxBackups: 5,
+		MaxAge:     28,   // Days
+		Compress:   true, // Enable compression
+	}
+
+	multi := zapcore.NewMultiWriteSyncer(
+		zapcore.AddSync(os.Stdout),
+		zapcore.AddSync(lumberjackLogger),
+	)
+	return multi
 }
