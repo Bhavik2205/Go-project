@@ -1,1 +1,3 @@
 {"level":"INFO","timestamp":"2025-06-03T18:47:14.804+0530","caller":"cmd/main.go:93","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-04T18:53:08.753+0530","caller":"cmd/main.go:93","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-04T18:59:44.045+0530","caller":"cmd/main.go:93","msg":"✅ .env file loaded successfully"}

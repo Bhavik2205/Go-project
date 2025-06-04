@@ -1,0 +1,511 @@
+1. System Initialization & Configuration
+┌─────────────────────────┐
+│ `configs/*.yaml`        │
+│   (App, DB, Zerodha,    │
+│    Model, Strategy)     │
+└─────────────────────────┘
+        ↓ (Loads config)
+┌─────────────────────────┐
+│ `.env`                  │
+│   (Sensitive Secrets)   │
+└─────────────────────────┘
+        ↓ (Loads secrets)
+┌─────────────────────────┐
+│ **`internal/utils/config.go`**
+│   * Loads all YAML configs
+│   * Reads environment variables
+│   * Provides unified `Config` struct
+└─────────────────────────┘
+        ↓ (Provides Config struct)
+┌─────────────────────────┐
+│ **`cmd/main.go`** │
+│   * Application Entry Point
+│   * Orchestrates startup
+│   * Graceful shutdown handling
+└─────────────────────────┘
+        ↓ (Initializes various components)
+┌─────────────────────────┐   ┌─────────────────────────┐   ┌─────────────────────────┐   ┌─────────────────────────┐   ┌─────────────────────────┐
+│ **`internal/utils/logger.go`** │   │ **`internal/db/postgres.go`** │   │ **`internal/cache/redis.go`** │   │ **`internal/server/routes.go`**│   │ **`internal/server/websocket.go`** │
+│   * Sets up structured │   │   * Establishes DB       │   │   * Initializes Redis  │   │   * Defines HTTP API   │   │   * Starts WebSocket   │
+│     logging            │   │     connection pool      │   │     client pool        │   │     endpoints          │   │     server             │
+└─────────────────────────┘   └─────────────────────────┘   └─────────────────────────┘   └─────────────────────────┘   └─────────────────────────┘
+                            
+
+
+
+2. Database Migration Flow
+┌──────────────────────────────────────┐
+│ **`internal/db/migrations/*.sql`** │
+│   * Defines database schema changes  │
+│     (e.g., tables for users, orders) │
+└──────────────────────────────────────┘
+        ↓ (Contains SQL migration scripts)
+┌──────────────────────────────────────┐
+│ **`scripts/db_migrate.sh`** │
+│   * Executes SQL migrations against  │
+│     the PostgreSQL database.         │
+└──────────────────────────────────────┘
+        ↓ (Applies schema changes)
+┌──────────────────────────────────────┐
+│ **`(External) PostgreSQL Database`** │
+│   * Stores all relational data       │
+└──────────────────────────────────────┘
+
+
+
+3. User Management & Authentication Flow
+                                  ┌─────────────────────────────────────────┐
+                                  │ **`internal/api/handlers/`** │
+                                  │   * Handles incoming HTTP requests for  │
+                                  │     user signup, login, broker connect. │
+                                  └─────────────────────────────────────────┘
+                                          ↓ (Routes requests to handlers)
+┌───────────────────────────┐           ┌───────────────────────────────────┐
+│ **`internal/server/routes.go`** │ **`internal/server/websocket.go`**│
+│   * HTTP API Routing for auth,        │   * Handles WebSocket connections │
+│     user settings.                    │   * Authenticates connected users │
+└───────────────────────────┘           └───────────────────────────────────┘
+          ↓ (Calls auth functions)              ↓ (Authenticates WS connection)
+┌───────────────────────────────────┐
+│ **`internal/auth/auth.go`** │
+│   * Manages user registration, login, │
+│     password hashing, JWT handling.   │
+│   * Handles Zerodha OAuth flow.       │
+└───────────────────────────────────┘
+        ↓ (Interacts with DB for users/broker accounts)
+┌───────────────────────────────────┐     ┌────────────────────────────────────┐
+│ **`internal/db/models.go`** │     │ **`internal/api/zerodha.go`** │
+│   * Defines Go structs for DB     │     │   * Interacts directly with Zerodha│
+│     tables (Users, Broker Accounts).│     │     Kite Connect API.              │
+└───────────────────────────────────┘     └────────────────────────────────────┘
+        ↑ ↓ (CRUD ops)                         ↓ (Sends OAuth requests, exchanges tokens)
+┌───────────────────────────────────┐     ┌────────────────────────────────────┐
+│ **`internal/db/postgres.go`** │     │ **`(External) Zerodha API`** │
+│   * Database connection & queries.│     │   * Broker's API for authentication│
+│   * Stores encrypted access tokens│     │     and trading.                   │
+│     in `user_broker_accounts`.    │     └────────────────────────────────────┘
+└───────────────────────────────────┘
+
+
+
+
+4. Data Ingestion Pipeline Flow
+                                  ┌───────────────────────────────────────────────────┐
+                                  │ **`internal/api/instruments.go`** │
+                                  │   * Fetches latest tradable instruments from broker.│
+                                  └───────────────────────────────────────────────────┘
+                                          ↓ (Fetches instrument data)
+                                          ┌───────────────────────────────────────────────────┐
+                                          │ **`(External) Zerodha API`** │
+                                          │   * Provides instrument master data.              │
+                                          └───────────────────────────────────────────────────┘
+                                          ↓ (Stores instruments)
+                                          ┌───────────────────────────────────────────────────┐
+                                          │ **`internal/db/postgres.go`** │
+                                          │   * Stores instrument data in `instruments` table.│
+                                          └───────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────┐     ┌───────────────────────────────────────────────────┐
+│ **`internal/api/ticker.go`** │     │ **`internal/api/newsapi.go` / `marketwatch.go`** │
+│   * Manages WebSocket connection to      │     │   * Fetches news articles from external sources.  │
+│     Zerodha Kite Ticker.                 │     └───────────────────────────────────────────────────┘
+│   * Streams real-time tick data.         │             ↓ (Fetches news)
+└──────────────────────────────────────────┘             ┌───────────────────────────────────────────────────┐
+         ↓ (Streams raw ticks)                         │ **`(External) News/MarketWatch APIs`** │
+┌──────────────────────────────────────────┐             │   * Provides financial news content.              │
+│ **`(External) Zerodha Kite Ticker (WS)`**│             └───────────────────────────────────────────────────┘
+│   * Real-time market data feed.          │                     ↓ (Passes news for processing)
+└──────────────────────────────────────────┘             ┌───────────────────────────────────────────────────┐
+         ↓ (Feeds raw ticks)                         │ **`internal/data/news_pipeline.go`** │
+┌──────────────────────────────────────────┐             │   * Processes raw news articles (e.g., cleaning).│
+│ **`internal/data/ingest.go`** │             └───────────────────────────────────────────────────┘
+│   * Aggregates raw ticks into OHLCV bars.│                     ↓ (Passes processed news)
+│   * Calculates technical indicators.     │             ┌───────────────────────────────────────────────────┐
+│   * Persists data to PostgreSQL.         │             │ **`internal/model/sentiment.go`** │
+│   * Publishes data to Redis Pub/Sub.     │             │   * Performs sentiment analysis on news articles. │
+└──────────────────────────────────────────┘             └───────────────────────────────────────────────────┘
+         ↓ (Persists OHLCV, indicators)                          ↓ (Uses ML model for inference)
+┌──────────────────────────────────────────┐             ┌───────────────────────────────────────────────────┐
+│ **`internal/db/postgres.go`** │             │ **`internal/model/inference.go`** │
+│   * Stores OHLCV & indicator data in     │             │   * Loads and runs ONNX sentiment models.         │
+│     `market_data` (TimescaleDB hypertable).│             └───────────────────────────────────────────────────┘
+│   * Stores news content and sentiment    │                           ↓ (Loads ONNX model)
+│     scores in `news_articles` table.     │             ┌───────────────────────────────────────────────────┐
+└──────────────────────────────────────────┘             │ **`models/sentiment.onnx`** │
+         ↓ (Publishes real-time data)                      │   * Pre-trained ML model for sentiment analysis.  │
+┌──────────────────────────────────────────┐             └───────────────────────────────────────────────────┘
+│ **`internal/cache/redis.go`** │
+│   * Publishes market data and sentiment  │
+│     updates to dedicated Pub/Sub channels.│
+└──────────────────────────────────────────┘
+
+
+
+
+
+5. Strategy & Execution Flow
+┌───────────────────────────────────────────────┐
+│ **`internal/strategy/selector.go`** │
+│   * Dynamically selects active trading        │
+│     strategies based on user config.          │
+└───────────────────────────────────────────────┘
+        ↓ (Reads user strategies)
+┌───────────────────────────────────────────────┐
+│ **`internal/db/postgres.go`** │
+│   * Reads `user_strategies` table.            │
+└───────────────────────────────────────────────┘
+        ↓ (Activates strategy logic)
+┌───────────────────────────────────────────────┐
+│ **`internal/strategy/*.go`** │
+│   (e.g., `intraday.go`, `swing.go`, `scalping.go`) │
+│   * Contains specific trading logic.          │
+│   * Subscribes to real-time data from Redis.  │
+│   * Generates trade signals (BUY/SELL).       │
+└───────────────────────────────────────────────┘
+        ↓ (Subscribes to market/sentiment data)
+┌───────────────────────────────────────────────┐
+│ **`internal/cache/redis.go`** │
+│   * Provides real-time market data &          │
+│     sentiment via Pub/Sub.                    │
+└───────────────────────────────────────────────┘
+        ↓ (Sends trade signals)
+┌───────────────────────────────────────────────┐
+│ **`internal/execution/order.go`** │
+│   * Receives trade signals.                   │
+│   * Performs risk management checks.          │
+│   * Constructs and sends order requests.      │
+└───────────────────────────────────────────────┘
+        ↓ (Places orders)
+┌───────────────────────────────────────────────┐
+│ **`internal/api/zerodha.go`** │
+│   * Interacts with Zerodha API for order      │
+│     placement (buy/sell).                     │
+└───────────────────────────────────────────────┘
+        ↓ (Logs orders)
+┌───────────────────────────────────────────────┐
+│ **`internal/db/postgres.go`** │
+│   * Logs orders to the `orders` table.        │
+└───────────────────────────────────────────────┘
+
+┌───────────────────────────────────────────────┐
+│ **`internal/execution/monitor.go`** │
+│   * Continuously monitors open orders         │
+│     and positions via Zerodha API.            │
+│   * Updates DB with real-time status.         │
+│   * Implements exit logic (SL/TP, trailing).  │
+│   * Signals for closing orders.               │
+└───────────────────────────────────────────────┘
+        ↓ (Monitors orders/positions)
+┌───────────────────────────────────────────────┐
+│ **`internal/api/zerodha.go`** │
+│   * Queries Zerodha API for order status      │
+│     and position details.                     │
+└───────────────────────────────────────────────┘
+        ↓ (Updates DB; Signals for closing orders)
+┌───────────────────────────────────────────────┐
+│ **`internal/db/postgres.go`** │
+│   * Updates `orders`, `positions`, and        │
+│     `trades` tables.                          │
+└───────────────────────────────────────────────┘
+        ↓ (Publishes order/position updates)
+┌───────────────────────────────────────────────┐
+│ **`internal/cache/redis.go`** │
+│   * Publishes real-time order/position        │
+│     updates to Pub/Sub channels.              │
+└───────────────────────────────────────────────┘
+
+
+
+
+6. Monitoring & Observability Flow
+┌─────────────────────────────┐   ┌───────────────────────────────────┐
+│ **`internal/utils/logger.go`**│   │ **`internal/metrics/metrics.go`** │
+│   * Writes structured logs.   │   │   * Components report metrics.  │
+└─────────────────────────────┘   └───────────────────────────────────┘
+        ↓ (Writes logs)                    ↓ (Metrics reported by app components)
+┌─────────────────────────────┐   ┌───────────────────────────────────┐
+│ `app.log` / `logs/app.log`  │   │ **`internal/server/routes.go`** │
+│   * Application log files.  │   │   * Exposes `/metrics` endpoint.  │
+└─────────────────────────────┘   └───────────────────────────────────┘
+        ↓ (Can be scraped by)              ↓ (Prometheus scrapes)
+┌─────────────────────────────┐   ┌───────────────────────────────────┐
+│ **`(External) Log Aggregation`**│   │ **`(External) Prometheus`** │
+│   (e.g., Loki)              │   │   * Scrapes, stores time-series   │
+│   * Collects and centralizes│   │     metric data.                  │
+│     application logs.       │   └───────────────────────────────────┘
+└─────────────────────────────┘           ↓ (Data source for)
+                                  ┌───────────────────────────────────┐
+                                  │ **`(External) Grafana`** │
+                                  │   * Visualizes metrics, creates   │
+                                  │     dashboards, sets up alerts.   │
+                                  └───────────────────────────────────┘
+
+
+
+
+
+7. Real-time Data Broadcasting Flow
+┌───────────────────────────────────────────┐
+│ **`internal/cache/redis.go`** │
+│   * Publishes market data, order updates, │
+│     P&L, sentiment via Pub/Sub.           │
+└───────────────────────────────────────────┘
+        ↓ (Subscribes to relevant Pub/Sub channels)
+┌───────────────────────────────────────────┐
+│ **`internal/server/websocket.go`** │
+│   * Maintains active WebSocket connections│
+│     with frontend clients.                │
+│   * Filters and pushes real-time data.    │
+└───────────────────────────────────────────┘
+        ↓ (Pushes real-time data via WebSocket)
+┌───────────────────────────────────────────┐
+│ **`(External) Frontend Client`** │
+│   * Receives real-time updates for dashboard.│
+└───────────────────────────────────────────┘
+
+
+
+
+
+Project Task Flow: File-by-File Development Path
+Goal: Build the backend piece by piece, ensuring functionality at each major step.
+
+Phase 0: Project Setup & Initial Structure (Non-Code / Planning)
+These are preparatory steps before diving into Go code.
+
+Understand the Overall Architecture:
+
+Files: README.md, structure.txt, notes/
+Task: Thoroughly read and understand the detailed system flow you've designed. Familiarize yourself with the folder structure and purpose of each directory.
+Validation: You have a clear mental model of how the system will work.
+Define Configuration Schemas:
+
+Files: configs/app.yaml, configs/database.yaml, configs/zerodha.yaml, configs/model.yaml, configs/strategy.yaml
+Task: Define the initial structure and default values for all your configuration YAML files. Don't worry about perfect values yet, just the keys and expected data types.
+Validation: All configs/*.yaml files exist and have placeholder structures for their respective settings.
+Environment Variable Setup:
+
+Files: .env (template, DO NOT COMMIT TO GIT), .gitignore
+Task: Create a .env file (e.g., .env.example) with placeholder values for all sensitive environment variables (API keys, secrets, DB passwords). Add .env to .gitignore.
+Validation: .env file exists with placeholders, and it's ignored by Git.
+Containerization Setup:
+
+Files: Dockerfile, configs/docker-compose.yaml
+Task: Create a basic Dockerfile for your Go application. Set up docker-compose.yaml to bring up PostgreSQL, Redis, Prometheus, and Grafana. Start with just PostgreSQL and Redis initially for easier debugging.
+Validation: docker-compose up successfully starts PostgreSQL and Redis containers. You can connect to them from your machine.
+Phase 1: Core Utilities & Database Foundation
+This phase builds the essential backbone services.
+
+1. Configuration Loader & Logger
+* File: internal/utils/config.go
+* Task: Implement LoadConfig() to parse configs/*.yaml files and read environment variables from .env. Define the Config struct that holds all loaded settings.
+* Validation: Write a small temporary main.go (or a unit test) to call LoadConfig() and print the loaded configuration, verifying all values are read correctly.
+* File: internal/utils/logger.go
+* Task: Implement an opinionated logger (e.g., using logrus or zap if you choose, or just log package with prefixes for now). Provide functions like Info, Error, Debug.
+* Validation: Use the temporary main.go to test logging messages at different levels.
+* File: internal/utils/errors.go
+* Task: Define common custom error types or utility functions for error handling.
+* Validation: Simple compilation.
+
+2. Database Models & Migrations
+* File: internal/db/models.go
+* Task: (Already validated!) Implement all GORM structs you've defined (User, UserBrokerAccount, Instrument, MarketData, Order, Trade, Position, NewsArticle, UserStrategy, Metric). Ensure gorm:"primaryKey", gorm:"uniqueIndex", gorm:"not null" tags are correct.
+* Validation: No compilation errors.
+* Files: internal/db/migrations/000001_create_users_table.up.sql, 000001_create_users_table.down.sql (and other initial migrations)
+* Task: Write the SQL migration files for the User and UserBrokerAccount tables. Include the pre_migration_enable_timescaledb.sql as your very first migration.
+* File: scripts/db_migrate.sh
+* Task: Write the shell script to execute migrate tool (e.g., go-migrate/migrate or golang-migrate/migrate) against your PostgreSQL instance using the internal/db/migrations files.
+* Validation: Run scripts/db_migrate.sh up. Verify tables are created in your PostgreSQL database.
+
+3. Database & Redis Clients
+* File: internal/db/postgres.go
+* Task: Implement NewPostgresClient() function that establishes a GORM connection pool using settings from Config. Add a Close() method if GORM needs explicit closing.
+* Validation: In cmd/main.go, call NewPostgresClient() and handle potential errors. Verify connection.
+* File: internal/cache/redis.go
+* Task: Implement NewRedisClient() function that establishes a go-redis client connection pool using settings from Config. Add a Close() method.
+* Validation: In cmd/main.go, call NewRedisClient(), perform a client.Ping(), and check for errors.
+
+4. Initial cmd/main.go & Graceful Shutdown
+* File: cmd/main.go
+* Task: Integrate all the components from Phase 1. Load config, initialize logger, DB, and Redis. Implement the graceful shutdown logic for SIGINT/SIGTERM using http.Server.Shutdown() as discussed.
+* Validation: Run go run cmd/main.go. Verify logs show successful initialization. Press Ctrl+C and ensure the application shuts down gracefully, with DB and Redis connections closing cleanly.
+
+Phase 2: Authentication & User Management (Core APIs)
+This phase focuses on user interaction and account linking.
+
+1. Authentication Logic
+* File: internal/auth/auth.go (create this file/package)
+* Task: Implement functions for RegisterUser, LoginUser (hashing passwords, JWT generation/validation), GenerateJWT, ValidateJWT. Integrate with internal/db/postgres.go (specifically User model).
+* Validation: Write unit tests for user registration, login, and JWT token validation.
+
+2. User API Handlers
+* File: internal/api/handlers/auth_handlers.go (create this file/package)
+* Task: Implement HTTP handlers for /signup (POST), /login (POST). These handlers will use functions from internal/auth/auth.go.
+* Validation: Use curl or Postman to test signup and login endpoints. Verify user data and JWTs are created correctly in the database.
+
+3. HTTP Server Routing
+* File: internal/server/routes.go
+* Task: Set up the gorilla/mux (or chosen router) and define the routes for your authentication handlers. Include JWT middleware for authenticated routes.
+* Validation: Ensure your /signup and /login endpoints are accessible via HTTP.
+
+4. Zerodha OAuth & Account Linking
+* File: internal/api/zerodha.go
+* Task: Implement the Zerodha API client for the OAuth flow:
+* Function to generate the login URL.
+* Function to exchange request_token for access_token and public_token.
+* File: internal/api/handlers/zerodha_oauth_handlers.go
+* Task: Implement handlers for /user/broker/zerodha/connect (redirect to Zerodha) and the /api/zerodha/callback endpoint (receives request_token, exchanges it, encrypts, and stores access_token and public_token in UserBrokerAccount via internal/db/postgres.go).
+* Validation: Perform a full OAuth flow test. Verify UserBrokerAccount is populated correctly in the database with encrypted tokens.
+
+Phase 3: Broker Integration - Instrument Data
+This is the first step in getting market data into your system.
+
+1. Instrument Data Fetching
+* File: internal/api/instruments.go
+* Task: Implement a function to fetch the complete list of tradable instruments from Zerodha Kite Connect API.
+* File: internal/db/postgres.go (or a dedicated internal/db/instrument_repo.go)
+* Task: Implement logic to store/update instruments in the Instrument table. Use the InstrumentToken as the primary key and handle updates for existing instruments.
+* Task: Create a goroutine in cmd/main.go that periodically calls internal/api/instruments.go to fetch and update instruments. This goroutine should respect the shutdown context.
+* Validation: Run the bot. Check logs for instrument fetching. Verify instruments table in DB is populated and updated.
+
+Phase 4: Real-time Market Data Ingestion
+This is the core of your real-time data pipeline.
+
+1. Zerodha Kite Ticker Client
+* File: internal/api/ticker.go
+* Task: Implement a WebSocket client that connects to Zerodha Kite Ticker. Handle connection, reconnection, and receiving raw tick data. It should expose a channel to send raw ticks to the next component. This needs to be multi-user aware (e.g., manage a ticker connection per active user or aggregate).
+* Validation: Connect to the ticker, print raw tick data to console.
+
+2. Market Data Ingestion Pipeline
+* File: internal/data/ingest.go
+* Task: Implement functions to:
+* Receive raw ticks from internal/api/ticker.go's channel.
+* Aggregate ticks into OHLCV bars (e.g., 1-minute bars).
+* Calculate basic technical indicators (SMA, RSI, MACD).
+* Persist the aggregated MarketData to the market_data hypertable in PostgreSQL (internal/db/postgres.go).
+* Publish real-time OHLCV and indicator updates to Redis Pub/Sub (internal/cache/redis.go).
+* Validation: Run the ticker and ingest components. Verify market_data table is populating correctly. Use Redis CLI to subscribe to a channel and see market data flowing.
+
+Phase 5: News & Sentiment Analysis
+Adding intelligence with ML.
+
+1. News Fetching
+* File: internal/api/newsapi.go, internal/api/marketwatch.go
+* Task: Implement clients to fetch news articles from your chosen news APIs.
+* Validation: Fetch news, print raw articles.
+
+2. News Preprocessing & Sentiment Analysis
+* File: scripts/tokenize_text.py (Helper for ML model preparation)
+* Task: (Python) Script to tokenize text for your ML model.
+* File: scripts/convert_to_onnx.py (Helper for ML model conversion)
+* Task: (Python) Script to convert your trained ML model (e.g., PyTorch/TensorFlow) to ONNX format.
+* File: models/sentiment.onnx (Pre-trained model)
+* Task: Place your converted ONNX model here.
+* File: internal/model/inference.go
+* Task: Implement ONNX Runtime client in Go to load sentiment.onnx and perform inference on text.
+* File: internal/model/sentiment.go
+* Task: Implement the sentiment analysis logic: receive news article content, call internal/model/inference.go, get sentiment score/label.
+* File: internal/data/news_pipeline.go
+* Task: Integrate news fetching with sentiment analysis. Store results in NewsArticle table (internal/db/postgres.go). Optionally publish to Redis Pub/Sub.
+* Task: Create a goroutine in cmd/main.go to periodically run the news pipeline.
+* Validation: Fetch news, verify sentiment scores and labels are correctly stored in the news_articles table.
+
+Phase 6: Strategy Engine & Order Execution
+The brains and hands of the bot.
+
+1. Strategy Management & Selector
+* File: internal/db/migrations/ (add migrations for UserStrategy table)
+* Task: Add migrations for the UserStrategy table.
+* Validation: Run scripts/db_migrate.sh up.
+* File: internal/api/handlers/strategy_handlers.go (create)
+* Task: Implement handlers for users to enable/disable strategies and set parameters (storing/retrieving from UserStrategy table).
+* File: internal/strategy/selector.go
+* Task: Implement a service that, for each active user, determines which strategies are enabled and initializes them. It should spawn a goroutine for each active user's strategy.
+* Validation: Enable/disable a strategy via API. Verify UserStrategy table update.
+
+2. Concrete Strategies
+* Files: internal/strategy/intraday.go, internal/strategy/scalping.go, internal/strategy/swing.go (at least one to start)
+* Task: Implement the core logic for at least one trading strategy. This strategy goroutine should:
+* Subscribe to relevant Redis Pub/Sub channels for MarketData and NewsArticle sentiment.
+* Evaluate entry/exit conditions based on market data, indicators, and sentiment.
+* Generate trade signals (e.g., a struct with instrument, type, quantity).
+* Pass signals to internal/execution/order.go.
+* Validation: Set up a dummy strategy. Verify it processes real-time data from Redis and generates test trade signals (e.g., logs them without placing actual orders).
+
+3. Order Management & Risk Control
+* File: internal/execution/order.go
+* Task: Implement the PlaceOrder function:
+* Receives a trade signal.
+* Performs risk management checks (capital, max loss, position sizing - placeholder logic initially).
+* Constructs the broker-specific order payload.
+* Calls internal/api/zerodha.go to place the order.
+* Logs the order details to the Order table (internal/db/postgres.go).
+* Validation: Manually trigger a trade signal. Verify order is placed (or mocked to be placed) via internal/api/zerodha.go and logged in the orders table.
+
+Phase 7: Position Monitoring & Trade Management
+Closing the loop on actual trades.
+
+1. Order & Position Monitoring
+* Files: internal/db/migrations/ (add migrations for Trade and Position tables)
+* Task: Add migrations for Trade and Position tables.
+* Validation: Run scripts/db_migrate.sh up.
+* File: internal/execution/monitor.go
+* Task: Implement a service that, for each active user:
+* Periodically queries Zerodha API for open orders and positions.
+* Updates Order and Position tables in PostgreSQL.
+* Creates new Trade records for filled orders.
+* Implements sophisticated exit logic (stop loss, target profit, trailing stop, end-of-day square-off).
+* If an exit is triggered, signals internal/execution/order.go to place a closing order.
+* Publishes order/position updates to Redis Pub/Sub.
+* Validation: Place a live order. Verify orders, trades, and positions tables are updated as the order is filled and position changes.
+
+Phase 8: Real-time User Interface & Observability
+Providing feedback and monitoring.
+
+1. WebSocket Server & Broadcasting
+* File: internal/server/websocket.go
+* Task: Implement the WebSocket server logic (authenticating connections, managing client subscriptions).
+* File: internal/server/broadcast.go (create)
+* Task: Implement a broadcaster that:
+* Subscribes to relevant Redis Pub/Sub channels (market data, order updates, position updates, P&L from monitor.go).
+* Filters data per user.
+* Pushes real-time updates to connected WebSocket clients.
+* Validation: Connect a wscat client or a simple HTML page to the WebSocket endpoint. Verify you receive real-time market data, order updates, and position changes.
+
+2. Prometheus Metrics & Grafana Dashboards
+* File: internal/metrics/metrics.go
+* Task: Define and implement custom Prometheus metrics (e.g., api_calls_total, order_fills_total, strategy_signals_total, user_pnl_current). Instrument relevant code points (api/zerodha.go, execution/order.go, strategy/*.go).
+* File: internal/server/routes.go
+* Task: Expose the /metrics endpoint for Prometheus to scrape.
+* Validation: Run docker-compose up including Prometheus and Grafana. Configure Prometheus to scrape your bot's /metrics endpoint. In Grafana, set Prometheus as a data source and create a basic dashboard to visualize your custom metrics.
+* File: internal/db/migrations/ (add migrations for Metric table if needed)
+* Task: Add migrations for the Metric table if you plan to use it for audit/business metrics.
+* File: internal/db/postgres.go (or dedicated internal/db/metric_repo.go)
+* Task: Implement functions to write to the Metric table.
+* Task: Instrument key business events to write to the Metric table.
+* Validation: Verify metrics table populates (if using it).
+
+Phase 9: Backtesting & ML Retraining Tools
+Supporting development and operational workflows.
+
+1. Historical Data Download
+* File: scripts/download_data.py
+* Task: (Python) Script to download historical OHLCV data from Zerodha for backtesting purposes and store it in data/nse/.
+* Validation: Run script, verify data/nse/ is populated.
+
+2. Backtesting Engine
+* File: cmd/backtest.go
+* Task: Implement the entry point for the backtesting engine. This will simulate market data flow through your strategy/*.go files using historical data from MarketData table (or CSVs). It won't actually place orders, but record simulated trades and P&L.
+* Validation: Run a backtest, verify simulated trade logs and P&L calculations.
+
+3. Performance Reporting & EDA
+* File: scripts/performance_report.py
+* Task: (Python) Script to analyze backtesting results and generate performance metrics (sharpe ratio, drawdown, etc.).
+* File: notebooks/EDA_intraday.ipynb
+* Task: (Jupyter Notebook) Create notebooks for exploratory data analysis of market data and strategy performance.
+* Validation: Generate a sample report.
+
+4. ML Model Retraining Pipeline
+* File: scripts/retrain_sentiment.py
+* Task: (Python) Script to automate the retraining of your sentiment analysis model using new news data.
+* Validation: Run the script, verify new model is generated.

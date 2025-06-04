@@ -2,6 +2,18 @@
 server:
   http_port: 8080
   websocket_path: "/ws"
+  # If WebSocket runs on a separate port:
+  # websocket_port: 8081
+
 log:
   level: info # debug, info, warn, error
-  output: logs/app.log # stdout, file
+  output: stdout # stdout, file (for production, typically stdout for Docker)
+  # If output is 'file':
+  # file_path: logs/app.log
+  # max_size_mb: 100
+  # max_backups: 5
+  # max_age_days: 7
+  # compress: true
+
+# Other application-wide settings
+graceful_shutdown_timeout_seconds: 15
