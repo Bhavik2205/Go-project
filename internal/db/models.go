@@ -55,24 +55,86 @@ type Instrument struct {
 // MarketData stores aggregated OHLCV (Open-High-Low-Close-Volume) and technical indicator data.
 // This table is designed to be a TimescaleDB hypertable for efficient time-series queries.
 type MarketData struct {
-	// gorm.Model is typically NOT used for hypertables as it adds an 'ID' column
-	// that might conflict with the time-series nature and compound primary keys.
-	// We'll define primary key explicitly.
-	InstrumentToken uint       `gorm:"primaryKey;not null"` // Composite primary key part
-	Instrument      Instrument `gorm:"foreignKey:InstrumentToken"`
-	Timestamp       time.Time  `gorm:"primaryKey;not null;type:timestamp with time zone"` // Composite primary key part, Time-series dimension for TimescaleDB
-	Open            float64    `gorm:"not null"`
-	High            float64    `gorm:"not null"`
-	Low             float64    `gorm:"not null"`
-	Close           float64    `gorm:"not null"`
-	Volume          float64    `gorm:"not null"`
-	// Technical Indicators (examples, add more as needed)
-	SMA20      float64
-	RSI14      float64
-	MACD       float64
-	MACDSignal float64
-	MACDHist   float64
-	// Add more indicators here...
+	// Primary Keys for Time-Series Hypertable
+	// These three fields form a composite primary key to ensure uniqueness for each tick.
+	// Aligned InstrumentToken to uint32 as per kitemodels.Tick
+	InstrumentToken uint32    `gorm:"primaryKey;not null"`
+	Timestamp       time.Time `gorm:"primaryKey;not null;type:timestamptz"` // Exchange timestamp from kitemodels.Tick.Timestamp
+	TickSequenceID  int       `gorm:"primaryKey;not null"`                  // Custom generated to ensure uniqueness at same timestamp
+
+	// --- Core Tick Data (from kitemodels.Tick) ---
+	LastPrice          float64 `gorm:"not null;type:numeric"`
+	LastTradedQuantity uint32  `gorm:"not null"` // Aligned to uint32 as per kitemodels.Tick.LastTradedQuantity
+	Volume             uint32  `gorm:"not null"` // Aligned to uint32 as per kitemodels.Tick.VolumeTraded
+	AverageTradePrice  float64 `gorm:"not null;type:numeric"`
+	NetChange          float64 `gorm:"not null;type:numeric"`
+
+	// Daily OHLC (from kitemodels.Tick.OHLC)
+	// These are typically the daily Open, High, Low, Close values.
+	Open  float64 `gorm:"not null;type:numeric"`
+	High  float64 `gorm:"not null;type:numeric"`
+	Low   float64 `gorm:"not null;type:numeric"`
+	Close float64 `gorm:"not null;type:numeric"`
+
+	// Open Interest (from kitemodels.Tick.OI - will be 0 for equities)
+	OpenInterest uint32 `gorm:"not null"` // Aligned to uint32 as per kitemodels.Tick.OI
+
+	// --- Market Depth (Level 1 - Top 5 Bids and Asks, from kitemodels.Tick.Depth) ---
+	// All quantities and orders are uint32 as per kitemodels.DepthItem
+
+	// Bid Side (buyers)
+	BidPrice1    float64 `gorm:"not null;type:numeric"`
+	BidQuantity1 uint32  `gorm:"not null"`
+	BidOrders1   uint32  `gorm:"not null"`
+
+	BidPrice2    float64 `gorm:"not null;type:numeric"`
+	BidQuantity2 uint32  `gorm:"not null"`
+	BidOrders2   uint32  `gorm:"not null"`
+
+	BidPrice3    float64 `gorm:"not null;type:numeric"`
+	BidQuantity3 uint32  `gorm:"not null"`
+	BidOrders3   uint32  `gorm:"not null"`
+
+	BidPrice4    float64 `gorm:"not null;type:numeric"`
+	BidQuantity4 uint32  `gorm:"not null"`
+	BidOrders4   uint32  `gorm:"not null"`
+
+	BidPrice5    float64 `gorm:"not null;type:numeric"`
+	BidQuantity5 uint32  `gorm:"not null"`
+	BidOrders5   uint32  `gorm:"not null"`
+
+	// Ask Side (sellers)
+	AskPrice1    float64 `gorm:"not null;type:numeric"`
+	AskQuantity1 uint32  `gorm:"not null"`
+	AskOrders1   uint32  `gorm:"not null"`
+
+	AskPrice2    float64 `gorm:"not null;type:numeric"`
+	AskQuantity2 uint32  `gorm:"not null"`
+	AskOrders2   uint32  `gorm:"not null"`
+
+	AskPrice3    float64 `gorm:"not null;type:numeric"`
+	AskQuantity3 uint32  `gorm:"not null"`
+	AskOrders3   uint32  `gorm:"not null"`
+
+	AskPrice4    float64 `gorm:"not null;type:numeric"`
+	AskQuantity4 uint32  `gorm:"not null"`
+	AskOrders4   uint32  `gorm:"not null"`
+
+	AskPrice5    float64 `gorm:"not null;type:numeric"`
+	AskQuantity5 uint32  `gorm:"not null"`
+	AskOrders5   uint32  `gorm:"not null"`
+
+	// --- Other aggregated quantities (from kitemodels.Tick) ---
+	TotalBuyQuantity  uint32 `gorm:"not null"` // Total aggregated buy quantity across all price levels
+	TotalSellQuantity uint32 `gorm:"not null"` // Total aggregated sell quantity across all price levels
+
+	// --- Fields from kitemodels.Tick that are typically NOT stored per tick in raw data ---
+	// LastTradeTime      Time   // If needed, can add, but Timestamp is usually sufficient
+	// Mode               string // More of a metadata field for the tick type itself
+	// IsTradable         bool   // Instrument metadata, better in a separate instruments table
+	// IsIndex            bool   // Instrument metadata, better in a separate instruments table
+	// OIDayHigh          uint32 // Daily high/low for OI, typically derived or not per tick
+	// OIDayLow           uint32 // Daily high/low for OI, typically derived or not per tick
 }
 
 // Order represents a placed order (buy/sell request) by the bot.

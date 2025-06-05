@@ -1,3 +1,12 @@
-{"level":"INFO","timestamp":"2025-06-03T18:47:14.804+0530","caller":"cmd/main.go:93","msg":"✅ .env file loaded successfully"}
-{"level":"INFO","timestamp":"2025-06-04T18:53:08.753+0530","caller":"cmd/main.go:93","msg":"✅ .env file loaded successfully"}
-{"level":"INFO","timestamp":"2025-06-04T18:59:44.045+0530","caller":"cmd/main.go:93","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-05T16:29:56.488+0530","caller":"cmd/main.go:106","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-05T17:34:29.258+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-05T17:44:21.219+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-05T17:54:25.166+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-05T18:00:32.138+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-05T18:00:47.474+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-05T18:42:40.526+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-05T18:42:57.356+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-05T18:45:29.056+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-05T18:47:30.878+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-05T18:56:54.149+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-05T19:05:09.056+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}

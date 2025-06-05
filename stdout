@@ -1,4 +1,23 @@
-{"level":"INFO","timestamp":"2025-06-04T18:59:44.105+0530","caller":"cmd/main.go:115","msg":"📦 ML-Bot service starting up..."}
-{"level":"INFO","timestamp":"2025-06-04T18:59:44.421+0530","caller":"cmd/main.go:136","msg":"✅ Redis GET success","value":"Hello from Redis!"}
-{"level":"ERROR","timestamp":"2025-06-04T18:59:44.614+0530","caller":"utils/errors.go:45","msg":"An error occurred","code":3003,"message":"Invalid Zerodha session or token expired","error":"Incorrect `api_key` or `access_token`.","stacktrace":"github.com/Bhavik2205/ML-Bot/internal/utils.WrapError\n\tD:/troject/go-project/internal/utils/errors.go:45\nmain.main\n\tD:/troject/go-project/cmd/main.go:163\nruntime.main\n\tC:/Program Files/Go/src/runtime/proc.go:271"}
-{"level":"FATAL","timestamp":"2025-06-04T18:59:44.616+0530","caller":"cmd/main.go:164","msg":"Code 3003: Invalid Zerodha session or token expired | Details: Incorrect `api_key` or `access_token`.","stacktrace":"main.main\n\tD:/troject/go-project/cmd/main.go:164\nruntime.main\n\tC:/Program Files/Go/src/runtime/proc.go:271"}
+{"level":"INFO","timestamp":"2025-06-05T19:05:09.237+0530","caller":"cmd/main.go:60","msg":"📦 ML-Bot service starting up..."}
+{"level":"INFO","timestamp":"2025-06-05T19:05:10.251+0530","caller":"cmd/main.go:101","msg":"✅ Redis GET success","value":"Hello from Redis!"}
+{"level":"INFO","timestamp":"2025-06-05T19:05:10.562+0530","caller":"cmd/main.go:131","msg":"✅ Zerodha login success","username":"Bhavik Dhiraj Patel","userID":"WWG604"}
+{"level":"INFO","timestamp":"2025-06-05T19:05:10.932+0530","caller":"data/ingest.go:508","msg":"✅ Loaded initial tick sequence counters from DB","count":15,"from_timestamp":"2025-06-05 00:00:00 +0530 IST"}
+{"level":"INFO","timestamp":"2025-06-05T19:05:10.960+0530","caller":"data/ingest.go:77","msg":"🚀 Market data ingestion and broadcasting started."}
+{"level":"INFO","timestamp":"2025-06-05T19:05:10.991+0530","caller":"server/routes.go:237","msg":"🌐 Unified HTTP + WebSocket server starting...","port":8080}
+{"level":"INFO","timestamp":"2025-06-05T19:05:11.061+0530","caller":"data/ingest.go:90","msg":"✅ Subscribed to Redis market data channel","channel":"market_data_ticks"}
+{"level":"INFO","timestamp":"2025-06-05T19:05:12.965+0530","caller":"cmd/main.go:179","msg":"🔔 Attempting to subscribe","symbol":"NIFTY 50","exchange":"NSE","token":256265}
+{"level":"INFO","timestamp":"2025-06-05T19:05:13.744+0530","caller":"cmd/main.go:179","msg":"🔔 Attempting to subscribe","symbol":"NIFTY BANK","exchange":"NSE","token":260105}
+{"level":"INFO","timestamp":"2025-06-05T19:05:14.168+0530","caller":"cmd/main.go:179","msg":"🔔 Attempting to subscribe","symbol":"RELIANCE","exchange":"NSE","token":738561}
+{"level":"INFO","timestamp":"2025-06-05T19:05:14.679+0530","caller":"cmd/main.go:179","msg":"🔔 Attempting to subscribe","symbol":"TCS","exchange":"NSE","token":2953217}
+{"level":"INFO","timestamp":"2025-06-05T19:05:15.010+0530","caller":"api/ticker.go:37","msg":"✅ Connected to Zerodha WebSocket."}
+{"level":"WARN","timestamp":"2025-06-05T19:05:15.435+0530","caller":"data/ingest.go:357","msg":"⚠️ Flushed market data to DB with skipped duplicates","total_attempted":1,"rows_inserted":0,"rows_skipped":1}
+{"level":"WARN","timestamp":"2025-06-05T19:05:15.601+0530","caller":"data/ingest.go:357","msg":"⚠️ Flushed market data to DB with skipped duplicates","total_attempted":3,"rows_inserted":0,"rows_skipped":3}
+{"level":"INFO","timestamp":"2025-06-05T19:05:40.189+0530","caller":"cmd/main.go:142","msg":"Received shutdown signal","signal":"interrupt"}
+{"level":"INFO","timestamp":"2025-06-05T19:05:40.189+0530","caller":"cmd/main.go:223","msg":"Shutting down ML-Bot service gracefully..."}
+{"level":"INFO","timestamp":"2025-06-05T19:05:40.190+0530","caller":"cmd/main.go:227","msg":"ML-Bot service stopped."}
+{"level":"INFO","timestamp":"2025-06-05T19:05:40.189+0530","caller":"data/ingest.go:321","msg":"Context cancelled, flushing remaining buffer and stopping DB flusher."}
+{"level":"INFO","timestamp":"2025-06-05T19:05:40.189+0530","caller":"data/ingest.go:428","msg":"Context cancelled, stopping WebSocket broadcaster."}
+{"level":"INFO","timestamp":"2025-06-05T19:05:40.189+0530","caller":"data/ingest.go:183","msg":"Context cancelled, stopping Redis PubSub subscriber."}
+{"level":"INFO","timestamp":"2025-06-05T19:05:40.189+0530","caller":"data/ingest.go:377","msg":"Context cancelled, stopping sequence counter cleanup."}
+{"level":"INFO","timestamp":"2025-06-05T19:05:40.190+0530","caller":"cmd/main.go:92","msg":"Redis client closed gracefully."}
+{"level":"INFO","timestamp":"2025-06-05T19:05:40.190+0530","caller":"cmd/main.go:78","msg":"Database connection closed gracefully."}

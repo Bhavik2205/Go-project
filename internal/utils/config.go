@@ -21,6 +21,12 @@ type AppConfig struct {
 		Level  string `yaml:"level"`
 		Output string `yaml:"output"`
 	} `yaml:"log"`
+	Ingestion struct {
+		MarketDataBatchSize          int `yaml:"market_data_batch_size"`
+		MarketDataFlushIntervalMS    int `yaml:"market_data_flush_interval_ms"`
+		MaxTickSequenceCacheDuration int `yaml:"max_tick_sequence_cache_duration"`
+		TickSequenceCleanupInterval  int `yaml:"tick_sequence_cleanup_interval_s"`
+	} `yaml:"ingestion"`
 }
 
 // DatabaseConfig holds database connection settings
