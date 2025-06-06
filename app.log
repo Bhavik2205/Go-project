@@ -1,12 +1,5 @@
-{"level":"INFO","timestamp":"2025-06-05T16:29:56.488+0530","caller":"cmd/main.go:106","msg":"✅ .env file loaded successfully"}
-{"level":"INFO","timestamp":"2025-06-05T17:34:29.258+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}
-{"level":"INFO","timestamp":"2025-06-05T17:44:21.219+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}
-{"level":"INFO","timestamp":"2025-06-05T17:54:25.166+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}
-{"level":"INFO","timestamp":"2025-06-05T18:00:32.138+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}
-{"level":"INFO","timestamp":"2025-06-05T18:00:47.474+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}
-{"level":"INFO","timestamp":"2025-06-05T18:42:40.526+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}
-{"level":"INFO","timestamp":"2025-06-05T18:42:57.356+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}
-{"level":"INFO","timestamp":"2025-06-05T18:45:29.056+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}
-{"level":"INFO","timestamp":"2025-06-05T18:47:30.878+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}
-{"level":"INFO","timestamp":"2025-06-05T18:56:54.149+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}
-{"level":"INFO","timestamp":"2025-06-05T19:05:09.056+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-06T11:06:56.543+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-06T13:35:18.041+0530","caller":"cmd/main.go:39","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-06T13:42:05.715+0530","caller":"cmd/main.go:40","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-06T13:49:42.849+0530","caller":"cmd/main.go:40","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-06T13:58:13.263+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}

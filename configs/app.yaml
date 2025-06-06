@@ -21,5 +21,8 @@ ingestion:
   max_tick_sequence_cache_duration_s: 2 # 2 seconds
   tick_sequence_cleanup_interval_s: 1 # This must be a positive integer
 
+monitor:
+  broadcast_interval: 5s # e.g., 5 seconds
+  
 # Other application-wide settings
 graceful_shutdown_timeout_seconds: 15

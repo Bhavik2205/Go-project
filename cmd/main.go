@@ -166,7 +166,7 @@ func main() {
 	dataIngestor.StartIngestionAndBroadcast(ctx) // Pass the cancellable context
 
 	// ─── Subscribe to Market Symbols (Zerodha ticker) ───────────────────────────
-	symbols := []string{"NIFTY 50", "NIFTY BANK", "RELIANCE", "TCS"}
+	symbols := []string{"ITCHOTELS", "HDFCBANK", "RELIANCE", "TCS"}
 	preferredExchanges := []string{"NSE"}
 	var instruments []*api.InstrumentInfo
 

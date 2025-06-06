@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 	"gopkg.in/yaml.v3"
@@ -27,6 +28,9 @@ type AppConfig struct {
 		MaxTickSequenceCacheDuration int `yaml:"max_tick_sequence_cache_duration"`
 		TickSequenceCleanupInterval  int `yaml:"tick_sequence_cleanup_interval_s"`
 	} `yaml:"ingestion"`
+	Monitor struct { // ADD THIS
+		BroadcastInterval time.Duration `yaml:"broadcast_interval"`
+	} `yaml:"monitor"`
 }
 
 // DatabaseConfig holds database connection settings
