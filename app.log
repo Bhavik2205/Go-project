@@ -1,5 +1,0 @@
-{"level":"INFO","timestamp":"2025-06-06T11:06:56.543+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}
-{"level":"INFO","timestamp":"2025-06-06T13:35:18.041+0530","caller":"cmd/main.go:39","msg":"✅ .env file loaded successfully"}
-{"level":"INFO","timestamp":"2025-06-06T13:42:05.715+0530","caller":"cmd/main.go:40","msg":"✅ .env file loaded successfully"}
-{"level":"INFO","timestamp":"2025-06-06T13:49:42.849+0530","caller":"cmd/main.go:40","msg":"✅ .env file loaded successfully"}
-{"level":"INFO","timestamp":"2025-06-06T13:58:13.263+0530","caller":"cmd/main.go:38","msg":"✅ .env file loaded successfully"}

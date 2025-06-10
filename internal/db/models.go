@@ -137,6 +137,141 @@ type MarketData struct {
 	// OIDayLow           uint32 // Daily high/low for OI, typically derived or not per tick
 }
 
+// OHLCVCandle stores aggregated Open-High-Low-Close-Volume data for specific intervals.
+// This will be a TimescaleDB hypertable partitionable by instrument and interval.
+type OHLCVCandle struct {
+	InstrumentToken uint32    `gorm:"primaryKey;column:instrument_token"`
+	Interval        string    `gorm:"primaryKey;column:interval"`                                // e.g., "1m", "5m", "1h", "1d"
+	Timestamp       time.Time `gorm:"primaryKey;column:timestamp;type:timestamp with time zone"` // Start time of the candle
+	Open            float64   `gorm:"not null"`
+	High            float64   `gorm:"not null"`
+	Low             float64   `gorm:"not null"`
+	Close           float64   `gorm:"not null"`
+	Volume          float64   `gorm:"not null"` // Volume for the candle duration
+	TradeCount      uint32    // Number of trades in this candle (optional)
+	CreatedAt       time.Time `gorm:"autoCreateTime"`
+	UpdatedAt       time.Time `gorm:"autoUpdateTime"`
+}
+
+// IndicatorSMA model
+type IndicatorSMA struct {
+	InstrumentToken uint32    `gorm:"primaryKey;column:instrument_token"`
+	Interval        string    `gorm:"primaryKey;column:interval"`                                // e.g., "1m", "5m"
+	Period          int       `gorm:"primaryKey;column:period"`                                  // e.g., 20
+	Timestamp       time.Time `gorm:"primaryKey;column:timestamp;type:timestamp with time zone"` // Timestamp of the candle for which this SMA is calculated
+	Value           float64   `gorm:"not null;type:numeric"`
+	CreatedAt       time.Time `gorm:"autoCreateTime"`
+	UpdatedAt       time.Time `gorm:"autoUpdateTime"`
+}
+
+// IndicatorEMA model
+type IndicatorEMA struct {
+	InstrumentToken uint32    `gorm:"primaryKey;column:instrument_token"`
+	Interval        string    `gorm:"primaryKey;column:interval"`
+	Period          int       `gorm:"primaryKey;column:period"`
+	Timestamp       time.Time `gorm:"primaryKey;column:timestamp;type:timestamp with time zone"`
+	Value           float64   `gorm:"not null;type:numeric"`
+	CreatedAt       time.Time `gorm:"autoCreateTime"`
+	UpdatedAt       time.Time `gorm:"autoUpdateTime"`
+}
+
+// IndicatorMACD model
+type IndicatorMACD struct {
+	InstrumentToken uint32    `gorm:"primaryKey;column:instrument_token"`
+	Interval        string    `gorm:"primaryKey;column:interval"`
+	FastPeriod      int       `gorm:"primaryKey;column:fast_period"`
+	SlowPeriod      int       `gorm:"primaryKey;column:slow_period"`
+	SignalPeriod    int       `gorm:"primaryKey;column:signal_period"`
+	Timestamp       time.Time `gorm:"primaryKey;column:timestamp;type:timestamp with time zone"`
+	MACDLine        float64   `gorm:"not null;type:numeric"`
+	SignalLine      float64   `gorm:"not null;type:numeric"`
+	Histogram       float64   `gorm:"not null;type:numeric"`
+	CreatedAt       time.Time `gorm:"autoCreateTime"`
+	UpdatedAt       time.Time `gorm:"autoUpdateTime"`
+}
+
+// IndicatorATR model
+type IndicatorATR struct {
+	InstrumentToken uint32    `gorm:"primaryKey;column:instrument_token"`
+	Interval        string    `gorm:"primaryKey;column:interval"`
+	Period          int       `gorm:"primaryKey;column:period"`
+	Timestamp       time.Time `gorm:"primaryKey;column:timestamp;type:timestamp with time zone"`
+	Value           float64   `gorm:"not null;type:numeric"`
+	CreatedAt       time.Time `gorm:"autoCreateTime"`
+	UpdatedAt       time.Time `gorm:"autoUpdateTime"`
+}
+
+// IndicatorRSI model
+type IndicatorRSI struct {
+	InstrumentToken uint32    `gorm:"primaryKey;column:instrument_token"`
+	Interval        string    `gorm:"primaryKey;column:interval"`
+	Period          int       `gorm:"primaryKey;column:period"`
+	Timestamp       time.Time `gorm:"primaryKey;column:timestamp;type:timestamp with time zone"`
+	Value           float64   `gorm:"not null;type:numeric"`
+	CreatedAt       time.Time `gorm:"autoCreateTime"`
+	UpdatedAt       time.Time `gorm:"autoUpdateTime"`
+}
+
+// IndicatorStochastic model
+type IndicatorStochastic struct {
+	InstrumentToken uint32    `gorm:"primaryKey;column:instrument_token"`
+	Interval        string    `gorm:"primaryKey;column:interval"`
+	KPeriod         int       `gorm:"primaryKey;column:k_period"`
+	DPeriod         int       `gorm:"primaryKey;column:d_period"`
+	Timestamp       time.Time `gorm:"primaryKey;column:timestamp;type:timestamp with time zone"`
+	KValue          float64   `gorm:"not null;type:numeric"`
+	DValue          float64   `gorm:"not null;type:numeric"`
+	CreatedAt       time.Time `gorm:"autoCreateTime"`
+	UpdatedAt       time.Time `gorm:"autoUpdateTime"`
+}
+
+// IndicatorBollingerBands model
+type IndicatorBollingerBands struct {
+	InstrumentToken uint32    `gorm:"primaryKey;column:instrument_token"`
+	Interval        string    `gorm:"primaryKey;column:interval"`
+	Period          int       `gorm:"primaryKey;column:period"`
+	NumStdDev       float64   `gorm:"primaryKey;column:num_std_dev;type:numeric(5,2)"` // Use specific numeric type for std dev if needed
+	Timestamp       time.Time `gorm:"primaryKey;column:timestamp;type:timestamp with time zone"`
+	UpperBand       float64   `gorm:"not null;type:numeric"`
+	MiddleBand      float64   `gorm:"not null;type:numeric"`
+	LowerBand       float64   `gorm:"not null;type:numeric"`
+	CreatedAt       time.Time `gorm:"autoCreateTime"`
+	UpdatedAt       time.Time `gorm:"autoUpdateTime"`
+}
+
+// IndicatorOBV model
+type IndicatorOBV struct {
+	InstrumentToken uint32    `gorm:"primaryKey;column:instrument_token"`
+	Interval        string    `gorm:"primaryKey;column:interval"`
+	Timestamp       time.Time `gorm:"primaryKey;column:timestamp;type:timestamp with time zone"`
+	Value           float64   `gorm:"not null;type:numeric"`
+	CreatedAt       time.Time `gorm:"autoCreateTime"`
+	UpdatedAt       time.Time `gorm:"autoUpdateTime"`
+}
+
+// IndicatorVWAP model (VWAP is typically period-agnostic but reset daily, so no 'Period' column)
+type IndicatorVWAP struct {
+	InstrumentToken uint32    `gorm:"primaryKey;column:instrument_token"`
+	Interval        string    `gorm:"primaryKey;column:interval"`
+	Timestamp       time.Time `gorm:"primaryKey;column:timestamp;type:timestamp with time zone"` // Timestamp of the candle
+	Value           float64   `gorm:"not null;type:numeric"`
+	CreatedAt       time.Time `gorm:"autoCreateTime"`
+	UpdatedAt       time.Time `gorm:"autoUpdateTime"`
+}
+
+// IndicatorADX model (assuming it's implemented)
+type IndicatorADX struct {
+	InstrumentToken uint32    `gorm:"primaryKey;column:instrument_token"`
+	Interval        string    `gorm:"primaryKey;column:interval"`
+	Period          int       `gorm:"primaryKey;column:period"`
+	Timestamp       time.Time `gorm:"primaryKey;column:timestamp;type:timestamp with time zone"`
+	ADXValue        float64   `gorm:"not null;type:numeric"`
+	PlusDI          float64   `gorm:"not null;type:numeric"`
+	MinusDI         float64   `gorm:"not null;type:numeric"`
+	CreatedAt       time.Time `gorm:"autoCreateTime"`
+	UpdatedAt       time.Time `gorm:"autoUpdateTime"`
+}
+
 // Order represents a placed order (buy/sell request) by the bot.
 type Order struct {
 	gorm.Model

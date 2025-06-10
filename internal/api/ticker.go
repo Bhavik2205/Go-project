@@ -57,31 +57,31 @@ func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, redisClient *c
 			lastPrices[tick.InstrumentToken] = currentPrice
 			lastVolumes[tick.InstrumentToken] = int(currentVolume)
 
-			// Visual feedback for console (can be removed in production if not needed)
-			colorReset := "\033[0m"
-			colorRed := "\033[31m"
-			colorGreen := "\033[32m"
-			color := colorReset
+			// // Visual feedback for console (can be removed in production if not needed)
+			// colorReset := "\033[0m"
+			// colorRed := "\033[31m"
+			// colorGreen := "\033[32m"
+			// color := colorReset
 
-			if prevPrice != 0 {
-				if currentPrice > prevPrice {
-					color = colorGreen
-				} else if currentPrice < prevPrice {
-					color = colorRed
-				}
-			}
+			// if prevPrice != 0 {
+			// 	if currentPrice > prevPrice {
+			// 		color = colorGreen
+			// 	} else if currentPrice < prevPrice {
+			// 		color = colorRed
+			// 	}
+			// }
 
 			label := tokenToLabel[tick.InstrumentToken]
-			fmt.Printf(
-				"📈 %s [Token: %d] - LTP: %s%.2f%s Vol: %d O: %.2f H: %.2f L: %.2f C: %.2f\n",
-				label, tick.InstrumentToken,
-				color, currentPrice, colorReset,
-				tick.VolumeTraded,
-				tick.OHLC.Open,
-				tick.OHLC.High,
-				tick.OHLC.Low,
-				tick.OHLC.Close,
-			)
+			// fmt.Printf(
+			// 	"📈 %s [Token: %d] - LTP: %s%.2f%s Vol: %d O: %.2f H: %.2f L: %.2f C: %.2f\n",
+			// 	label, tick.InstrumentToken,
+			// 	color, currentPrice, colorReset,
+			// 	tick.VolumeTraded,
+			// 	tick.OHLC.Open,
+			// 	tick.OHLC.High,
+			// 	tick.OHLC.Low,
+			// 	tick.OHLC.Close,
+			// )
 
 			enrichedTick := struct {
 				Symbol           string          `json:"symbol"`

@@ -1,11 +1,7 @@
 # configs/strategy.yaml
 # Default parameters for various strategies
 intraday:
-  rsi_period: 14
-  rsi_buy_threshold: 30
-  rsi_sell_threshold: 70
-  ema_short_period: 20
-  ema_long_period: 50
+  # General Trade Management Parameters (these remain strategy-specific)
   stop_loss_percentage: 0.005 # 0.5%
   target_profit_percentage: 0.015 # 1.5%
   max_trades_per_day: 5

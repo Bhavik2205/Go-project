@@ -23,6 +23,9 @@ ingestion:
 
 monitor:
   broadcast_interval: 5s # e.g., 5 seconds
-  
+
+candles:
+  intervals: ["1m", "5m", "15m", "1h"] # Define intervals for candlestick generation
+
 # Other application-wide settings
 graceful_shutdown_timeout_seconds: 15

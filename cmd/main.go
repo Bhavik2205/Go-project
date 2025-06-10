@@ -55,6 +55,20 @@ func main() {
 		zap.L().Fatal(wrappedErr.Error())
 	}
 
+	// NEW: Load Strategy Config (if uncommented in the future)
+	// strategyCfg, err := utils.LoadStrategyConfig("configs/strategy.yaml")
+	// if err != nil {
+	// 	wrappedErr := utils.WrapError(1004, "Failed to load strategy config", err)
+	// 	zap.L().Fatal(wrappedErr.Error())
+	// }
+
+	// NEW: Load Indicators Config
+	indicatorsCfg, err := utils.LoadIndicatorsConfig("configs/indicators.yaml")
+	if err != nil {
+		wrappedErr := utils.WrapError(1005, "Failed to load indicators config", err)
+		zap.L().Fatal(wrappedErr.Error())
+	}
+
 	// ─── Re-init logger with config from file ───────────────────────────────────
 	utils.InitLogger(appCfg.Log.Level, appCfg.Log.Output)
 	zap.L().Info("📦 ML-Bot service starting up...")
@@ -145,25 +159,31 @@ func main() {
 
 	// ─── Initialize and inject Ingestor and other Dependencies ──────────────────
 	// wsClients will be shared between server (for accepting connections) and ingestor (for broadcasting)
-	wsClients := &sync.Map{} // Initialize the map here
-	dataIngestor := data.NewMarketDataIngestor(dbClient, redisClient, wsClients, appCfg)
+	wsClients := &sync.Map{}       // Initialize the map here for TICK data
+	candleWsClients := &sync.Map{} // NEW: Initialize the map here for CANDLE data
+
+	dataIngestor := data.NewMarketDataIngestor(dbClient, redisClient, wsClients, appCfg, indicatorsCfg)
+	// NEW: Pass candleWsClients to CandleGenerator
+	candleGenerator := data.NewCandleGenerator(dbClient, redisClient, appCfg, candleWsClients)
 
 	server.SetZerodhaClient(client)
 	server.SetDBClient(dbClient)
 	server.SetRedisClient(redisClient)
-	server.SetIngestor(dataIngestor, wsClients) // Inject the ingestor and shared WS map into the server
+	server.SetIngestor(dataIngestor, wsClients) // Inject the ingestor and shared WS map for ticks
+	server.SetCandleClients(candleWsClients)    // NEW: Inject the shared WS map for candles
 
 	// ─── Start HTTP Server (for WebSocket connections and API endpoints) ────────
 	// Run HTTP server in a goroutine so it doesn't block main.
 	go func() {
-		// The StartHTTPServer uses log.Fatal which exits on failure to start.
-		// For very advanced graceful shutdown of HTTP, you'd use http.Server.Shutdown(ctx).
-		// For this example, we assume `log.Fatal` is acceptable here.
 		server.StartHTTPServer(appCfg.Server.HTTPPort)
 	}()
 
 	// ─── Start Market Data Ingestion & Broadcasting ─────────────────────────────
 	dataIngestor.StartIngestionAndBroadcast(ctx) // Pass the cancellable context
+
+	// ─── Start Candle Generation ────────────────────────────────────────────────
+	// This starts listening to Redis ticks and aggregating them into candles.
+	go candleGenerator.StartCandleGeneration(ctx) // Pass the cancellable context
 
 	// ─── Subscribe to Market Symbols (Zerodha ticker) ───────────────────────────
 	symbols := []string{"ITCHOTELS", "HDFCBANK", "RELIANCE", "TCS"}
@@ -222,7 +242,5 @@ func main() {
 	<-ctx.Done()
 	zap.L().Info("Shutting down ML-Bot service gracefully...")
 
-	// Any additional cleanup can go here, but since goroutines are context-aware
-	// and DB/Redis defer their closes, much is handled.
 	zap.L().Info("ML-Bot service stopped.")
 }
