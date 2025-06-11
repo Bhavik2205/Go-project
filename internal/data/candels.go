@@ -12,10 +12,21 @@ import (
 	"github.com/Bhavik2205/ML-Bot/internal/cache"
 	"github.com/Bhavik2205/ML-Bot/internal/db"
 	"github.com/Bhavik2205/ML-Bot/internal/utils"
-	"github.com/gorilla/websocket" // NEW: Import for WebSocket
+	"github.com/gorilla/websocket"
 	kitemodels "github.com/zerodha/gokiteconnect/v4/models"
 	"go.uber.org/zap"
 	"gorm.io/gorm/clause"
+
+	"github.com/Bhavik2205/ML-Bot/internal/indicators" // Import indicators package to use its Candle struct
+)
+
+const (
+	marketOpenHour    = 9
+	marketOpenMinute  = 15
+	marketCloseHour   = 15
+	marketCloseMinute = 30
+	// Market timezone for consistency with broker data. Assuming IST (Asia/Kolkata)
+	marketTimezone = "Asia/Kolkata"
 )
 
 // CandleData holds the current state of a candle being built from real-time ticks.
@@ -40,30 +51,42 @@ type CandleData struct {
 // It listens to a Redis Pub/Sub channel for incoming market data ticks and
 // maintains a collection of "open" (currently forming) candles.
 type CandleGenerator struct {
-	dbClient    *db.DBClient
-	redisClient *cache.RedisClient
-	appCfg      *utils.AppConfig
-	// openCandles stores currently forming candles.
-	// Structure: map[InstrumentToken]map[Interval]*CandleData
-	// Example: openCandles[12345]["1m"] -> points to the CandleData for instrument 12345, 1-minute interval.
-	openCandles map[uint32]map[string]*CandleData
-	// openCandlesMu protects concurrent access to the openCandles map itself.
-	// It now protects all read/write access to the `openCandles` map and its nested maps within `processTickForCandles`.
-	openCandlesMu sync.Mutex // Changed from RWMutex to simple Mutex for simpler, safer full-function locking.
-	// NEW: candleWsClients stores active WebSocket connections to broadcast candle data.
-	candleWsClients *sync.Map // Added for broadcasting candles
+	dbClient        *db.DBClient
+	redisClient     *cache.RedisClient
+	appCfg          *utils.AppConfig
+	openCandles     map[uint32]map[string]*CandleData
+	openCandlesMu   sync.Mutex
+	candleWsClients *sync.Map
+	marketLoc       *time.Location
+	// indicatorManagerInputCh is the channel to send completed candles to the IndicatorsManager.
+	indicatorManagerInputCh chan<- indicators.Candle // NEW: Channel to send candles to IndicatorsManager
 }
 
 // NewCandleGenerator creates and returns a new instance of CandleGenerator.
 // It takes dependencies for database interaction, Redis Pub/Sub, and application configuration.
-// NEW: Added wsClients for candle broadcasting.
-func NewCandleGenerator(dbC *db.DBClient, rC *cache.RedisClient, cfg *utils.AppConfig, wsClients *sync.Map) *CandleGenerator {
+// It now also accepts a channel for sending completed candles to an IndicatorsManager.
+func NewCandleGenerator(
+	dbC *db.DBClient,
+	rC *cache.RedisClient,
+	cfg *utils.AppConfig,
+	wsClients *sync.Map,
+	indicatorManagerInputCh chan<- indicators.Candle, // NEW: Input channel for IndicatorsManager
+) *CandleGenerator {
+	loc, err := time.LoadLocation(marketTimezone)
+	if err != nil {
+		zap.L().Error("Failed to load market timezone, defaulting to UTC. Market time-based candle alignment may be incorrect.",
+			zap.String("timezone", marketTimezone), zap.Error(err))
+		loc = time.UTC // Fallback to UTC if timezone cannot be loaded
+	}
+
 	return &CandleGenerator{
-		dbClient:        dbC,
-		redisClient:     rC,
-		appCfg:          cfg,
-		openCandles:     make(map[uint32]map[string]*CandleData),
-		candleWsClients: wsClients, // Assign the passed WebSocket clients map
+		dbClient:                dbC,
+		redisClient:             rC,
+		appCfg:                  cfg,
+		openCandles:             make(map[uint32]map[string]*CandleData),
+		candleWsClients:         wsClients,
+		marketLoc:               loc,
+		indicatorManagerInputCh: indicatorManagerInputCh, // Assign the channel
 	}
 }
 
@@ -78,7 +101,6 @@ func (cg *CandleGenerator) StartCandleGeneration(ctx context.Context) {
 		return
 	}
 	defer func() {
-		// Ensure the Redis PubSub connection is closed when the function exits.
 		if err := pubsub.Close(); err != nil {
 			zap.L().Error("Failed to close Redis PubSub connection for candle generator", zap.Error(err))
 		}
@@ -87,39 +109,35 @@ func (cg *CandleGenerator) StartCandleGeneration(ctx context.Context) {
 
 	zap.L().Info("✅ Candle generator subscribed to Redis market data channel", zap.String("channel", api.RedisMarketDataChannel))
 
-	ch := pubsub.Channel() // Get the channel for messages
+	ch := pubsub.Channel()
 	for {
 		select {
 		case msg, ok := <-ch:
-			// Check if the channel is still open. If not, it means the Redis connection might have broken.
 			if !ok {
 				zap.L().Warn("Redis PubSub channel for candle generator closed. Attempting reconnect in 5 seconds...")
-				time.Sleep(5 * time.Second)                                        // Wait before attempting reconnect
-				pubsub = cg.redisClient.Subscribe(ctx, api.RedisMarketDataChannel) // Attempt to resubscribe
+				time.Sleep(5 * time.Second)
+				pubsub = cg.redisClient.Subscribe(ctx, api.RedisMarketDataChannel)
 				if pubsub == nil {
 					zap.L().Fatal("Failed to resubscribe to Redis PubSub for candle generation. Exiting.")
-					return // Fatal error, exit the goroutine
+					return
 				}
-				ch = pubsub.Channel() // Get the new channel from the resubscribed client
+				ch = pubsub.Channel()
 				zap.L().Info("Successfully reconnected to Redis PubSub for candle generation.")
-				continue // Continue to the next iteration to process messages from the new channel
+				continue
 			}
 
-			// Unmarshal the incoming Redis message payload.
-			// The payload is expected to be an enriched tick, which contains the original Kite tick.
 			var enrichedTick struct {
 				Symbol           string          `json:"symbol"`
 				ProcessedAtNanos int64           `json:"processed_at_nanos"`
-				Tick             json.RawMessage `json:"tick"` // `json.RawMessage` to defer unmarshalling of the nested tick
+				Tick             json.RawMessage `json:"tick"`
 			}
 			if err := json.Unmarshal([]byte(msg.Payload), &enrichedTick); err != nil {
 				zap.L().Error("Failed to unmarshal Redis message payload outer structure for candle generation",
 					zap.Error(err),
-					zap.String("payload_sample", string(msg.Payload[:min(len(msg.Payload), 200)]))) // Log a sample for debugging
+					zap.String("payload_sample", string(msg.Payload[:min(len(msg.Payload), 200)])))
 				continue
 			}
 
-			// Unmarshal the actual Kite tick from the raw message.
 			var kiteTick kitemodels.Tick
 			if err := json.Unmarshal(enrichedTick.Tick, &kiteTick); err != nil {
 				zap.L().Error("Failed to unmarshal raw tick for candle generation",
@@ -128,17 +146,69 @@ func (cg *CandleGenerator) StartCandleGeneration(ctx context.Context) {
 				continue
 			}
 
-			// Process the unmarshalled tick to update/create candles.
 			cg.processTickForCandles(kiteTick)
 
 		case <-ctx.Done():
-			// Context cancelled, indicating a graceful shutdown request.
 			zap.L().Info("Context cancelled, stopping candle generator Redis subscriber.")
-			// On graceful shutdown, flush any remaining open candles to prevent data loss.
 			cg.flushAllOpenCandles()
-			return // Exit the goroutine
+			return
 		}
 	}
+}
+
+// isMarketOpen checks if the given time falls within the defined market hours.
+// Times are converted to the market timezone for comparison.
+func (cg *CandleGenerator) isMarketOpen(t time.Time) bool {
+	// Convert the given time to the market's local time for accurate comparison
+	marketTime := t.In(cg.marketLoc)
+
+	// Define today's market open and close times in the market's local timezone
+	marketOpenToday := time.Date(marketTime.Year(), marketTime.Month(), marketTime.Day(),
+		marketOpenHour, marketOpenMinute, 0, 0, cg.marketLoc)
+	marketCloseToday := time.Date(marketTime.Year(), marketTime.Month(), marketTime.Day(),
+		marketCloseHour, marketCloseMinute, 0, 0, cg.marketLoc)
+
+	return !marketTime.Before(marketOpenToday) && !marketTime.After(marketCloseToday)
+}
+
+// getCandleStartTime aligns a given tick time to the appropriate candle start time
+// based on the interval and market hours. This handles the 9:15 AM market open.
+func (cg *CandleGenerator) getCandleStartTime(tickTime time.Time, intervalDuration time.Duration) time.Time {
+	marketTime := tickTime.In(cg.marketLoc)
+
+	// Define market open time for the current day
+	marketOpenToday := time.Date(marketTime.Year(), marketTime.Month(), marketTime.Day(),
+		marketOpenHour, marketOpenMinute, 0, 0, cg.marketLoc)
+
+	// If the tick is before market open, it should not form a candle in real-time.
+	if marketTime.Before(marketOpenToday) {
+		return time.Time{} // Return zero time, indicating invalid candle start
+	}
+
+	if intervalDuration == time.Hour {
+		// Calculate minutes since market open for the current day
+		minutesSinceMarketOpen := marketTime.Sub(marketOpenToday).Minutes()
+
+		if minutesSinceMarketOpen < 0 {
+			return time.Time{}
+		}
+
+		// Number of complete 1-hour candles passed since market open
+		hourOffset := int(minutesSinceMarketOpen / 60)
+
+		candleStartTime := marketOpenToday.Add(time.Duration(hourOffset) * time.Hour)
+
+		return candleStartTime.In(time.UTC) // Store and use UTC internally for consistency
+	} else if intervalDuration == 24*time.Hour { // For "1d" candles
+		// Daily candle always starts at market open (9:15 AM) of the current day
+		candleStartTime := marketOpenToday
+		return candleStartTime.In(time.UTC) // Store and use UTC internally
+	}
+
+	// For other intervals (1m, 5m, 15m), simply truncate to the interval boundary.
+	// Ensure truncation is done in the market's local time first, then convert to UTC.
+	truncatedLocalTime := marketTime.Truncate(intervalDuration)
+	return truncatedLocalTime.In(time.UTC) // Store and use UTC internally
 }
 
 // processTickForCandles processes an incoming market data tick to update or create
@@ -147,16 +217,21 @@ func (cg *CandleGenerator) StartCandleGeneration(ctx context.Context) {
 // across all map accesses and modifications.
 func (cg *CandleGenerator) processTickForCandles(tick kitemodels.Tick) {
 	instrumentToken := tick.InstrumentToken
-	tickTime := tick.Timestamp.Time // This is the exchange's timestamp for the tick
+	tickTime := tick.Timestamp.Time // This is the exchange's timestamp for the tick (should be in IST from Zerodha)
 
-	// Acquire a write lock on the top-level map for the entire duration of iterating through intervals
-	// and modifying the `openCandles` map (or its nested maps).
+	// Filter out ticks outside market hours (9:15 AM - 3:30 PM IST)
+	if !cg.isMarketOpen(tickTime) {
+		zap.L().Debug("Skipping tick outside market hours",
+			zap.Uint32("token", instrumentToken),
+			zap.Time("tick_time", tickTime.In(cg.marketLoc)))
+		return
+	}
+
 	cg.openCandlesMu.Lock()
-	defer cg.openCandlesMu.Unlock() // Ensure this lock is released at function exit
+	defer cg.openCandlesMu.Unlock()
 
 	instrumentCandles, ok := cg.openCandles[instrumentToken]
 	if !ok {
-		// If the instrument's candle map doesn't exist, create it.
 		instrumentCandles = make(map[string]*CandleData)
 		cg.openCandles[instrumentToken] = instrumentCandles
 	}
@@ -170,62 +245,54 @@ func (cg *CandleGenerator) processTickForCandles(tick kitemodels.Tick) {
 			continue
 		}
 
-		// Calculate the precise start time for the candle to which this tick belongs.
-		// Truncate ensures the timestamp aligns to the beginning of the interval
-		// (e.g., 10:00:30 with 1m interval becomes 10:00:00).
-		candleStartTime := tickTime.Truncate(intervalDuration)
+		// Get the precise start time for the candle to which this tick belongs, considering market hours
+		candleStartTime := cg.getCandleStartTime(tickTime, intervalDuration)
+		if candleStartTime.IsZero() {
+			zap.L().Warn("Could not determine valid candle start time for tick, skipping",
+				zap.Uint32("token", instrumentToken),
+				zap.String("interval", intervalStr),
+				zap.Time("tick_time", tickTime.In(cg.marketLoc)))
+			continue
+		}
 
-		// Get the current "open" candle for this instrument and interval.
 		currentCandle, candleExists := instrumentCandles[intervalStr]
 
 		// Check if a new candle period has started or if this is the very first tick for this interval.
+		// Note: The `candleStartTime` is already adjusted for market hours.
 		if !candleExists || currentCandle.Timestamp.Before(candleStartTime) {
 			// A new candle period has started.
 			// If an old candle existed for this interval, flush it *before* creating the new one.
 			if candleExists && currentCandle.Timestamp.Before(candleStartTime) {
-				// The old candle is now complete. Flush it.
-				// Make a copy of the completed candle data. This is crucial because
-				// `flushCandle` will acquire `currentCandle.mu`. Copying ensures that
-				// the state being flushed is exactly what was completed.
-				tempCandleToFlush := *currentCandle // Copy the value to ensure thread safety during flush
-				cg.flushCandle(&tempCandleToFlush)  // Flush the copy to the database
+				tempCandleToFlush := *currentCandle
+				cg.flushCandle(&tempCandleToFlush) // This will now also send to IndicatorsManager
 				zap.L().Debug("Flushed completed candle",
 					zap.Uint32("token", tempCandleToFlush.InstrumentToken),
 					zap.String("interval", tempCandleToFlush.Interval),
-					zap.Time("timestamp", tempCandleToFlush.Timestamp),
+					zap.Time("timestamp", tempCandleToFlush.Timestamp.In(cg.marketLoc)), // Log in market time for clarity
 					zap.Float64("close", tempCandleToFlush.Close))
 			}
 
-			// Create the new candle for the current interval.
 			newCandle := &CandleData{
 				InstrumentToken: instrumentToken,
 				Interval:        intervalStr,
-				Timestamp:       candleStartTime,
+				Timestamp:       candleStartTime, // Use the market-aligned start time
 				Open:            tick.LastPrice,
-				High:            tick.LastPrice, // Start with current price, will update with true max
-				Low:             tick.LastPrice, // Start with current price, will update with true min
+				High:            tick.LastPrice,
+				Low:             tick.LastPrice,
 				Close:           tick.LastPrice,
 				Volume:          float64(tick.LastTradedQuantity),
 				TradeCount:      1,
 				LastTickTime:    tickTime,
 			}
-			instrumentCandles[intervalStr] = newCandle // Store the newly created candle
+			instrumentCandles[intervalStr] = newCandle
 			zap.L().Debug("Created new candle",
 				zap.Uint32("token", instrumentToken),
 				zap.String("interval", intervalStr),
-				zap.Time("timestamp", candleStartTime),
+				zap.Time("timestamp", candleStartTime.In(cg.marketLoc)), // Log in market time for clarity
 				zap.Float64("open", tick.LastPrice),
-				zap.Time("tick_time", tickTime))
-
+				zap.Time("tick_time", tickTime.In(cg.marketLoc)))
 		} else {
 			// The tick belongs to the currently open candle. Update its High, Low, Close, Volume, and TradeCount.
-			// Since `cg.openCandlesMu` is held, this block is already protected from concurrent access to
-			// `currentCandle` from other `processTickForCandles` calls for the same instrument/interval.
-			// Thus, the `currentCandle.mu` is not strictly necessary *within this update logic*,
-			// but it remains crucial for `flushCandle` or any external readers/writers.
-			// The individual `currentCandle.mu` is not acquired/released here to avoid redundant locking
-			// while `cg.openCandlesMu` already provides protection.
-
 			if tick.LastPrice > currentCandle.High {
 				currentCandle.High = tick.LastPrice
 			}
@@ -239,31 +306,23 @@ func (cg *CandleGenerator) processTickForCandles(tick kitemodels.Tick) {
 			zap.L().Debug("Updated existing candle",
 				zap.Uint32("token", instrumentToken),
 				zap.String("interval", intervalStr),
-				zap.Time("timestamp", currentCandle.Timestamp),
+				zap.Time("timestamp", currentCandle.Timestamp.In(cg.marketLoc)), // Log in market time
 				zap.Float64("close", currentCandle.Close),
 				zap.Float64("volume", currentCandle.Volume))
 		}
 	}
 }
 
-// flushCandle saves a completed CandleData to the database.
-// It uses GORM's `OnConflict` clause to perform an "upsert" operation:
-// if a candle with the same primary key (InstrumentToken, Interval, Timestamp) exists,
-// it updates the existing record; otherwise, it inserts a new one.
-// This function is designed to be called with a copy of CandleData or a pointer
-// to CandleData that is NOT being actively modified by other goroutines.
-// It acquires `cd.mu` to protect its internal fields during the DB operation.
+// flushCandle saves a completed CandleData to the database and sends it for indicator calculation.
 func (cg *CandleGenerator) flushCandle(cd *CandleData) {
 	if cd == nil {
 		zap.L().Debug("Attempted to flush a nil candle, skipping.")
 		return
 	}
 
-	// Acquire the individual candle's mutex to protect its data during database serialization and writing.
 	cd.mu.Lock()
 	defer cd.mu.Unlock()
 
-	// Convert the internal CandleData struct to the database model db.OHLCVCandle.
 	ohlcvCandle := db.OHLCVCandle{
 		InstrumentToken: cd.InstrumentToken,
 		Interval:        cd.Interval,
@@ -274,15 +333,8 @@ func (cg *CandleGenerator) flushCandle(cd *CandleData) {
 		Close:           cd.Close,
 		Volume:          cd.Volume,
 		TradeCount:      cd.TradeCount,
-		// GORM will automatically handle `CreatedAt` and `UpdatedAt` fields.
 	}
 
-	// Perform the upsert operation.
-	// `Columns` specifies the unique columns that identify a conflict.
-	// `DoUpdates` specifies which columns to update if a conflict occurs.
-	//
-	// FIX: Removed "open" from DoUpdates. The Open price should be fixed once the candle starts,
-	// and not updated on subsequent conflicts.
 	result := cg.dbClient.DB.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "instrument_token"}, {Name: "interval"}, {Name: "timestamp"}},
 		DoUpdates: clause.AssignmentColumns([]string{"high", "low", "close", "volume", "trade_count", "updated_at"}),
@@ -295,8 +347,6 @@ func (cg *CandleGenerator) flushCandle(cd *CandleData) {
 			zap.String("interval", cd.Interval),
 			zap.Time("timestamp", cd.Timestamp))
 	} else if result.RowsAffected == 0 {
-		// This can happen if the record already exists and no columns were actually changed,
-		// or if a conflict occurred but `DoNothing` was implied (which is not the case here due to `DoUpdates`).
 		zap.L().Debug("OHLCVCandle already up-to-date or conflict resolved with no changes",
 			zap.Uint32("instrument_token", cd.InstrumentToken),
 			zap.String("interval", cd.Interval),
@@ -310,15 +360,41 @@ func (cg *CandleGenerator) flushCandle(cd *CandleData) {
 			zap.Float64("volume", cd.Volume),
 			zap.Uint32("trade_count", cd.TradeCount))
 
-		// NEW: Broadcast the candle after successful DB operation
+		// Broadcast the candle after successful DB operation
 		cg.broadcastCandle(cd)
+
+		zap.L().Debug("INDICATORMANAGERINPUTCH type", zap.String("type", fmt.Sprintf("%T", cg.indicatorManagerInputCh)))
+		// NEW: Send the completed candle to the IndicatorsManager for calculation.
+		// It's important to send a copy or a value to avoid concurrent modification issues.
+		if cg.indicatorManagerInputCh != nil {
+			select {
+			case cg.indicatorManagerInputCh <- indicators.Candle{ // Convert CandleData to indicators.Candle
+				InstrumentToken: cd.InstrumentToken,
+				Interval:        cd.Interval,
+				Timestamp:       cd.Timestamp,
+				Open:            cd.Open,
+				High:            cd.High,
+				Low:             cd.Low,
+				Close:           cd.Close,
+				Volume:          cd.Volume,
+				TradeCount:      cd.TradeCount,
+			}:
+				zap.L().Debug("Sent completed candle to IndicatorsManager",
+					zap.Uint32("token", cd.InstrumentToken),
+					zap.String("interval", cd.Interval),
+					zap.Time("timestamp", cd.Timestamp.In(cg.marketLoc)))
+			default:
+				zap.L().Warn("IndicatorsManager input channel is full; dropping candle for indicator calculation.",
+					zap.Uint32("token", cd.InstrumentToken),
+					zap.String("interval", cd.Interval),
+					zap.Time("timestamp", cd.Timestamp.In(cg.marketLoc)))
+			}
+		}
 	}
 }
 
 // broadcastCandle marshals and sends the candle data to all connected WebSocket clients.
 func (cg *CandleGenerator) broadcastCandle(cd *CandleData) {
-	// We only broadcast data that is safe for public consumption.
-	// The internal CandleData `mu` is held by `flushCandle` at this point.
 	broadcastData := struct {
 		InstrumentToken uint32    `json:"instrument_token"`
 		Interval        string    `json:"interval"`
@@ -347,14 +423,12 @@ func (cg *CandleGenerator) broadcastCandle(cd *CandleData) {
 		return
 	}
 
-	// Iterate through connected WebSocket clients and send the message
 	cg.candleWsClients.Range(func(key, value interface{}) bool {
 		conn, ok := value.(*websocket.Conn)
 		if !ok {
 			zap.L().Error("Invalid type in candleWsClients map for key", zap.Any("key", key))
-			// Remove bad entry
 			cg.candleWsClients.Delete(key)
-			return true // continue iteration
+			return true
 		}
 
 		if err := conn.WriteMessage(websocket.TextMessage, jsonMessage); err != nil {
@@ -362,9 +436,9 @@ func (cg *CandleGenerator) broadcastCandle(cd *CandleData) {
 				zap.Error(err),
 				zap.String("remote_addr", conn.RemoteAddr().String()),
 				zap.Uint32("token", cd.InstrumentToken))
-			cg.candleWsClients.Delete(key) // Remove the client if write fails
+			cg.candleWsClients.Delete(key)
 		}
-		return true // continue iteration
+		return true
 	})
 	zap.L().Debug("Broadcasted candle to WebSocket clients", zap.Uint32("token", cd.InstrumentToken), zap.String("interval", cd.Interval))
 }
@@ -382,9 +456,6 @@ func parseInterval(interval string) (time.Duration, error) {
 	case "1h":
 		return time.Hour, nil
 	case "1d":
-		// For "1d" (one day) candles, direct `time.Duration` might be problematic
-		// due to daylight saving changes. However, for simple truncation, 24 hours is a common proxy.
-		// For strict daily candles, a more sophisticated day-boundary detection might be needed.
 		return 24 * time.Hour, nil
 	default:
 		return 0, fmt.Errorf("unsupported interval: %s", interval)
@@ -396,17 +467,13 @@ func parseInterval(interval string) (time.Duration, error) {
 // to ensure that no in-memory candle data is lost.
 func (cg *CandleGenerator) flushAllOpenCandles() {
 	zap.L().Info("Flushing all remaining open candles during graceful shutdown...")
-	cg.openCandlesMu.Lock()         // Acquire the global lock to ensure no other goroutine is modifying openCandles
-	defer cg.openCandlesMu.Unlock() // Release the lock when function exits
+	cg.openCandlesMu.Lock()
+	defer cg.openCandlesMu.Unlock()
 
-	// Iterate through instrument tokens
 	for _, instrumentCandles := range cg.openCandles {
-		// Iterate through intervals for each instrument
 		for _, candle := range instrumentCandles {
-			// Make a copy to flush safely, as cg.openCandlesMu is held.
-			// This ensures the data is stable for the DB operation.
 			tempCandleToFlush := *candle
-			cg.flushCandle(&tempCandleToFlush)
+			cg.flushCandle(&tempCandleToFlush) // This will also send to IndicatorsManager
 		}
 	}
 	zap.L().Info("All open candles flushed successfully.")

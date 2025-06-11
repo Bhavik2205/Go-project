@@ -13,6 +13,7 @@ import (
 	"github.com/Bhavik2205/ML-Bot/internal/cache"
 	"github.com/Bhavik2205/ML-Bot/internal/data"
 	"github.com/Bhavik2205/ML-Bot/internal/db"
+	"github.com/Bhavik2205/ML-Bot/internal/indicators"
 	"github.com/Bhavik2205/ML-Bot/internal/server"
 	"github.com/Bhavik2205/ML-Bot/internal/utils"
 	"github.com/joho/godotenv"
@@ -159,18 +160,26 @@ func main() {
 
 	// ─── Initialize and inject Ingestor and other Dependencies ──────────────────
 	// wsClients will be shared between server (for accepting connections) and ingestor (for broadcasting)
-	wsClients := &sync.Map{}       // Initialize the map here for TICK data
-	candleWsClients := &sync.Map{} // NEW: Initialize the map here for CANDLE data
+	wsClients := &sync.Map{}          // Initialize the map here for TICK data
+	candleWsClients := &sync.Map{}    // NEW: Initialize the map here for CANDLE data
+	indicatorWsClients := &sync.Map{} // NEW: Initialize the map here for INDICATOR data
+
+	// 7. Create channels for inter-service communication
+	// This channel transports completed candles from CandleGenerator to IndicatorsManager.
+	// A buffered channel is used to avoid blocking the CandleGenerator.
+	indicatorManagerInputCh := make(chan indicators.Candle, 100) // NEW: Channel for candles -> IndicatorsManager
 
 	dataIngestor := data.NewMarketDataIngestor(dbClient, redisClient, wsClients, appCfg, indicatorsCfg)
 	// NEW: Pass candleWsClients to CandleGenerator
-	candleGenerator := data.NewCandleGenerator(dbClient, redisClient, appCfg, candleWsClients)
+	candleGenerator := data.NewCandleGenerator(dbClient, redisClient, appCfg, candleWsClients, indicatorManagerInputCh)
+	indicatorManager := data.NewIndicatorManager(dbClient, appCfg, indicatorsCfg, indicatorManagerInputCh, indicatorWsClients)
 
 	server.SetZerodhaClient(client)
 	server.SetDBClient(dbClient)
 	server.SetRedisClient(redisClient)
-	server.SetIngestor(dataIngestor, wsClients) // Inject the ingestor and shared WS map for ticks
-	server.SetCandleClients(candleWsClients)    // NEW: Inject the shared WS map for candles
+	server.SetIngestor(dataIngestor, wsClients)    // Inject the ingestor and shared WS map for ticks
+	server.SetCandleClients(candleWsClients)       // NEW: Inject the shared WS map for candles
+	server.SetIndicatorClients(indicatorWsClients) // NEW: Inject the shared WS map for indicators
 
 	// ─── Start HTTP Server (for WebSocket connections and API endpoints) ────────
 	// Run HTTP server in a goroutine so it doesn't block main.
@@ -179,11 +188,14 @@ func main() {
 	}()
 
 	// ─── Start Market Data Ingestion & Broadcasting ─────────────────────────────
-	dataIngestor.StartIngestionAndBroadcast(ctx) // Pass the cancellable context
+	go dataIngestor.StartIngestionAndBroadcast(ctx) // Pass the cancellable context
 
 	// ─── Start Candle Generation ────────────────────────────────────────────────
 	// This starts listening to Redis ticks and aggregating them into candles.
 	go candleGenerator.StartCandleGeneration(ctx) // Pass the cancellable context
+
+	// NEW: Start Indicator Calculation ───────────────────────────────────────────
+	go indicatorManager.StartIndicatorCalculations(ctx)
 
 	// ─── Subscribe to Market Symbols (Zerodha ticker) ───────────────────────────
 	symbols := []string{"ITCHOTELS", "HDFCBANK", "RELIANCE", "TCS"}

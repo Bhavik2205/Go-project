@@ -1,4 +1,3 @@
-// internal/db/models.go
 package db
 
 import (
@@ -129,12 +128,12 @@ type MarketData struct {
 	TotalSellQuantity uint32 `gorm:"not null"` // Total aggregated sell quantity across all price levels
 
 	// --- Fields from kitemodels.Tick that are typically NOT stored per tick in raw data ---
-	// LastTradeTime      Time   // If needed, can add, but Timestamp is usually sufficient
-	// Mode               string // More of a metadata field for the tick type itself
-	// IsTradable         bool   // Instrument metadata, better in a separate instruments table
-	// IsIndex            bool   // Instrument metadata, better in a separate instruments table
-	// OIDayHigh          uint32 // Daily high/low for OI, typically derived or not per tick
-	// OIDayLow           uint32 // Daily high/low for OI, typically derived or not per tick
+	// LastTradeTime      Time   // If needed, can add, but Timestamp is usually sufficient
+	// Mode               string // More of a metadata field for the tick type itself
+	// IsTradable         bool   // Instrument metadata, better in a separate instruments table
+	// IsIndex            bool   // Instrument metadata, better in a separate instruments table
+	// OIDayHigh          uint32 // Daily high/low for OI, typically derived or not per tick
+	// OIDayLow           uint32 // Daily high/low for OI, typically derived or not per tick
 }
 
 // OHLCVCandle stores aggregated Open-High-Low-Close-Volume data for specific intervals.
@@ -155,6 +154,7 @@ type OHLCVCandle struct {
 
 // IndicatorSMA model
 type IndicatorSMA struct {
+	IndicatorName   string    `gorm:"-" json:"indicator_name"` // Added: For WebSocket identification
 	InstrumentToken uint32    `gorm:"primaryKey;column:instrument_token"`
 	Interval        string    `gorm:"primaryKey;column:interval"`                                // e.g., "1m", "5m"
 	Period          int       `gorm:"primaryKey;column:period"`                                  // e.g., 20
@@ -166,6 +166,7 @@ type IndicatorSMA struct {
 
 // IndicatorEMA model
 type IndicatorEMA struct {
+	IndicatorName   string    `gorm:"-" json:"indicator_name"` // Added
 	InstrumentToken uint32    `gorm:"primaryKey;column:instrument_token"`
 	Interval        string    `gorm:"primaryKey;column:interval"`
 	Period          int       `gorm:"primaryKey;column:period"`
@@ -177,6 +178,7 @@ type IndicatorEMA struct {
 
 // IndicatorMACD model
 type IndicatorMACD struct {
+	IndicatorName   string    `gorm:"-" json:"indicator_name"` // Added
 	InstrumentToken uint32    `gorm:"primaryKey;column:instrument_token"`
 	Interval        string    `gorm:"primaryKey;column:interval"`
 	FastPeriod      int       `gorm:"primaryKey;column:fast_period"`
@@ -192,6 +194,7 @@ type IndicatorMACD struct {
 
 // IndicatorATR model
 type IndicatorATR struct {
+	IndicatorName   string    `gorm:"-" json:"indicator_name"` // Added
 	InstrumentToken uint32    `gorm:"primaryKey;column:instrument_token"`
 	Interval        string    `gorm:"primaryKey;column:interval"`
 	Period          int       `gorm:"primaryKey;column:period"`
@@ -203,6 +206,7 @@ type IndicatorATR struct {
 
 // IndicatorRSI model
 type IndicatorRSI struct {
+	IndicatorName   string    `gorm:"-" json:"indicator_name"` // Added
 	InstrumentToken uint32    `gorm:"primaryKey;column:instrument_token"`
 	Interval        string    `gorm:"primaryKey;column:interval"`
 	Period          int       `gorm:"primaryKey;column:period"`
@@ -214,6 +218,7 @@ type IndicatorRSI struct {
 
 // IndicatorStochastic model
 type IndicatorStochastic struct {
+	IndicatorName   string    `gorm:"-" json:"indicator_name"` // Added
 	InstrumentToken uint32    `gorm:"primaryKey;column:instrument_token"`
 	Interval        string    `gorm:"primaryKey;column:interval"`
 	KPeriod         int       `gorm:"primaryKey;column:k_period"`
@@ -227,6 +232,7 @@ type IndicatorStochastic struct {
 
 // IndicatorBollingerBands model
 type IndicatorBollingerBands struct {
+	IndicatorName   string    `gorm:"-" json:"indicator_name"` // Added
 	InstrumentToken uint32    `gorm:"primaryKey;column:instrument_token"`
 	Interval        string    `gorm:"primaryKey;column:interval"`
 	Period          int       `gorm:"primaryKey;column:period"`
@@ -241,6 +247,7 @@ type IndicatorBollingerBands struct {
 
 // IndicatorOBV model
 type IndicatorOBV struct {
+	IndicatorName   string    `gorm:"-" json:"indicator_name"` // Added
 	InstrumentToken uint32    `gorm:"primaryKey;column:instrument_token"`
 	Interval        string    `gorm:"primaryKey;column:interval"`
 	Timestamp       time.Time `gorm:"primaryKey;column:timestamp;type:timestamp with time zone"`
@@ -251,6 +258,7 @@ type IndicatorOBV struct {
 
 // IndicatorVWAP model (VWAP is typically period-agnostic but reset daily, so no 'Period' column)
 type IndicatorVWAP struct {
+	IndicatorName   string    `gorm:"-" json:"indicator_name"` // Added
 	InstrumentToken uint32    `gorm:"primaryKey;column:instrument_token"`
 	Interval        string    `gorm:"primaryKey;column:interval"`
 	Timestamp       time.Time `gorm:"primaryKey;column:timestamp;type:timestamp with time zone"` // Timestamp of the candle
@@ -261,6 +269,7 @@ type IndicatorVWAP struct {
 
 // IndicatorADX model (assuming it's implemented)
 type IndicatorADX struct {
+	IndicatorName   string    `gorm:"-" json:"indicator_name"` // Added
 	InstrumentToken uint32    `gorm:"primaryKey;column:instrument_token"`
 	Interval        string    `gorm:"primaryKey;column:interval"`
 	Period          int       `gorm:"primaryKey;column:period"`

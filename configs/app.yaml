@@ -6,8 +6,8 @@ server:
   # websocket_port: 8081
 
 log:
-  level: info # debug, info, warn, error
-  output: stdout # stdout, file (for production, typically stdout for Docker)
+  level: debug # debug, info, warn, error
+  output: logs/app.log # stdout, file (for production, typically stdout for Docker)
   # If output is 'file':
   # file_path: logs/app.log
   # max_size_mb: 100

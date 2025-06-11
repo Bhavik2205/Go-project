@@ -24,13 +24,15 @@ type ZerodhaAPI interface {
 }
 
 var (
-	zerodhaClient   ZerodhaAPI // Use the interface type
-	dbClient        *db.DBClient
-	redisClient     *cache.RedisClient
-	ingestor        *data.MarketDataIngestor // New global variable for the ingestor
-	wsClients       *sync.Map                // Shared sync.Map for WebSocket clients (for ticks)
-	candleWsClients *sync.Map                // Separate map for candle WebSocket clients
-	upgrader        = websocket.Upgrader{
+	zerodhaClient      ZerodhaAPI // Use the interface type
+	dbClient           *db.DBClient
+	redisClient        *cache.RedisClient
+	ingestor           *data.MarketDataIngestor // New global variable for the ingestor
+	wsClients          *sync.Map                // Shared sync.Map for WebSocket clients (for ticks)
+	candleWsClients    *sync.Map                // Separate map for candle WebSocket clients
+	indicatorWsClients *sync.Map                // Shared sync.Map for indicator/candle WebSocket clients
+
+	upgrader = websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool { return true }, // Allow all origins for simplicity, tighten in prod
 	}
 )
@@ -59,6 +61,10 @@ func SetIngestor(i *data.MarketDataIngestor, clients *sync.Map) {
 // SetCandleClients injects the shared WebSocket client map for candle data.
 func SetCandleClients(clients *sync.Map) {
 	candleWsClients = clients // Assign the shared map for candles
+}
+
+func SetIndicatorClients(clients *sync.Map) {
+	indicatorWsClients = clients
 }
 
 // StartHTTPServer starts the HTTP and WebSocket server
@@ -101,6 +107,9 @@ func StartHTTPServer(port int) {
 	// NEW: WebSocket endpoint for candle data
 	router.HandleFunc("/ws/candles", handleCandleConnections)
 
+	// NEW: WebSocket endpoint for real-time indicator updates
+	router.HandleFunc("/ws/indicators", handleIndicatorConnections)
+
 	zap.L().Info("🌐 Unified HTTP + WebSocket server starting...", zap.Int("port", port))
 	if err := http.ListenAndServe(":"+strconv.Itoa(port), router); err != nil {
 		zap.L().Fatal("Failed to start HTTP server", zap.Error(err))
@@ -129,6 +138,33 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 				zap.L().Info("WebSocket tick client disconnected", zap.String("remote_addr", conn.RemoteAddr().String()))
 			}
 			break // Exit the loop, triggering the defer
+		}
+	}
+}
+func handleIndicatorConnections(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		zap.L().Error("WebSocket upgrade error for indicators", zap.Error(err))
+		return
+	}
+	// Use a unique key for the sync.Map (e.g., connection remote address)
+	clientKey := conn.RemoteAddr().String()
+	indicatorWsClients.Store(clientKey, conn) // Register the new client for indicators
+
+	zap.L().Info("New WebSocket client connected for indicator data", zap.String("remote_addr", clientKey))
+
+	// Keep the connection alive, listen for close messages from the client.
+	for {
+		// Read message to detect client disconnects or pings/pongs
+		_, _, err := conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				zap.L().Debug("WebSocket unexpected close for indicator client", zap.Error(err), zap.String("remote_addr", clientKey))
+			} else {
+				zap.L().Info("WebSocket indicator client disconnected", zap.String("remote_addr", clientKey))
+			}
+			indicatorWsClients.Delete(clientKey) // Unregister the client on disconnect
+			break                                // Exit the loop
 		}
 	}
 }
