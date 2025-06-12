@@ -1,3 +1,5 @@
 # configs/model.yaml
 sentiment_model_path: "models/sentiment.onnx"
-# Add other model specific parameters as needed
+# Parameters for sentiment analysis
+sentiment_threshold_positive: 0.6 # Score above this is positive
+sentiment_threshold_negative: 0.4 # Score below this is negative

@@ -2,6 +2,30 @@
 server:
   http_port: 8080
   websocket_path: "/ws"
+  # If WebSocket runs on a separate port:
+  # websocket_port: 8081
+
 log:
-  level: info # debug, info, warn, error
-  output: logs/app.log # stdout, file
+  level: debug # debug, info, warn, error
+  output: logs/app.log # stdout, file (for production, typically stdout for Docker)
+  # If output is 'file':
+  # file_path: logs/app.log
+  # max_size_mb: 100
+  # max_backups: 5
+  # max_age_days: 7
+  # compress: true
+
+ingestion:
+  market_data_batch_size: 500 # For your local setup, 500-1000 is good
+  market_data_flush_interval_ms: 50 # 50ms for low latency
+  max_tick_sequence_cache_duration_s: 2 # 2 seconds
+  tick_sequence_cleanup_interval_s: 1 # This must be a positive integer
+
+monitor:
+  broadcast_interval: 5s # e.g., 5 seconds
+
+candles:
+  intervals: ["1m", "5m", "15m", "1h"] # Define intervals for candlestick generation
+
+# Other application-wide settings
+graceful_shutdown_timeout_seconds: 15

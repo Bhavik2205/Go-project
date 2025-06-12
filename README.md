@@ -685,11 +685,11 @@ Once TimescaleDB is enabled, you can run the rest of your database migrations to
     export DATABASE_URL="postgres://<your_db_user>:<your_db_password>@<your_db_host>:<your_db_port>/<your_db_name>?sslmode=disable"
 
     Example:
-    export DATABASE_URL="postgres://admin:secret@localhost:5432/trading_bot_db?sslmode=disable"
+    export DATABASE_URL="postgres://postgres:admin@localhost:5432/trading_bot_db?sslmode=disable"
     ```
     **Example:**
     ```bash
-    export DATABASE_URL="postgres://admin:secret@localhost:5432/trading_bot_db?sslmode=disable"
+    export DATABASE_URL="postgres://postgres:admin@localhost:5432/trading_bot_db?sslmode=disable"
     ```
 3.  **Apply migrations:**
     ```bash

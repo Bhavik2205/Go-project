@@ -1,133 +1,44 @@
-// package server
-
-// import (
-// 	"encoding/json"
-// 	"log"
-// 	"net/http"
-
-// 	"github.com/Bhavik2205/ML-Bot/internal/api"
-// 	"github.com/Bhavik2205/ML-Bot/internal/api/handlers/stockHandler"
-// 	"github.com/gorilla/mux"
-// 	"github.com/gorilla/websocket"
-// )
-
-// type Zerodha interface {
-// 	FindInstrumentToken(symbol string, exchanges []string) (*api.InstrumentInfo, error)
-// }
-
-// var zerodha *api.ZerodhaClient
-// var clients = make(map[*websocket.Conn]bool)
-// var broadcast = make(chan []byte)
-// var livePrices = make(map[string][]byte)
-
-// var upgrader = websocket.Upgrader{
-// 	CheckOrigin: func(r *http.Request) bool { return true },
-// }
-
-// func SetZerodhaClient(client *api.ZerodhaClient) {
-// 	zerodha = client
-// }
-
-// func StartHTTPServer() {
-// 	router := mux.NewRouter()
-
-// 	router.Use(enableCORS)
-
-// 	router.HandleFunc("/api/instrument", stockHandler.HandleInstrumentLookup(zerodha)).Methods("GET")
-// 	router.HandleFunc("/ws", handleConnections)
-
-// 	go handleMessages()
-
-// 	log.Println("🌐 Unified HTTP + WebSocket server started on :8000")
-// 	log.Fatal(http.ListenAndServe(":8000", router))
-// }
-
-// func handleConnections(w http.ResponseWriter, r *http.Request) {
-// 	ws, err := upgrader.Upgrade(w, r, nil)
-// 	if err != nil {
-// 		log.Println("WebSocket upgrade error:", err)
-// 		return
-// 	}
-// 	clients[ws] = true
-// 	log.Println("🧑‍💻 New WebSocket client connected.")
-// }
-
-// func handleMessages() {
-// 	for {
-// 		msg := <-broadcast
-// 		for client := range clients {
-// 			err := client.WriteMessage(websocket.TextMessage, msg)
-// 			if err != nil {
-// 				log.Printf("WebSocket write error: %v", err)
-// 				client.Close()
-// 				delete(clients, client)
-// 			}
-// 		}
-// 	}
-// }
-
-// func PushToFrontend(msg []byte) {
-// 	var tick map[string]interface{}
-// 	if err := json.Unmarshal(msg, &tick); err == nil {
-// 		if symbol, ok := tick["symbol"].(string); ok {
-// 			livePrices[symbol] = msg
-// 		}
-// 	}
-
-// 	broadcast <- msg
-// }
-
-// func enableCORS(h http.Handler) http.Handler {
-// 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-// 		w.Header().Set("Access-Control-Allow-Origin", "*")
-// 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-// 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
-// 		if r.Method == http.MethodOptions {
-// 			return
-// 		}
-
-// 		h.ServeHTTP(w, r)
-// 	})
-// }
-
-// internal/server/routes.go
 package server
 
 import (
 	"encoding/json"
-	"fmt" // Import fmt for cleaner log messages using port
-	"log"
+	"fmt"
 	"net/http"
-	"strconv" // Import for converting port to string
+	"strconv"
+	"sync"
 	"time"
 
 	"github.com/Bhavik2205/ML-Bot/internal/api"
 	"github.com/Bhavik2205/ML-Bot/internal/api/handlers/stockHandler"
-	"github.com/Bhavik2205/ML-Bot/internal/cache" // New import
-	"github.com/Bhavik2205/ML-Bot/internal/db"    // New import
+	"github.com/Bhavik2205/ML-Bot/internal/cache"
+	"github.com/Bhavik2205/ML-Bot/internal/data"
+	"github.com/Bhavik2205/ML-Bot/internal/db"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+	"go.uber.org/zap"
 )
 
-type Zerodha interface {
+// ZerodhaAPI interface to abstract Zerodha client methods used by handlers.
+type ZerodhaAPI interface {
 	FindInstrumentToken(symbol string, exchanges []string) (*api.InstrumentInfo, error)
 }
 
 var (
-	zerodhaClient *api.ZerodhaClient
-	dbClient      *db.DBClient       // New global variable for DB client
-	redisClient   *cache.RedisClient // New global variable for Redis client
-	clients       = make(map[*websocket.Conn]bool)
-	broadcast     = make(chan []byte)
-	livePrices    = make(map[string][]byte)
-	upgrader      = websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool { return true },
+	zerodhaClient      ZerodhaAPI // Use the interface type
+	dbClient           *db.DBClient
+	redisClient        *cache.RedisClient
+	ingestor           *data.MarketDataIngestor // New global variable for the ingestor
+	wsClients          *sync.Map                // Shared sync.Map for WebSocket clients (for ticks)
+	candleWsClients    *sync.Map                // Separate map for candle WebSocket clients
+	indicatorWsClients *sync.Map                // Shared sync.Map for indicator/candle WebSocket clients
+
+	upgrader = websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool { return true }, // Allow all origins for simplicity, tighten in prod
 	}
 )
 
 // SetZerodhaClient sets the Zerodha API client
-func SetZerodhaClient(client *api.ZerodhaClient) {
+func SetZerodhaClient(client ZerodhaAPI) { // Accept interface
 	zerodhaClient = client
 }
 
@@ -141,20 +52,33 @@ func SetRedisClient(client *cache.RedisClient) {
 	redisClient = client
 }
 
+// SetIngestor sets the market data ingestor and shares the WebSocket clients map.
+func SetIngestor(i *data.MarketDataIngestor, clients *sync.Map) {
+	ingestor = i
+	wsClients = clients // Assign the shared map for ticks
+}
+
+// SetCandleClients injects the shared WebSocket client map for candle data.
+func SetCandleClients(clients *sync.Map) {
+	candleWsClients = clients // Assign the shared map for candles
+}
+
+func SetIndicatorClients(clients *sync.Map) {
+	indicatorWsClients = clients
+}
+
 // StartHTTPServer starts the HTTP and WebSocket server
 func StartHTTPServer(port int) {
 	router := mux.NewRouter()
 
 	router.Use(enableCORS)
 
-	// Example handler using the DB client (you'd need to modify stockHandler accordingly)
-	router.HandleFunc("/api/instrument", stockHandler.HandleInstrumentLookup(zerodhaClient)).Methods("GET")
+	router.HandleFunc("/api/instrument", stockHandler.HandleInstrumentLookup(zerodhaClient.(*api.ZerodhaClient))).Methods("GET")
 
-	// Example of a new handler that uses DB and Redis (you would implement actual logic)
 	router.HandleFunc("/api/data/users", func(w http.ResponseWriter, r *http.Request) {
-		// Example: Fetch users from DB
 		var users []db.User
 		if err := dbClient.Find(&users).Error; err != nil {
+			zap.L().Error("Failed to fetch users from DB", zap.Error(err))
 			http.Error(w, "Failed to fetch users", http.StatusInternalServerError)
 			return
 		}
@@ -162,61 +86,116 @@ func StartHTTPServer(port int) {
 	}).Methods("GET")
 
 	router.HandleFunc("/api/cache/test", func(w http.ResponseWriter, r *http.Request) {
-		// Example: Use Redis to set and get a value
 		err := redisClient.Set("test_web_key", "Value from Web!", 5*time.Minute)
 		if err != nil {
+			zap.L().Error("Failed to set cache key", zap.Error(err))
 			http.Error(w, fmt.Sprintf("Failed to set cache: %v", err), http.StatusInternalServerError)
 			return
 		}
 		val, err := redisClient.Get("test_web_key")
 		if err != nil {
+			zap.L().Error("Failed to get cache key", zap.Error(err))
 			http.Error(w, fmt.Sprintf("Failed to get cache: %v", err), http.StatusInternalServerError)
 			return
 		}
+		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "Cache test successful: %s", val)
 	}).Methods("GET")
 
+	// Existing WebSocket endpoint for tick data
 	router.HandleFunc("/ws", handleConnections)
+	// NEW: WebSocket endpoint for candle data
+	router.HandleFunc("/ws/candles", handleCandleConnections)
 
-	go handleMessages()
+	// NEW: WebSocket endpoint for real-time indicator updates
+	router.HandleFunc("/ws/indicators", handleIndicatorConnections)
 
-	log.Printf("🌐 Unified HTTP + WebSocket server started on :%d", port)
-	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(port), router))
+	zap.L().Info("🌐 Unified HTTP + WebSocket server starting...", zap.Int("port", port))
+	if err := http.ListenAndServe(":"+strconv.Itoa(port), router); err != nil {
+		zap.L().Fatal("Failed to start HTTP server", zap.Error(err))
+	}
 }
 
+// handleConnections upgrades HTTP connection to WebSocket and registers the client with the ingestor (for ticks).
 func handleConnections(w http.ResponseWriter, r *http.Request) {
-	ws, err := upgrader.Upgrade(w, r, nil)
+	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Println("WebSocket upgrade error:", err)
+		zap.L().Error("WebSocket upgrade error for ticks", zap.Error(err))
 		return
 	}
-	clients[ws] = true
-	log.Println("🧑‍💻 New WebSocket client connected.")
-}
+	// Important: Defer Unregister for proper cleanup when connection closes
+	defer ingestor.UnregisterWebSocketClient(conn)
 
-func handleMessages() {
+	ingestor.RegisterWebSocketClient(conn) // Register the new client for ticks
+
+	// Keep the connection alive, listen for close messages from the client.
 	for {
-		msg := <-broadcast
-		for client := range clients {
-			err := client.WriteMessage(websocket.TextMessage, msg)
-			if err != nil {
-				log.Printf("WebSocket write error: %v", err)
-				client.Close()
-				delete(clients, client)
+		_, _, err := conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				zap.L().Debug("WebSocket unexpected close detected for tick client", zap.Error(err), zap.String("remote_addr", conn.RemoteAddr().String()))
+			} else {
+				zap.L().Info("WebSocket tick client disconnected", zap.String("remote_addr", conn.RemoteAddr().String()))
 			}
+			break // Exit the loop, triggering the defer
+		}
+	}
+}
+func handleIndicatorConnections(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		zap.L().Error("WebSocket upgrade error for indicators", zap.Error(err))
+		return
+	}
+	// Use a unique key for the sync.Map (e.g., connection remote address)
+	clientKey := conn.RemoteAddr().String()
+	indicatorWsClients.Store(clientKey, conn) // Register the new client for indicators
+
+	zap.L().Info("New WebSocket client connected for indicator data", zap.String("remote_addr", clientKey))
+
+	// Keep the connection alive, listen for close messages from the client.
+	for {
+		// Read message to detect client disconnects or pings/pongs
+		_, _, err := conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				zap.L().Debug("WebSocket unexpected close for indicator client", zap.Error(err), zap.String("remote_addr", clientKey))
+			} else {
+				zap.L().Info("WebSocket indicator client disconnected", zap.String("remote_addr", clientKey))
+			}
+			indicatorWsClients.Delete(clientKey) // Unregister the client on disconnect
+			break                                // Exit the loop
 		}
 	}
 }
 
-func PushToFrontend(msg []byte) {
-	var tick map[string]interface{}
-	if err := json.Unmarshal(msg, &tick); err == nil {
-		if symbol, ok := tick["symbol"].(string); ok {
-			livePrices[symbol] = msg
+// NEW: handleCandleConnections upgrades HTTP connection to WebSocket and registers the client for candle broadcasts.
+func handleCandleConnections(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		zap.L().Error("WebSocket upgrade error for candles", zap.Error(err))
+		return
+	}
+	// Use a unique key for the sync.Map (e.g., connection remote address)
+	clientKey := conn.RemoteAddr().String()
+	candleWsClients.Store(clientKey, conn) // Register the new client for candles
+
+	zap.L().Info("New WebSocket client connected for candle data", zap.String("remote_addr", clientKey))
+
+	// Keep the connection alive, listen for close messages from the client.
+	for {
+		// Read message to detect client disconnects or pings/pongs
+		_, _, err := conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				zap.L().Debug("WebSocket unexpected close for candle client", zap.Error(err), zap.String("remote_addr", clientKey))
+			} else {
+				zap.L().Info("WebSocket candle client disconnected", zap.String("remote_addr", clientKey))
+			}
+			candleWsClients.Delete(clientKey) // Unregister the client on disconnect
+			break                             // Exit the loop
 		}
 	}
-
-	broadcast <- msg
 }
 
 func enableCORS(h http.Handler) http.Handler {
@@ -226,6 +205,7 @@ func enableCORS(h http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
 		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK) // Respond to preflight request
 			return
 		}
 

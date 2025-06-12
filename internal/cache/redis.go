@@ -54,3 +54,13 @@ func (r *RedisClient) Get(key string) (string, error) {
 func (r *RedisClient) Delete(key string) error {
 	return r.Client.Del(r.context, key).Err()
 }
+
+// Publish publishes a message to a Redis channel
+func (r *RedisClient) Publish(channel string, message interface{}) error {
+	return r.Client.Publish(r.context, channel, message).Err()
+}
+
+// Subscribe subscribes to a Redis channel and returns a PubSub struct
+func (r *RedisClient) Subscribe(ctx context.Context, channels ...string) *redis.PubSub {
+	return r.Client.Subscribe(ctx, channels...)
+}

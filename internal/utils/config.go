@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 	"gopkg.in/yaml.v3"
@@ -21,6 +22,18 @@ type AppConfig struct {
 		Level  string `yaml:"level"`
 		Output string `yaml:"output"`
 	} `yaml:"log"`
+	Ingestion struct {
+		MarketDataBatchSize          int `yaml:"market_data_batch_size"`
+		MarketDataFlushIntervalMS    int `yaml:"market_data_flush_interval_ms"`
+		MaxTickSequenceCacheDuration int `yaml:"max_tick_sequence_cache_duration"`
+		TickSequenceCleanupInterval  int `yaml:"tick_sequence_cleanup_interval_s"`
+	} `yaml:"ingestion"`
+	Monitor struct { // ADD THIS
+		BroadcastInterval time.Duration `yaml:"broadcast_interval"`
+	} `yaml:"monitor"`
+	Candles struct {
+		Intervals []string `yaml:"intervals"` // e.g., ["1m", "5m", "15m", "1h", "1d"]
+	}
 }
 
 // DatabaseConfig holds database connection settings
@@ -42,6 +55,66 @@ type RedisConfig struct {
 	Port     string
 	Password string
 	DB       int
+}
+
+// StrategyConfig holds parameters for various trading strategies (excluding indicator params).
+type StrategyConfig struct {
+	Intraday struct {
+		StopLossPercentage           float64 `yaml:"stop_loss_percentage"`
+		TargetProfitPercentage       float64 `yaml:"target_profit_percentage"`
+		MaxTradesPerDay              int     `yaml:"max_trades_per_day"`
+		MaxLossPerDayPercentage      float64 `yaml:"max_loss_per_day_percentage"`
+		TradeSizePercentageOfCapital float64 `yaml:"trade_size_percentage_of_capital"`
+	} `yaml:"intraday"`
+	Swing struct {
+		HoldingPeriodDays     int     `yaml:"holding_period_days"`
+		MinReturnPercentage   float64 `yaml:"min_return_percentage"`
+		MaxDrawdownPercentage float64 `yaml:"max_drawdown_percentage"`
+	} `yaml:"swing"`
+	MarketDataTimeframe string `yaml:"market_data_timeframe"`
+}
+
+// IndicatorsConfig holds default parameters for various technical indicators. (NEW STRUCT)
+type IndicatorsConfig struct {
+	SMA struct {
+		Period int `yaml:"period"`
+	} `yaml:"sma"`
+	EMA struct {
+		ShortPeriod int `yaml:"short_period"`
+		LongPeriod  int `yaml:"long_period"`
+	} `yaml:"ema"`
+	RSI struct {
+		Period        int     `yaml:"period"`
+		BuyThreshold  float64 `yaml:"buy_threshold"`
+		SellThreshold float64 `yaml:"sell_threshold"`
+	} `yaml:"rsi"`
+	MACD struct {
+		FastPeriod   int `yaml:"fast_period"`
+		SlowPeriod   int `yaml:"slow_period"`
+		SignalPeriod int `yaml:"signal_period"`
+	} `yaml:"macd"`
+	ATR struct {
+		Period int `yaml:"period"`
+	} `yaml:"atr"`
+	Stochastic struct {
+		KPeriod int `yaml:"k_period"`
+		DPeriod int `yaml:"d_period"`
+	} `yaml:"stochastic"`
+	BollingerBands struct {
+		Period    int     `yaml:"period"`
+		NumStdDev float64 `yaml:"num_std_dev"`
+	} `yaml:"bollinger_bands"`
+	ADX struct {
+		Period int `yaml:"period"`
+	} `yaml:"adx"`
+}
+
+// ZerodhaConfig holds Zerodha API connection settings
+type ZerodhaConfig struct {
+	BaseURL               string `yaml:"base_url"`
+	WebSocketURL          string `yaml:"websocket_url"`
+	OAuthRedirectURL      string `yaml:"oauth_redirect_url"`
+	RequestTimeoutSeconds int    `yaml:"request_timeout_seconds"`
 }
 
 // LoadAppConfig loads application configurations from a YAML file
@@ -137,3 +210,42 @@ func LoadRedisConfig() (*RedisConfig, error) {
 
 	return cfg, nil
 }
+
+// LoadStrategyConfig loads strategy configurations from a YAML file.
+func LoadStrategyConfig(path string) (*StrategyConfig, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read strategy config file %s: %w", path, err)
+	}
+	var cfg StrategyConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal strategy config %s: %w", path, err)
+	}
+	return &cfg, nil
+}
+
+// LoadIndicatorsConfig loads indicator configurations from a YAML file. (NEW FUNCTION)
+func LoadIndicatorsConfig(path string) (*IndicatorsConfig, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read indicators config file %s: %w", path, err)
+	}
+	var cfg IndicatorsConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal indicators config %s: %w", path, err)
+	}
+	return &cfg, nil
+}
+
+// // LoadZerodhaConfig loads Zerodha API configurations from a YAML file.
+// func LoadZerodhaConfig(path string) (*ZerodhaConfig, error) {
+//     data, err := os.ReadFile(path)
+//     if err != nil {
+//         return nil, fmt.Errorf("failed to read Zerodha config file %s: %w", path, err)
+//     }
+//     var cfg ZerodhaConfig
+//     if err := yaml.Unmarshal(data, &cfg); err != nil {
+//         return nil, fmt.Errorf("failed to unmarshal Zerodha config %s: %w", path, err)
+//     }
+//     return &cfg, nil
+// }

@@ -1,5 +1,18 @@
 # configs/strategy.yaml
-# Add initial strategy parameters
+# Default parameters for various strategies
 intraday:
-  rsi_buy_threshold: 30
-  rsi_sell_threshold: 70
+  # General Trade Management Parameters (these remain strategy-specific)
+  stop_loss_percentage: 0.005 # 0.5%
+  target_profit_percentage: 0.015 # 1.5%
+  max_trades_per_day: 5
+  max_loss_per_day_percentage: 0.02 # 2% of capital
+  trade_size_percentage_of_capital: 0.05 # 5% of available capital per trade
+
+swing:
+  holding_period_days: 7
+  min_return_percentage: 0.03
+  max_drawdown_percentage: 0.01
+  # ... more swing specific params
+
+# General strategy settings
+market_data_timeframe: "1m" # Timeframe for OHLCV bars used by strategies

@@ -1,80 +1,19 @@
-// package main
-
-// import (
-// 	"fmt"
-// 	"log"
-// 	"os"
-
-// 	"github.com/Bhavik2205/ML-Bot/internal/api"
-// 	"github.com/Bhavik2205/ML-Bot/internal/server"
-// 	"github.com/joho/godotenv"
-// )
-
-// func main() {
-// 	if err := godotenv.Load(); err != nil {
-// 		fmt.Println("⚠️  .env file not found, using system env vars")
-// 	}
-
-// 	apiKey := os.Getenv("ZERODHA_API_KEY")
-// 	apiSecret := os.Getenv("ZERODHA_API_SECRET")
-
-// 	accessToken, err := api.LoadAccessTokenFromFile(".access_token")
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-
-// 	client := api.NewZerodhaClient(apiKey, apiSecret, accessToken)
-// 	server.SetZerodhaClient(client)
-
-// 	user, err := client.Kite.GetUserProfile()
-// 	if err != nil {
-// 		log.Fatalf("❌ Invalid session or token expired: %v", err)
-// 	}
-// 	fmt.Printf("✅ Logged in as: %s (%s)\n", user.UserName, user.UserID)
-
-// 	// Start WebSocket server for frontend clients
-// 	// go server.StartWebSocketServer()
-// 	go server.StartHTTPServer()
-
-// 	// Multiple symbols
-// 	symbols := []string{"NIFTY 50", "NIFTY BANK", "RELIANCE", "TCS"}
-// 	preferredExchanges := []string{"NSE"}
-
-// 	var infos []*api.InstrumentInfo
-// 	for _, symbol := range symbols {
-// 		info, err := client.FindInstrumentToken(symbol, preferredExchanges)
-// 		if err != nil {
-// 			log.Printf("❌ Failed to find token for %s: %v", symbol, err)
-// 			continue
-// 		}
-// 		fmt.Printf("🔍 Subscribing to %s on %s (Token: %d)\n", info.Symbol, info.Exchange, info.Token)
-// 		infos = append(infos, info)
-// 	}
-
-// 	if len(infos) == 0 {
-// 		log.Fatal("❌ No valid instruments to subscribe to.")
-// 	}
-
-// 	// Pass the handler callback to push ticks to frontend via server package
-// 	err = client.SubscribeToTicks(infos, func(jsonData []byte) {
-// 		server.PushToFrontend(jsonData)
-// 	})
-// 	if err != nil {
-// 		log.Fatalf("❌ WebSocket error: %v", err)
-// 	}
-
-// 	select {} // block forever
-// }
-
 package main
 
 import (
+	"context"
+	"fmt"
 	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/Bhavik2205/ML-Bot/internal/api"
 	"github.com/Bhavik2205/ML-Bot/internal/cache"
+	"github.com/Bhavik2205/ML-Bot/internal/data"
 	"github.com/Bhavik2205/ML-Bot/internal/db"
+	"github.com/Bhavik2205/ML-Bot/internal/indicators"
 	"github.com/Bhavik2205/ML-Bot/internal/server"
 	"github.com/Bhavik2205/ML-Bot/internal/utils"
 	"github.com/joho/godotenv"
@@ -84,7 +23,14 @@ import (
 func main() {
 	// ─── Initialize logger as early as possible ────────────────────────────────
 	utils.InitLogger("info", "app.log") // Default to info and app.log before loading config
-	defer zap.L().Sync()
+	defer func() {
+		// Ensure all buffered logs are written before exiting
+		err := zap.L().Sync()
+		// Ignore specific error on stderr when closing, common in some environments
+		if err != nil && err.Error() != "sync /dev/stderr: invalid argument" {
+			fmt.Printf("Warning: failed to sync zap logger: %v\n", err)
+		}
+	}()
 
 	// ─── Load Environment Variables ─────────────────────────────────────────────
 	if err := godotenv.Load(); err != nil {
@@ -110,6 +56,20 @@ func main() {
 		zap.L().Fatal(wrappedErr.Error())
 	}
 
+	// NEW: Load Strategy Config (if uncommented in the future)
+	// strategyCfg, err := utils.LoadStrategyConfig("configs/strategy.yaml")
+	// if err != nil {
+	// 	wrappedErr := utils.WrapError(1004, "Failed to load strategy config", err)
+	// 	zap.L().Fatal(wrappedErr.Error())
+	// }
+
+	// NEW: Load Indicators Config
+	indicatorsCfg, err := utils.LoadIndicatorsConfig("configs/indicators.yaml")
+	if err != nil {
+		wrappedErr := utils.WrapError(1005, "Failed to load indicators config", err)
+		zap.L().Fatal(wrappedErr.Error())
+	}
+
 	// ─── Re-init logger with config from file ───────────────────────────────────
 	utils.InitLogger(appCfg.Log.Level, appCfg.Log.Output)
 	zap.L().Info("📦 ML-Bot service starting up...")
@@ -121,12 +81,32 @@ func main() {
 		zap.L().Fatal(wrappedErr.Error())
 	}
 
+	// Defer closing DB connection
+	sqlDB, err := dbClient.DB.DB()
+	if err != nil {
+		zap.L().Fatal("Failed to get underlying DB connection for close", zap.Error(err))
+	}
+	defer func() {
+		if err := sqlDB.Close(); err != nil {
+			zap.L().Error("Failed to close DB connection", zap.Error(err))
+		} else {
+			zap.L().Info("Database connection closed gracefully.")
+		}
+	}()
+
 	// ─── Initialize Redis ───────────────────────────────────────────────────────
 	redisClient, err := cache.NewRedisClient(redisCfg)
 	if err != nil {
 		wrappedErr := utils.WrapError(2002, "Failed to connect to Redis", err)
 		zap.L().Fatal(wrappedErr.Error())
 	}
+	defer func() {
+		if err := redisClient.Client.Close(); err != nil { // Use Client.Close()
+			zap.L().Error("Failed to close Redis client", zap.Error(err))
+		} else {
+			zap.L().Info("Redis client closed gracefully.")
+		}
+	}()
 
 	// Optional Redis test
 	if err := redisClient.Set("test_key", "Hello from Redis!", time.Minute); err != nil {
@@ -165,37 +145,114 @@ func main() {
 	}
 	zap.L().Info("✅ Zerodha login success", zap.String("username", user.UserName), zap.String("userID", user.UserID))
 
-	// ─── Start HTTP Server ──────────────────────────────────────────────────────
-	go server.StartHTTPServer(appCfg.Server.HTTPPort)
+	// ─── Setup graceful shutdown context ────────────────────────────────────────
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel() // Ensure cancel is called on exit
 
-	// ─── Subscribe to Market Symbols ────────────────────────────────────────────
-	symbols := []string{"NIFTY 50", "NIFTY BANK", "RELIANCE", "TCS"}
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		sig := <-sigChan
+		zap.L().Info("Received shutdown signal", zap.String("signal", sig.String()))
+		cancel() // Trigger context cancellation
+	}()
+
+	// ─── Initialize and inject Ingestor and other Dependencies ──────────────────
+	// wsClients will be shared between server (for accepting connections) and ingestor (for broadcasting)
+	wsClients := &sync.Map{}          // Initialize the map here for TICK data
+	candleWsClients := &sync.Map{}    // NEW: Initialize the map here for CANDLE data
+	indicatorWsClients := &sync.Map{} // NEW: Initialize the map here for INDICATOR data
+
+	// 7. Create channels for inter-service communication
+	// This channel transports completed candles from CandleGenerator to IndicatorsManager.
+	// A buffered channel is used to avoid blocking the CandleGenerator.
+	indicatorManagerInputCh := make(chan indicators.Candle, 100) // NEW: Channel for candles -> IndicatorsManager
+
+	dataIngestor := data.NewMarketDataIngestor(dbClient, redisClient, wsClients, appCfg, indicatorsCfg)
+	// NEW: Pass candleWsClients to CandleGenerator
+	candleGenerator := data.NewCandleGenerator(dbClient, redisClient, appCfg, candleWsClients, indicatorManagerInputCh)
+	indicatorManager := data.NewIndicatorManager(dbClient, appCfg, indicatorsCfg, indicatorManagerInputCh, indicatorWsClients)
+
+	server.SetZerodhaClient(client)
+	server.SetDBClient(dbClient)
+	server.SetRedisClient(redisClient)
+	server.SetIngestor(dataIngestor, wsClients)    // Inject the ingestor and shared WS map for ticks
+	server.SetCandleClients(candleWsClients)       // NEW: Inject the shared WS map for candles
+	server.SetIndicatorClients(indicatorWsClients) // NEW: Inject the shared WS map for indicators
+
+	// ─── Start HTTP Server (for WebSocket connections and API endpoints) ────────
+	// Run HTTP server in a goroutine so it doesn't block main.
+	go func() {
+		server.StartHTTPServer(appCfg.Server.HTTPPort)
+	}()
+
+	// ─── Start Market Data Ingestion & Broadcasting ─────────────────────────────
+	go dataIngestor.StartIngestionAndBroadcast(ctx) // Pass the cancellable context
+
+	// ─── Start Candle Generation ────────────────────────────────────────────────
+	// This starts listening to Redis ticks and aggregating them into candles.
+	go candleGenerator.StartCandleGeneration(ctx) // Pass the cancellable context
+
+	// NEW: Start Indicator Calculation ───────────────────────────────────────────
+	go indicatorManager.StartIndicatorCalculations(ctx)
+
+	// ─── Subscribe to Market Symbols (Zerodha ticker) ───────────────────────────
+	symbols := []string{"ITCHOTELS", "HDFCBANK", "RELIANCE", "TCS"}
 	preferredExchanges := []string{"NSE"}
 	var instruments []*api.InstrumentInfo
 
 	for _, symbol := range symbols {
 		info, err := client.FindInstrumentToken(symbol, preferredExchanges)
 		if err != nil {
-			zap.L().Warn("⚠️ Failed to subscribe to symbol", zap.String("symbol", symbol), zap.Error(err))
+			zap.L().Warn("⚠️ Failed to find instrument token, skipping subscription", zap.String("symbol", symbol), zap.Error(err))
 			continue
 		}
-		zap.L().Info("🔔 Subscribing", zap.String("symbol", info.Symbol), zap.String("exchange", info.Exchange), zap.Int("token", int(info.Token)))
+		zap.L().Info("🔔 Attempting to subscribe", zap.String("symbol", info.Symbol), zap.String("exchange", info.Exchange), zap.Int("token", int(info.Token)))
 		instruments = append(instruments, info)
+
+		// Ensure instruments are in the DB. This is crucial as MarketData uses InstrumentToken as FK.
+		var existingInstrument db.Instrument
+		res := dbClient.DB.Where("instrument_token = ?", info.Token).First(&existingInstrument)
+		if res.Error != nil && res.Error.Error() == "record not found" {
+			newInstrument := db.Instrument{
+				InstrumentToken: uint(info.Token),
+				Exchange:        info.Exchange,
+				Tradingsymbol:   info.Symbol,
+				InstrumentType:  info.InstrumentType,
+				Name:            info.Name,
+				Segment:         info.Segment,
+				TickSize:        float64(info.TickSize),
+				LotSize:         int(info.LotSize),
+				Expiry:          nil, // Default, update if F&O
+				Strike:          nil, // Default, update if F&O
+				OptionType:      "",  // Default, update if F&O
+				LastUpdated:     time.Now(),
+			}
+			if createErr := dbClient.DB.Create(&newInstrument).Error; createErr != nil {
+				zap.L().Error("Failed to save new instrument to DB", zap.Error(createErr), zap.String("symbol", info.Symbol))
+			} else {
+				zap.L().Info("Saved new instrument to DB", zap.String("symbol", info.Symbol))
+			}
+		} else if res.Error != nil {
+			zap.L().Error("Error checking for existing instrument in DB", zap.Error(res.Error), zap.String("symbol", info.Symbol))
+		}
 	}
 
 	if len(instruments) == 0 {
-		err := utils.WrapError(4001, "No valid instruments to subscribe to", nil)
+		err := utils.WrapError(4001, "No valid instruments found to subscribe to. Check symbol configuration or Zerodha API response.", nil)
 		zap.L().Fatal(err.Error())
 	}
 
-	// ─── Start Ticker Subscription ──────────────────────────────────────────────
-	if err := client.SubscribeToTicks(instruments, func(data []byte) {
-		server.PushToFrontend(data)
-	}); err != nil {
-		wrappedErr := utils.WrapError(4002, "WebSocket subscription error", err)
+	// ─── Start Zerodha Ticker Subscription (publishes to Redis) ─────────────────
+	if err := client.SubscribeToTicks(instruments, redisClient); err != nil {
+		wrappedErr := utils.WrapError(4002, "Zerodha WebSocket subscription error", err)
 		zap.L().Fatal(wrappedErr.Error())
 	}
 
-	// ─── Block Forever ──────────────────────────────────────────────────────────
-	select {}
+	// ─── Block until context is cancelled (e.g., via SIGINT/SIGTERM) ────────────
+	<-ctx.Done()
+	zap.L().Info("Shutting down ML-Bot service gracefully...")
+
+	zap.L().Info("ML-Bot service stopped.")
 }
