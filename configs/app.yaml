@@ -20,6 +20,13 @@ ingestion:
   market_data_flush_interval_ms: 50 # 50ms for low latency
   max_tick_sequence_cache_duration_s: 2 # 2 seconds
   tick_sequence_cleanup_interval_s: 1 # This must be a positive integer
+  db_worker_count: 4 # Number of workers for database operations
+  db_flush_channel_size: 100
+  ws_broadcast_worker_count: 8 # Number of workers for WebSocket broadcasting
+  ws_broadcast_channel_size: 10000
+  redis_reconnect_initial_delay_ms: 1000 # Initial delay for Redis reconnection
+  redis_reconnect_max_delay_ms: 5000 # Maximum delay for Redis reconnection
+  redis_reconnect_max_attempts: 10
 
 monitor:
   broadcast_interval: 5s # e.g., 5 seconds

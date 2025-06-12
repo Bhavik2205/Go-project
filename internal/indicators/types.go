@@ -17,8 +17,9 @@ type Candle struct {
 }
 
 // SMA represents a Simple Moving Average value.
+// Added gorm:"table:indicator_smas" to match the SQL migration.
 type SMA struct {
-	IndicatorName   string    `json:"indicator_name"` // Added: For identification
+	IndicatorName   string    `json:"indicator_name" gorm:"-"` // Added: For identification; GORM ignores with "-"
 	InstrumentToken uint32    `json:"instrument_token"`
 	Interval        string    `json:"interval"`
 	Period          int       `json:"period"`    // e.g., 20
@@ -27,8 +28,9 @@ type SMA struct {
 }
 
 // EMA represents an Exponential Moving Average value.
+// Added gorm:"table:indicator_emas" to match the SQL migration.
 type EMA struct {
-	IndicatorName   string    `json:"indicator_name"` // Added
+	IndicatorName   string    `json:"indicator_name" gorm:"-"` // Added
 	InstrumentToken uint32    `json:"instrument_token"`
 	Interval        string    `json:"interval"`
 	Period          int       `json:"period"`
@@ -37,8 +39,9 @@ type EMA struct {
 }
 
 // MACD represents Moving Average Convergence Divergence values.
+// Added gorm:"table:indicator_macds" to match the SQL migration.
 type MACD struct {
-	IndicatorName   string    `json:"indicator_name"` // Added
+	IndicatorName   string    `json:"indicator_name" gorm:"-"` // Added
 	InstrumentToken uint32    `json:"instrument_token"`
 	Interval        string    `json:"interval"`
 	FastPeriod      int       `json:"fast_period"`   // e.g., 12
@@ -51,8 +54,9 @@ type MACD struct {
 }
 
 // ATR represents Average True Range value.
+// Added gorm:"table:indicator_atrs" to match the SQL migration.
 type ATR struct {
-	IndicatorName   string    `json:"indicator_name"` // Added
+	IndicatorName   string    `json:"indicator_name" gorm:"-"` // Added
 	InstrumentToken uint32    `json:"instrument_token"`
 	Interval        string    `json:"interval"`
 	Period          int       `json:"period"`
@@ -61,8 +65,9 @@ type ATR struct {
 }
 
 // RSI represents Relative Strength Index value.
+// Added gorm:"table:indicator_rsis" to match the SQL migration.
 type RSI struct {
-	IndicatorName   string    `json:"indicator_name"` // Added
+	IndicatorName   string    `json:"indicator_name" gorm:"-"` // Added
 	InstrumentToken uint32    `json:"instrument_token"`
 	Interval        string    `json:"interval"`
 	Period          int       `json:"period"`
@@ -71,8 +76,9 @@ type RSI struct {
 }
 
 // Stochastic represents Stochastic Oscillator values.
+// Added gorm:"table:indicator_stochastics" to match the SQL migration.
 type Stochastic struct {
-	IndicatorName   string    `json:"indicator_name"` // Added
+	IndicatorName   string    `json:"indicator_name" gorm:"-"` // Added
 	InstrumentToken uint32    `json:"instrument_token"`
 	Interval        string    `json:"interval"`
 	KPeriod         int       `json:"k_period"` // %K period
@@ -83,8 +89,9 @@ type Stochastic struct {
 }
 
 // BollingerBands represents Bollinger Bands values.
+// Added gorm:"table:indicator_bollinger_bands" to match the SQL migration.
 type BollingerBands struct {
-	IndicatorName   string    `json:"indicator_name"` // Added
+	IndicatorName   string    `json:"indicator_name" gorm:"-"` // Added
 	InstrumentToken uint32    `json:"instrument_token"`
 	Interval        string    `json:"interval"`
 	Period          int       `json:"period"`
@@ -96,8 +103,9 @@ type BollingerBands struct {
 }
 
 // OBV represents On-Balance Volume value.
+// Added gorm:"table:indicator_obvs" to match the SQL migration.
 type OBV struct {
-	IndicatorName   string    `json:"indicator_name"` // Added
+	IndicatorName   string    `json:"indicator_name" gorm:"-"` // Added
 	InstrumentToken uint32    `json:"instrument_token"`
 	Interval        string    `json:"interval"`
 	Timestamp       time.Time `json:"timestamp"`
@@ -105,8 +113,9 @@ type OBV struct {
 }
 
 // VWAP represents Volume Weighted Average Price value.
+// Added gorm:"table:indicator_vwaps" to match the SQL migration.
 type VWAP struct {
-	IndicatorName   string    `json:"indicator_name"` // Added
+	IndicatorName   string    `json:"indicator_name" gorm:"-"` // Added
 	InstrumentToken uint32    `json:"instrument_token"`
 	Interval        string    `json:"interval"` // Even though VWAP is daily reset, it's calculated over intervals.
 	Timestamp       time.Time `json:"timestamp"`
@@ -114,8 +123,9 @@ type VWAP struct {
 }
 
 // ADX represents Average Directional Index values.
+// Added gorm:"table:indicator_adxes" to match the SQL migration.
 type ADX struct {
-	IndicatorName   string    `json:"indicator_name"` // Added
+	IndicatorName   string    `json:"indicator_name" gorm:"-"` // Added
 	InstrumentToken uint32    `json:"instrument_token"`
 	Interval        string    `json:"interval"`
 	Period          int       `json:"period"`
@@ -125,63 +135,55 @@ type ADX struct {
 	MinusDI         float64   `json:"minus_di"`  // Negative Directional Indicator (-DI)
 }
 
-// Indicator interface for common methods across all indicator types.
-// This allows for polymorphic handling of different indicators.
-type Indicator interface {
-	GetInstrumentToken() uint32
-	GetInterval() string
-	GetTimestamp() time.Time
-	GetIndicatorName() string // Added: Get the name of the indicator
-}
-
 // --- Implementations of the Indicator interface for each struct ---
+// These belong here because the structs themselves are defined in types.go
 
 func (s SMA) GetInstrumentToken() uint32 { return s.InstrumentToken }
 func (s SMA) GetInterval() string        { return s.Interval }
 func (s SMA) GetTimestamp() time.Time    { return s.Timestamp }
-func (s SMA) GetIndicatorName() string   { return s.IndicatorName } // Added
+func (s SMA) GetIndicatorName() string   { return s.IndicatorName }
 
 func (e EMA) GetInstrumentToken() uint32 { return e.InstrumentToken }
 func (e EMA) GetInterval() string        { return e.Interval }
 func (e EMA) GetTimestamp() time.Time    { return e.Timestamp }
-func (e EMA) GetIndicatorName() string   { return e.IndicatorName } // Added
+func (e EMA) GetIndicatorName() string   { return e.IndicatorName }
 
 func (m MACD) GetInstrumentToken() uint32 { return m.InstrumentToken }
 func (m MACD) GetInterval() string        { return m.Interval }
 func (m MACD) GetTimestamp() time.Time    { return m.Timestamp }
-func (m MACD) GetIndicatorName() string   { return m.IndicatorName } // Added
+func (m MACD) GetIndicatorName() string   { return m.IndicatorName }
 
 func (a ATR) GetInstrumentToken() uint32 { return a.InstrumentToken }
 func (a ATR) GetInterval() string        { return a.Interval }
 func (a ATR) GetTimestamp() time.Time    { return a.Timestamp }
-func (a ATR) GetIndicatorName() string   { return a.IndicatorName } // Added
+func (a ATR) GetIndicatorName() string   { return a.IndicatorName }
 
 func (r RSI) GetInstrumentToken() uint32 { return r.InstrumentToken }
 func (r RSI) GetInterval() string        { return r.Interval }
 func (r RSI) GetTimestamp() time.Time    { return r.Timestamp }
-func (r RSI) GetIndicatorName() string   { return r.IndicatorName } // Added
+func (r RSI) GetIndicatorName() string   { return r.IndicatorName }
 
 func (s Stochastic) GetInstrumentToken() uint32 { return s.InstrumentToken }
 func (s Stochastic) GetInterval() string        { return s.Interval }
 func (s Stochastic) GetTimestamp() time.Time    { return s.Timestamp }
-func (s Stochastic) GetIndicatorName() string   { return s.IndicatorName } // Added
+func (s Stochastic) GetIndicatorName() string   { return s.IndicatorName }
 
 func (b BollingerBands) GetInstrumentToken() uint32 { return b.InstrumentToken }
 func (b BollingerBands) GetInterval() string        { return b.Interval }
 func (b BollingerBands) GetTimestamp() time.Time    { return b.Timestamp }
-func (b BollingerBands) GetIndicatorName() string   { return b.IndicatorName } // Added
+func (b BollingerBands) GetIndicatorName() string   { return b.IndicatorName }
 
 func (o OBV) GetInstrumentToken() uint32 { return o.InstrumentToken }
 func (o OBV) GetInterval() string        { return o.Interval }
 func (o OBV) GetTimestamp() time.Time    { return o.Timestamp }
-func (o OBV) GetIndicatorName() string   { return o.IndicatorName } // Added
+func (o OBV) GetIndicatorName() string   { return o.IndicatorName }
 
 func (v VWAP) GetInstrumentToken() uint32 { return v.InstrumentToken }
 func (v VWAP) GetInterval() string        { return v.Interval }
 func (v VWAP) GetTimestamp() time.Time    { return v.Timestamp }
-func (v VWAP) GetIndicatorName() string   { return v.IndicatorName } // Added
+func (v VWAP) GetIndicatorName() string   { return v.IndicatorName }
 
 func (a ADX) GetInstrumentToken() uint32 { return a.InstrumentToken }
 func (a ADX) GetInterval() string        { return a.Interval }
 func (a ADX) GetTimestamp() time.Time    { return a.Timestamp }
-func (a ADX) GetIndicatorName() string   { return a.IndicatorName } // Added
+func (a ADX) GetIndicatorName() string   { return a.IndicatorName }
