@@ -24,3 +24,5 @@ go.work.sum
 # env file
 .env
 venv/
+
+bash.exe.stackdump
