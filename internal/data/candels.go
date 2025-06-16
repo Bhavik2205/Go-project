@@ -23,8 +23,8 @@ import (
 const (
 	marketOpenHour    = 9
 	marketOpenMinute  = 15
-	marketCloseHour   = 15
-	marketCloseMinute = 30
+	marketCloseHour   = 23 //actual 15
+	marketCloseMinute = 59 //actual 30
 	// Market timezone for consistency with broker data. Assuming IST (Asia/Kolkata)
 	marketTimezone = "Asia/Kolkata"
 )

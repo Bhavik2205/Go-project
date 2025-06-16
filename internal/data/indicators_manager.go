@@ -421,6 +421,11 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+type wsClient struct {
+	conn *websocket.Conn
+	send chan []byte
+}
+
 // CandleHistory holds a series of candles for a specific instrument and interval.
 // It includes a mutex to protect concurrent access to the Candles slice.
 type CandleHistory struct {
@@ -506,6 +511,30 @@ func NewIndicatorManager(
 	}
 
 	return im
+}
+
+// --- WebSocket Write Pump ---
+func (im *IndicatorManager) writePump(client *wsClient) {
+	defer func() {
+		client.conn.Close()
+		im.indicatorWsClients.Delete(client.conn)
+	}()
+	for msg := range client.send {
+		if err := client.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+			zap.L().Error("WebSocket write error, closing connection", zap.Error(err))
+			break
+		}
+	}
+}
+
+// RegisterWebSocketClient should be called when a new client connects
+func (im *IndicatorManager) RegisterWebSocketClient(conn *websocket.Conn) {
+	client := &wsClient{
+		conn: conn,
+		send: make(chan []byte, 32),
+	}
+	im.indicatorWsClients.Store(conn, client)
+	go im.writePump(client)
 }
 
 // StartIndicatorCalculations listens for incoming candles and processes them
@@ -633,20 +662,23 @@ func (im *IndicatorManager) handleOutput(indicator indicators.IndicatorResult) {
 
 	// Broadcast to all connected WebSocket clients
 	im.indicatorWsClients.Range(func(key, value interface{}) bool {
-		conn, ok := value.(*websocket.Conn)
+		client, ok := value.(*wsClient)
 		if !ok {
-			zap.L().Warn("Found non-websocket.Conn in indicatorWsClients map, deleting.", zap.Any("key", key))
-			im.indicatorWsClients.Delete(key)
-			return true
+			// For backward compatibility: handle old code that stored *websocket.Conn directly
+			if conn, ok2 := value.(*websocket.Conn); ok2 {
+				client = &wsClient{conn: conn, send: make(chan []byte, 32)}
+				im.indicatorWsClients.Store(key, client)
+				go im.writePump(client)
+			} else {
+				zap.L().Warn("Found non-wsClient in indicatorWsClients map, deleting.", zap.Any("key", key))
+				im.indicatorWsClients.Delete(key)
+				return true
+			}
 		}
-
-		err := conn.WriteMessage(websocket.TextMessage, message)
-		if err != nil {
-			zap.L().Error("Failed to write indicator message to WebSocket client, removing client",
-				zap.Error(err),
-				zap.String("remote_addr", conn.RemoteAddr().String()),
-				zap.Uint32("token", indicator.GetInstrumentToken()))
-			im.indicatorWsClients.Delete(key)
+		select {
+		case client.send <- message:
+		default:
+			zap.L().Warn("WebSocket send channel full, dropping indicator message")
 		}
 		return true
 	})

@@ -26,3 +26,8 @@ go.work.sum
 venv/
 
 bash.exe.stackdump
+
+# Logs
+logs/app.log
+stdout
+app.log

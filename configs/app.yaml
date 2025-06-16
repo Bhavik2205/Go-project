@@ -6,7 +6,7 @@ server:
   # websocket_port: 8081
 
 log:
-  level: debug # debug, info, warn, error
+  level: info # debug, info, warn, error
   output: logs/app.log # stdout, file (for production, typically stdout for Docker)
   # If output is 'file':
   # file_path: logs/app.log
@@ -36,3 +36,7 @@ candles:
 
 # Other application-wide settings
 graceful_shutdown_timeout_seconds: 15
+
+market:
+  simulate: true
+  simulation_speed_multiplier: 3.0 # This can be set to any float value >= 0.1
