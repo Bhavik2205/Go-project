@@ -13,12 +13,20 @@ import (
 	"github.com/Bhavik2205/ML-Bot/internal/cache"
 	"github.com/Bhavik2205/ML-Bot/internal/data"
 	"github.com/Bhavik2205/ML-Bot/internal/db"
+	monitor "github.com/Bhavik2205/ML-Bot/internal/execution"
 	"github.com/Bhavik2205/ML-Bot/internal/indicators"
 	"github.com/Bhavik2205/ML-Bot/internal/server"
 	"github.com/Bhavik2205/ML-Bot/internal/utils"
 	"github.com/joho/godotenv"
 	"go.uber.org/zap"
 )
+
+// --- NEW: Panic recovery helper for goroutines ---
+func recoverGoroutine(where string) {
+	if r := recover(); r != nil {
+		zap.L().Error("Panic recovered in goroutine", zap.String("where", where), zap.Any("recover", r))
+	}
+}
 
 func main() {
 	// ─── Initialize logger as early as possible ────────────────────────────────
@@ -153,6 +161,7 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
+		defer recoverGoroutine("SignalHandler") // --- NEW: Panic recovery
 		sig := <-sigChan
 		zap.L().Info("Received shutdown signal", zap.String("signal", sig.String()))
 		cancel() // Trigger context cancellation
@@ -172,6 +181,11 @@ func main() {
 	dataIngestor := data.NewMarketDataIngestor(dbClient, redisClient, wsClients, appCfg, indicatorsCfg)
 	// NEW: Pass candleWsClients to CandleGenerator
 	candleGenerator := data.NewCandleGenerator(dbClient, redisClient, appCfg, candleWsClients, indicatorManagerInputCh)
+	server.SetCandleGenerator(candleGenerator) // <-- ADD THIS LINE
+	go func() {
+		defer recoverGoroutine("CandleDBWriter") // --- NEW: Panic recovery
+		candleGenerator.StartCandleDBWriter(ctx)
+	}()
 	indicatorManager := data.NewIndicatorManager(dbClient, appCfg, indicatorsCfg, indicatorManagerInputCh, indicatorWsClients)
 
 	server.SetZerodhaClient(client)
@@ -184,18 +198,35 @@ func main() {
 	// ─── Start HTTP Server (for WebSocket connections and API endpoints) ────────
 	// Run HTTP server in a goroutine so it doesn't block main.
 	go func() {
+		defer recoverGoroutine("HTTPServer")
 		server.StartHTTPServer(appCfg.Server.HTTPPort)
 	}()
 
 	// ─── Start Market Data Ingestion & Broadcasting ─────────────────────────────
-	go dataIngestor.StartIngestionAndBroadcast(ctx) // Pass the cancellable context
+	go func() {
+		defer recoverGoroutine("MarketDataIngestor")
+		dataIngestor.StartIngestionAndBroadcast(ctx)
+	}()
 
 	// ─── Start Candle Generation ────────────────────────────────────────────────
 	// This starts listening to Redis ticks and aggregating them into candles.
-	go candleGenerator.StartCandleGeneration(ctx) // Pass the cancellable context
-
+	go func() {
+		defer recoverGoroutine("CandleGenerator")
+		candleGenerator.StartCandleGeneration(ctx)
+	}()
 	// NEW: Start Indicator Calculation ───────────────────────────────────────────
-	go indicatorManager.StartIndicatorCalculations(ctx)
+	go func() {
+		defer recoverGoroutine("IndicatorManager")
+		indicatorManager.StartIndicatorCalculations(ctx)
+	}()
+
+	// NEW: Start System Monitoring ----------------------------------------------
+	go func() {
+		defer recoverGoroutine("SystemMonitor")
+		monitor.StartSystemMonitor(5*time.Second, func(msg string) {
+			zap.L().Warn(msg)
+		})
+	}()
 
 	// ─── Subscribe to Market Symbols (Zerodha ticker) ───────────────────────────
 	symbols := []string{"ITCHOTELS", "HDFCBANK", "RELIANCE", "TCS"}
@@ -317,6 +348,7 @@ func main() {
 		// Start the simulated ticker, passing the graceful shutdown context,
 		// the instruments, Redis client, and the configured simulation speed.
 		go func() { // Run in a goroutine so it doesn't block main
+			defer recoverGoroutine("SimulatedTicker")
 			if err := simGenerator.SimulateTicks(ctx, instruments, redisClient, appCfg.Market.SimulationSpeedMultiplier); err != nil {
 				wrappedErr := utils.WrapError(4003, "Simulated market data feed error", err)
 				zap.L().Fatal(wrappedErr.Error())
