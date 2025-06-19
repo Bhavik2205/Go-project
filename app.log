@@ -1,0 +1,10 @@
+{"level":"INFO","timestamp":"2025-06-17T10:44:26.230+0530","caller":"cmd/main.go:39","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-17T11:04:55.930+0530","caller":"cmd/main.go:39","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-17T14:01:22.954+0530","caller":"cmd/main.go:39","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-17T14:14:09.731+0530","caller":"cmd/main.go:40","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-17T14:26:55.413+0530","caller":"cmd/main.go:40","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-17T14:41:28.101+0530","caller":"cmd/main.go:40","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-17T14:50:36.127+0530","caller":"cmd/main.go:40","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-17T15:10:42.213+0530","caller":"cmd/main.go:40","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-17T15:48:37.658+0530","caller":"cmd/main.go:40","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2025-06-17T17:24:48.000+0530","caller":"cmd/main.go:47","msg":"✅ .env file loaded successfully"}

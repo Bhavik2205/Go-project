@@ -23,7 +23,7 @@ CREATE INDEX IF NOT EXISTS idx_ohlcv_candles_instrument_interval ON ohlcv_candle
 ---
 -- Table for Simple Moving Average (SMA)
 ---
-CREATE TABLE IF NOT EXISTS indicator_smas (
+CREATE TABLE IF NOT EXISTS smas (
     instrument_token INTEGER NOT NULL,
     interval VARCHAR(10) NOT NULL,
     period INTEGER NOT NULL,
@@ -34,12 +34,12 @@ CREATE TABLE IF NOT EXISTS indicator_smas (
     PRIMARY KEY (instrument_token, interval, period, timestamp)
 );
 
-CREATE INDEX IF NOT EXISTS idx_indicator_smas_instrument_interval_period ON indicator_smas (instrument_token, interval, period, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_smas_instrument_interval_period ON smas (instrument_token, interval, period, timestamp DESC);
 
 ---
 -- Table for Exponential Moving Average (EMA)
 ---
-CREATE TABLE IF NOT EXISTS indicator_emas (
+CREATE TABLE IF NOT EXISTS emas (
     instrument_token INTEGER NOT NULL,
     interval VARCHAR(10) NOT NULL,
     period INTEGER NOT NULL,
@@ -50,12 +50,12 @@ CREATE TABLE IF NOT EXISTS indicator_emas (
     PRIMARY KEY (instrument_token, interval, period, timestamp)
 );
 
-CREATE INDEX IF NOT EXISTS idx_indicator_emas_instrument_interval_period ON indicator_emas (instrument_token, interval, period, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_emas_instrument_interval_period ON emas (instrument_token, interval, period, timestamp DESC);
 
 ---
 -- Table for Moving Average Convergence Divergence (MACD)
 ---
-CREATE TABLE IF NOT EXISTS indicator_macds (
+CREATE TABLE IF NOT EXISTS macds (
     instrument_token INTEGER NOT NULL,
     interval VARCHAR(10) NOT NULL,
     fast_period INTEGER NOT NULL,
@@ -70,12 +70,12 @@ CREATE TABLE IF NOT EXISTS indicator_macds (
     PRIMARY KEY (instrument_token, interval, fast_period, slow_period, signal_period, timestamp)
 );
 
-CREATE INDEX IF NOT EXISTS idx_indicator_macds_instrument_interval_periods ON indicator_macds (instrument_token, interval, fast_period, slow_period, signal_period, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_macds_instrument_interval_periods ON macds (instrument_token, interval, fast_period, slow_period, signal_period, timestamp DESC);
 
 ---
 -- Table for Average True Range (ATR)
 ---
-CREATE TABLE IF NOT EXISTS indicator_atrs (
+CREATE TABLE IF NOT EXISTS atrs (
     instrument_token INTEGER NOT NULL,
     interval VARCHAR(10) NOT NULL,
     period INTEGER NOT NULL,
@@ -86,12 +86,12 @@ CREATE TABLE IF NOT EXISTS indicator_atrs (
     PRIMARY KEY (instrument_token, interval, period, timestamp)
 );
 
-CREATE INDEX IF NOT EXISTS idx_indicator_atrs_instrument_interval_period ON indicator_atrs (instrument_token, interval, period, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_atrs_instrument_interval_period ON atrs (instrument_token, interval, period, timestamp DESC);
 
 ---
 -- Table for Relative Strength Index (RSI)
 ---
-CREATE TABLE IF NOT EXISTS indicator_rsis (
+CREATE TABLE IF NOT EXISTS rsis (
     instrument_token INTEGER NOT NULL,
     interval VARCHAR(10) NOT NULL,
     period INTEGER NOT NULL,
@@ -102,12 +102,12 @@ CREATE TABLE IF NOT EXISTS indicator_rsis (
     PRIMARY KEY (instrument_token, interval, period, timestamp)
 );
 
-CREATE INDEX IF NOT EXISTS idx_indicator_rsis_instrument_interval_period ON indicator_rsis (instrument_token, interval, period, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_rsis_instrument_interval_period ON rsis (instrument_token, interval, period, timestamp DESC);
 
 ---
 -- Table for Stochastic Oscillator
 ---
-CREATE TABLE IF NOT EXISTS indicator_stochastics (
+CREATE TABLE IF NOT EXISTS stochastics (
     instrument_token INTEGER NOT NULL,
     interval VARCHAR(10) NOT NULL,
     k_period INTEGER NOT NULL,
@@ -120,12 +120,12 @@ CREATE TABLE IF NOT EXISTS indicator_stochastics (
     PRIMARY KEY (instrument_token, interval, k_period, d_period, timestamp)
 );
 
-CREATE INDEX IF NOT EXISTS idx_indicator_stochastics_instrument_interval_periods ON indicator_stochastics (instrument_token, interval, k_period, d_period, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_stochastics_instrument_interval_periods ON stochastics (instrument_token, interval, k_period, d_period, timestamp DESC);
 
 ---
 -- Table for Bollinger Bands
 ---
-CREATE TABLE IF NOT EXISTS indicator_bollinger_bands (
+CREATE TABLE IF NOT EXISTS bollinger_bands (
     instrument_token INTEGER NOT NULL,
     interval VARCHAR(10) NOT NULL,
     period INTEGER NOT NULL,
@@ -139,12 +139,12 @@ CREATE TABLE IF NOT EXISTS indicator_bollinger_bands (
     PRIMARY KEY (instrument_token, interval, period, num_std_dev, timestamp)
 );
 
-CREATE INDEX IF NOT EXISTS idx_indicator_bollinger_bands_instrument_interval_params ON indicator_bollinger_bands (instrument_token, interval, period, num_std_dev, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_bollinger_bands_instrument_interval_params ON bollinger_bands (instrument_token, interval, period, num_std_dev, timestamp DESC);
 
 ---
 -- Table for On-Balance Volume (OBV)
 ---
-CREATE TABLE IF NOT EXISTS indicator_obvs (
+CREATE TABLE IF NOT EXISTS obvs (
     instrument_token INTEGER NOT NULL,
     interval VARCHAR(10) NOT NULL,
     timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -154,12 +154,12 @@ CREATE TABLE IF NOT EXISTS indicator_obvs (
     PRIMARY KEY (instrument_token, interval, timestamp)
 );
 
-CREATE INDEX IF NOT EXISTS idx_indicator_obvs_instrument_interval ON indicator_obvs (instrument_token, interval, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_obvs_instrument_interval ON obvs (instrument_token, interval, timestamp DESC);
 
 ---
 -- Table for Volume Weighted Average Price (VWAP)
 ---
-CREATE TABLE IF NOT EXISTS indicator_vwaps (
+CREATE TABLE IF NOT EXISTS vwaps (
     instrument_token INTEGER NOT NULL,
     interval VARCHAR(10) NOT NULL,
     timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -169,12 +169,12 @@ CREATE TABLE IF NOT EXISTS indicator_vwaps (
     PRIMARY KEY (instrument_token, interval, timestamp)
 );
 
-CREATE INDEX IF NOT EXISTS idx_indicator_vwaps_instrument_interval ON indicator_vwaps (instrument_token, interval, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_vwaps_instrument_interval ON vwaps (instrument_token, interval, timestamp DESC);
 
 ---
 -- Table for Average Directional Index (ADX)
 ---
-CREATE TABLE IF NOT EXISTS indicator_adxes (
+CREATE TABLE IF NOT EXISTS adxes (
     instrument_token INTEGER NOT NULL,
     interval VARCHAR(10) NOT NULL,
     period INTEGER NOT NULL,
@@ -187,4 +187,4 @@ CREATE TABLE IF NOT EXISTS indicator_adxes (
     PRIMARY KEY (instrument_token, interval, period, timestamp)
 );
 
-CREATE INDEX IF NOT EXISTS idx_indicator_adxes_instrument_interval_period ON indicator_adxes (instrument_token, interval, period, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_adxes_instrument_interval_period ON adxes (instrument_token, interval, period, timestamp DESC);

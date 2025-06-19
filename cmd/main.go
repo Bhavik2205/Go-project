@@ -13,12 +13,20 @@ import (
 	"github.com/Bhavik2205/ML-Bot/internal/cache"
 	"github.com/Bhavik2205/ML-Bot/internal/data"
 	"github.com/Bhavik2205/ML-Bot/internal/db"
+	monitor "github.com/Bhavik2205/ML-Bot/internal/execution"
 	"github.com/Bhavik2205/ML-Bot/internal/indicators"
 	"github.com/Bhavik2205/ML-Bot/internal/server"
 	"github.com/Bhavik2205/ML-Bot/internal/utils"
 	"github.com/joho/godotenv"
 	"go.uber.org/zap"
 )
+
+// --- NEW: Panic recovery helper for goroutines ---
+func recoverGoroutine(where string) {
+	if r := recover(); r != nil {
+		zap.L().Error("Panic recovered in goroutine", zap.String("where", where), zap.Any("recover", r))
+	}
+}
 
 func main() {
 	// ─── Initialize logger as early as possible ────────────────────────────────
@@ -153,6 +161,7 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
+		defer recoverGoroutine("SignalHandler") // --- NEW: Panic recovery
 		sig := <-sigChan
 		zap.L().Info("Received shutdown signal", zap.String("signal", sig.String()))
 		cancel() // Trigger context cancellation
@@ -172,6 +181,11 @@ func main() {
 	dataIngestor := data.NewMarketDataIngestor(dbClient, redisClient, wsClients, appCfg, indicatorsCfg)
 	// NEW: Pass candleWsClients to CandleGenerator
 	candleGenerator := data.NewCandleGenerator(dbClient, redisClient, appCfg, candleWsClients, indicatorManagerInputCh)
+	server.SetCandleGenerator(candleGenerator) // <-- ADD THIS LINE
+	go func() {
+		defer recoverGoroutine("CandleDBWriter") // --- NEW: Panic recovery
+		candleGenerator.StartCandleDBWriter(ctx)
+	}()
 	indicatorManager := data.NewIndicatorManager(dbClient, appCfg, indicatorsCfg, indicatorManagerInputCh, indicatorWsClients)
 
 	server.SetZerodhaClient(client)
@@ -184,18 +198,35 @@ func main() {
 	// ─── Start HTTP Server (for WebSocket connections and API endpoints) ────────
 	// Run HTTP server in a goroutine so it doesn't block main.
 	go func() {
+		defer recoverGoroutine("HTTPServer")
 		server.StartHTTPServer(appCfg.Server.HTTPPort)
 	}()
 
 	// ─── Start Market Data Ingestion & Broadcasting ─────────────────────────────
-	go dataIngestor.StartIngestionAndBroadcast(ctx) // Pass the cancellable context
+	go func() {
+		defer recoverGoroutine("MarketDataIngestor")
+		dataIngestor.StartIngestionAndBroadcast(ctx)
+	}()
 
 	// ─── Start Candle Generation ────────────────────────────────────────────────
 	// This starts listening to Redis ticks and aggregating them into candles.
-	go candleGenerator.StartCandleGeneration(ctx) // Pass the cancellable context
-
+	go func() {
+		defer recoverGoroutine("CandleGenerator")
+		candleGenerator.StartCandleGeneration(ctx)
+	}()
 	// NEW: Start Indicator Calculation ───────────────────────────────────────────
-	go indicatorManager.StartIndicatorCalculations(ctx)
+	go func() {
+		defer recoverGoroutine("IndicatorManager")
+		indicatorManager.StartIndicatorCalculations(ctx)
+	}()
+
+	// NEW: Start System Monitoring ----------------------------------------------
+	go func() {
+		defer recoverGoroutine("SystemMonitor")
+		monitor.StartSystemMonitor(5*time.Second, func(msg string) {
+			zap.L().Warn(msg)
+		})
+	}()
 
 	// ─── Subscribe to Market Symbols (Zerodha ticker) ───────────────────────────
 	symbols := []string{"ITCHOTELS", "HDFCBANK", "RELIANCE", "TCS"}
@@ -245,9 +276,90 @@ func main() {
 	}
 
 	// ─── Start Zerodha Ticker Subscription (publishes to Redis) ─────────────────
-	if err := client.SubscribeToTicks(instruments, redisClient); err != nil {
-		wrappedErr := utils.WrapError(4002, "Zerodha WebSocket subscription error", err)
-		zap.L().Fatal(wrappedErr.Error())
+
+	if appCfg.Market.Simulate {
+		zap.L().Info("Starting **SIMULATED** market data feed based on app configuration.")
+		// Create a simulated client instance.
+		simGenerator := api.NewSimulatedZerodhaClient()
+
+		// Define instruments for simulation. These are hardcoded for simplicity.
+		// In a production simulation environment, you might load these from a dedicated config file or a database.
+		instruments := []*api.InstrumentInfo{
+			{Token: 12345, Symbol: "ITCHOTELS", Exchange: "NSE", InstrumentType: "EQ", Name: "ITC Hotels", Segment: "EQ", TickSize: 0.05, LotSize: 1},
+			{Token: 67890, Symbol: "HDFCBANK", Exchange: "NSE", InstrumentType: "EQ", Name: "HDFC Bank", Segment: "EQ", TickSize: 0.05, LotSize: 1},
+			{Token: 11223, Symbol: "RELIANCE", Exchange: "NSE", InstrumentType: "EQ", Name: "Reliance Industries", Segment: "EQ", TickSize: 0.05, LotSize: 1},
+			{Token: 44556, Symbol: "TCS", Exchange: "NSE", InstrumentType: "EQ", Name: "Tata Consultancy Services", Segment: "EQ", TickSize: 0.05, LotSize: 1},
+		}
+
+		// Ensure these simulated instruments exist in the database.
+		// This is critical because other parts of the application (e.g., market data storage)
+		// rely on instrument tokens being foreign keys.
+		// For each simulated instrument, ensure it exists in the DB
+		for _, info := range instruments {
+			var existingInstrument db.Instrument
+			// Fix 1: Change existence check to use tradingsymbol and exchange
+			// This matches the unique constraint "instruments_tradingsymbol_exchange_key"
+			res := dbClient.DB.Where("tradingsymbol = ? AND exchange = ?", info.Symbol, info.Exchange).First(&existingInstrument)
+
+			if res.Error != nil {
+				if res.Error.Error() == "record not found" {
+					// Instrument not found by tradingsymbol and exchange, so create a new one.
+					newInstrument := db.Instrument{
+						InstrumentToken: uint(info.Token), // Use the simulated token
+						Exchange:        info.Exchange,
+						Tradingsymbol:   info.Symbol,
+						InstrumentType:  info.InstrumentType,
+						Name:            info.Name,
+						Segment:         info.Segment,
+						TickSize:        info.TickSize,
+						LotSize:         int(info.LotSize),
+						Expiry:          nil, // Assuming these are not set for simulated EQ instruments
+						Strike:          nil,
+						OptionType:      "",
+						LastUpdated:     time.Now(),
+					}
+					if createErr := dbClient.DB.Create(&newInstrument).Error; createErr != nil {
+						zap.L().Error("Failed to save new instrument to DB for simulation",
+							zap.Error(createErr),
+							zap.String("symbol", info.Symbol),
+						)
+					} else {
+						zap.L().Info("✅ Saved new instrument to DB for simulation", zap.String("symbol", info.Symbol))
+					}
+				} else {
+					// Handle other database errors during the check
+					zap.L().Error("Error checking for existing instrument in DB for simulation",
+						zap.Error(res.Error),
+						zap.String("symbol", info.Symbol),
+					)
+				}
+			} else {
+				if existingInstrument.InstrumentToken != uint(info.Token) {
+					existingInstrument.InstrumentToken = uint(info.Token)
+					if updateErr := dbClient.DB.Save(&existingInstrument).Error; updateErr != nil {
+						zap.L().Error("Failed to update existing instrument token for simulation", zap.Error(updateErr), zap.String("symbol", info.Symbol))
+					} else {
+						zap.L().Info("Updated existing instrument token for simulation", zap.String("symbol", info.Symbol))
+					}
+				}
+			}
+		}
+
+		// Start the simulated ticker, passing the graceful shutdown context,
+		// the instruments, Redis client, and the configured simulation speed.
+		go func() { // Run in a goroutine so it doesn't block main
+			defer recoverGoroutine("SimulatedTicker")
+			if err := simGenerator.SimulateTicks(ctx, instruments, redisClient, appCfg.Market.SimulationSpeedMultiplier); err != nil {
+				wrappedErr := utils.WrapError(4003, "Simulated market data feed error", err)
+				zap.L().Fatal(wrappedErr.Error())
+			}
+		}()
+	} else {
+		zap.L().Info("Starting **REAL** market data feed (via Zerodha Ticker) based on app configuration.")
+		if err := client.SubscribeToTicks(instruments, redisClient); err != nil {
+			wrappedErr := utils.WrapError(4002, "Zerodha WebSocket subscription error", err)
+			zap.L().Fatal(wrappedErr.Error())
+		}
 	}
 
 	// ─── Block until context is cancelled (e.g., via SIGINT/SIGTERM) ────────────

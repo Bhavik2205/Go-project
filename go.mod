@@ -40,6 +40,7 @@ require (
 	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/redis/go-redis/v9 v9.9.0
+	github.com/shirou/gopsutil v3.21.11+incompatible
 	github.com/zerodha/gokiteconnect/v4 v4.3.5 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect

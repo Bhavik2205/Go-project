@@ -6,7 +6,7 @@ server:
   # websocket_port: 8081
 
 log:
-  level: debug # debug, info, warn, error
+  level: info # debug, info, warn, error
   output: logs/app.log # stdout, file (for production, typically stdout for Docker)
   # If output is 'file':
   # file_path: logs/app.log
@@ -16,12 +16,12 @@ log:
   # compress: true
 
 ingestion:
-  market_data_batch_size: 500 # For your local setup, 500-1000 is good
+  market_data_batch_size: 200 # For your local setup, 500-1000 is good
   market_data_flush_interval_ms: 50 # 50ms for low latency
   max_tick_sequence_cache_duration_s: 2 # 2 seconds
   tick_sequence_cleanup_interval_s: 1 # This must be a positive integer
-  db_worker_count: 4 # Number of workers for database operations
-  db_flush_channel_size: 100
+  db_worker_count: 8 # Number of workers for database operations
+  db_flush_channel_size: 200
   ws_broadcast_worker_count: 8 # Number of workers for WebSocket broadcasting
   ws_broadcast_channel_size: 10000
   redis_reconnect_initial_delay_ms: 1000 # Initial delay for Redis reconnection
@@ -36,3 +36,7 @@ candles:
 
 # Other application-wide settings
 graceful_shutdown_timeout_seconds: 15
+
+market:
+  simulate: true
+  simulation_speed_multiplier: 7.0 # This can be set to any float value >= 0.1

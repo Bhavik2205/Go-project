@@ -32,6 +32,8 @@ var (
 	candleWsClients    *sync.Map                // Separate map for candle WebSocket clients
 	indicatorWsClients *sync.Map                // Shared sync.Map for indicator/candle WebSocket clients
 
+	candleGenerator *data.CandleGenerator // <-- ADDED: CandleGenerator for candle WebSocket streaming
+
 	upgrader = websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool { return true }, // Allow all origins for simplicity, tighten in prod
 	}
@@ -65,6 +67,11 @@ func SetCandleClients(clients *sync.Map) {
 
 func SetIndicatorClients(clients *sync.Map) {
 	indicatorWsClients = clients
+}
+
+// ADDED: Setter for CandleGenerator
+func SetCandleGenerator(gen *data.CandleGenerator) {
+	candleGenerator = gen
 }
 
 // StartHTTPServer starts the HTTP and WebSocket server
@@ -169,31 +176,33 @@ func handleIndicatorConnections(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// NEW: handleCandleConnections upgrades HTTP connection to WebSocket and registers the client for candle broadcasts.
+// UPDATED: handleCandleConnections now uses CandleGenerator for registration and streaming
 func handleCandleConnections(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		zap.L().Error("WebSocket upgrade error for candles", zap.Error(err))
 		return
 	}
-	// Use a unique key for the sync.Map (e.g., connection remote address)
-	clientKey := conn.RemoteAddr().String()
-	candleWsClients.Store(clientKey, conn) // Register the new client for candles
+	if candleGenerator == nil {
+		zap.L().Error("CandleGenerator is not initialized")
+		conn.Close()
+		return
+	}
+	defer candleGenerator.UnregisterWebSocketClient(conn)
+	candleGenerator.RegisterWebSocketClient(conn)
 
-	zap.L().Info("New WebSocket client connected for candle data", zap.String("remote_addr", clientKey))
+	zap.L().Info("New WebSocket client connected for candle data", zap.String("remote_addr", conn.RemoteAddr().String()))
 
 	// Keep the connection alive, listen for close messages from the client.
 	for {
-		// Read message to detect client disconnects or pings/pongs
 		_, _, err := conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				zap.L().Debug("WebSocket unexpected close for candle client", zap.Error(err), zap.String("remote_addr", clientKey))
+				zap.L().Debug("WebSocket unexpected close for candle client", zap.Error(err), zap.String("remote_addr", conn.RemoteAddr().String()))
 			} else {
-				zap.L().Info("WebSocket candle client disconnected", zap.String("remote_addr", clientKey))
+				zap.L().Info("WebSocket candle client disconnected", zap.String("remote_addr", conn.RemoteAddr().String()))
 			}
-			candleWsClients.Delete(clientKey) // Unregister the client on disconnect
-			break                             // Exit the loop
+			break // Exit the loop, triggering the defer
 		}
 	}
 }

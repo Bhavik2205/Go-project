@@ -24,3 +24,10 @@ go.work.sum
 # env file
 .env
 venv/
+
+bash.exe.stackdump
+
+# Logs
+logs/app.log
+stdout
+app.log

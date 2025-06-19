@@ -40,6 +40,10 @@ type AppConfig struct {
 	Candles struct {
 		Intervals []string `yaml:"intervals"` // e.g., ["1m", "5m", "15m", "1h", "1d"]
 	}
+	Market struct {
+		Simulate                  bool    `yaml:"simulate"`
+		SimulationSpeedMultiplier float64 `yaml:"simulation_speed_multiplier"`
+	} `yaml:"market"`
 }
 
 // DatabaseConfig holds database connection settings
