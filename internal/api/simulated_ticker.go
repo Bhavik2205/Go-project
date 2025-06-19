@@ -26,6 +26,10 @@ type SimTick struct {
 	LastTradedQuantity uint32           `json:"LastTradedQuantity"` // <-- Added
 	AverageTradePrice  float64          `json:"AverageTradePrice"`  // <-- Added
 	NetChange          float64          `json:"NetChange"`          // <-- Added
+	// Adding PrevClose to the SimTick struct for clarity and completeness
+	PrevClose float64 `json:"PrevClose"`
+	// Adding PercentChange for convenience, often derived from NetChange and PrevClose
+	PercentChange float64 `json:"PercentChange"`
 }
 
 // SimulatedZerodhaClient mimics the ZerodhaClient for simulation purposes.
@@ -55,13 +59,19 @@ func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*Ins
 
 	// Helper functions for rounding
 	round1 := func(val float64) float64 {
-		return math.Round(val*10) / 10
+		return math.Round(val*100) / 100 // Round to 2 decimal places for price
+	}
+	round4 := func(val float64) float64 {
+		return math.Round(val*10000) / 10000 // Round to 4 decimal places for percent change
 	}
 
 	// Maps to store and update simulation data per instrument token
 	tokenToLabel := make(map[uint32]string)
 	currentPrices := make(map[uint32]float64)
 	currentVolumes := make(map[uint32]uint32)
+	// New map to store the 'previous day's close' for each instrument
+	previousDayCloses := make(map[uint32]float64)
+
 	ohlcData := make(map[uint32]struct {
 		Open  float64
 		High  float64
@@ -74,11 +84,21 @@ func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*Ins
 		tokenToLabel[info.Token] = fmt.Sprintf("%s (%s)", info.Symbol, info.Exchange)
 
 		// Set a reasonable random initial price for the simulation
-		basePrice := 100.0 + rand.Float64()*1000 // Example: prices between 100 and 1100
-		currentPrices[info.Token] = basePrice
-		currentVolumes[info.Token] = uint32(rand.Intn(50000) + 1000) // Initial random volume
+		basePrice := 100.0 + rand.Float64()*1000 // Initial price for the *current* simulated day
 
-		// Initialize OHLC data with the base price
+		// Set previous day's close distinct from the current day's open/initial price
+		// This creates a potential for non-zero percent change from the very first tick
+		// For example, prevClose could be basePrice * (1 + random_change_percentage)
+		initialPrevClose := round1(basePrice * (1 + (rand.Float64()-0.5)*0.05)) // +/- 2.5% from base
+		if initialPrevClose <= 0 {                                              // Ensure it's never zero or negative
+			initialPrevClose = basePrice * 0.98 // Fallback to a valid positive value
+		}
+
+		currentPrices[info.Token] = basePrice
+		currentVolumes[info.Token] = uint32(rand.Intn(50000) + 1000)
+		previousDayCloses[info.Token] = initialPrevClose // Store the initial previous day's close
+
+		// Initialize OHLC data. Open is the first price of the current simulated day.
 		ohlcData[info.Token] = struct {
 			Open  float64
 			High  float64
@@ -88,7 +108,7 @@ func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*Ins
 			Open:  basePrice,
 			High:  basePrice,
 			Low:   basePrice,
-			Close: basePrice,
+			Close: basePrice, // Initial close is same as open for the first tick
 		}
 	}
 
@@ -97,8 +117,6 @@ func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*Ins
 	tickIntervalSimulated := 500 * time.Millisecond         // Generate a new "tick" every 500ms of simulated time
 
 	// Calculate the real-time delay needed between publishing ticks to achieve the desired speed multiplier
-	// If simulationSpeedMultiplier is 1.0, 1 simulated second = 1 real second.
-	// If simulationSpeedMultiplier is 10.0, 10 simulated seconds = 1 real second, so delay is 1/10th.
 	realTimeDelay := time.Duration(float64(tickIntervalSimulated) / simulationSpeedMultiplier)
 
 	// Ensure a minimum delay to prevent the loop from spinning too fast
@@ -132,6 +150,9 @@ func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*Ins
 			// Check if the total simulated market duration has been reached
 			if elapsedSimulatedTime >= simulatedMarketDuration {
 				zap.L().Info("✅ Simulated market duration completed.")
+				// Optionally, set the 'previous day's close' for the next simulation run
+				// to the last recorded `ohlc.Close` for each instrument.
+				// This would be for a multi-day simulation, not needed for single run.
 				return nil
 			}
 
@@ -143,7 +164,7 @@ func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*Ins
 				// --- Simulate Price Movement ---
 				price := round1(currentPrices[token])
 				// Generate a small random change, typically within +/- 0.1% of the current price
-				priceChange := (rand.Float64()*2 - 1) * (price * 0.001)
+				priceChange := (rand.Float64()*2 - 1) * (price * 0.004) // Small random fluctuation
 				price += priceChange
 				price = round1(price)
 
@@ -157,12 +178,11 @@ func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*Ins
 				lastTradedQty := uint32(rand.Intn(500) + 1) // Random trade size
 
 				// --- Simulate Volume Increase ---
-				// Add a random amount of volume to simulate trades
 				currentVolumes[token] += uint32(rand.Intn(1000) + 50) // Increment volume by 50-1049
 
 				// --- Update OHLC (Open, High, Low, Close) ---
 				ohlc := ohlcData[token]
-				// Initialize High and Low for the first tick
+				// Initialize High and Low for the first tick, or update
 				if ohlc.High == 0 || price > ohlc.High {
 					ohlc.High = price
 				}
@@ -172,10 +192,11 @@ func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*Ins
 				ohlc.Close = price // The close price for this tick is its last price
 				ohlcData[token] = ohlc
 
+				// --- Simulate Depth (Bids and Asks) ---
 				depth := kitemodels.Depth{}
 				var totalBuyQty, totalSellQty uint32
 				for i := 0; i < 5; i++ {
-					priceOffset := round1(float64(i+1) * 0.05 * price)
+					priceOffset := round1(float64(i+1) * 0.05) // Small price difference for bids/asks
 					buyQty := uint32(rand.Intn(1000) + 1)
 					sellQty := uint32(rand.Intn(1000) + 1)
 					depth.Buy[i] = kitemodels.DepthItem{
@@ -193,34 +214,42 @@ func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*Ins
 				}
 
 				// --- Simulate AverageTradePrice ---
-				averageTradePrice := round1((ohlc.Open + ohlc.Close) / 2)
+				averageTradePrice := round1((ohlc.Open + ohlc.Close) / 2) // Simple average for simulation
 
-				// --- Simulate NetChange (keep 4 decimals as requested) ---
-				netChange := price - ohlc.Open
+				// --- Calculate NetChange and PercentChange ---
+				// NetChange is LastPrice - PrevClose
+				netChange := price - previousDayCloses[token]
+				percentChange := 0.0
+				if previousDayCloses[token] != 0 {
+					percentChange = (netChange / previousDayCloses[token]) * 100.0
+				}
+				netChange = round1(netChange)         // Round net change to 2 decimals
+				percentChange = round4(percentChange) // Round percent change to 4 decimals
 
-				// --- Construct the kitemodels.Tick ---
+				// --- Construct the SimTick ---
 				tick := SimTick{
 					InstrumentToken: token,
 					Timestamp:       time.Now().Format(time.RFC3339Nano),
-					LastPrice:       round1(price),
+					LastPrice:       price, // Use the current simulated price as LastPrice
 					OHLC: kitemodels.OHLC{
-						Open:  round1(ohlc.Open),
-						High:  round1(ohlc.High),
-						Low:   round1(ohlc.Low),
-						Close: round1(ohlc.Close),
+						Open:  ohlc.Open,
+						High:  ohlc.High,
+						Low:   ohlc.Low,
+						Close: previousDayCloses[token],
 					},
 					VolumeTraded:       currentVolumes[token],
 					Volume:             currentVolumes[token],
-					Depth:              depth,        // <-- Add this line
-					TotalBuyQuantity:   totalBuyQty,  // <-- Add this field
-					TotalSellQuantity:  totalSellQty, // <-- Add this field
+					Depth:              depth,
+					TotalBuyQuantity:   totalBuyQty,
+					TotalSellQuantity:  totalSellQty,
 					LastTradedQuantity: lastTradedQty,
 					AverageTradePrice:  averageTradePrice,
 					NetChange:          netChange,
+					PrevClose:          previousDayCloses[token], // Include PrevClose in the tick
+					PercentChange:      percentChange,            // Include PercentChange in the tick
 				}
 
 				// --- Prepare and Publish to Redis ---
-				// Create an enriched tick structure similar to the real Zerodha ticker
 				enrichedTick := struct {
 					Symbol           string      `json:"symbol"`
 					ProcessedAtNanos int64       `json:"processed_at_nanos"` // Real-world timestamp of processing
@@ -239,11 +268,13 @@ func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*Ins
 							zap.Error(err),
 						)
 					} else {
-						// Optionally log published ticks for debugging, comment out for production verbosity
+						// Optional: Log important fields to verify
 						// zap.L().Debug("Published simulated tick",
 						// 	zap.String("symbol", label),
-						// 	zap.Float64("price", tick.LastPrice),
-						// 	zap.Uint32("volume", tick.VolumeTraded),
+						// 	zap.Float64("ltp", tick.LastPrice),
+						// 	zap.Float64("prev_close", tick.PrevClose),
+						// 	zap.Float64("net_change", tick.NetChange),
+						// 	zap.Float64("percent_change", tick.PercentChange),
 						// )
 					}
 				} else {

@@ -117,6 +117,9 @@ func StartHTTPServer(port int) {
 	// NEW: WebSocket endpoint for real-time indicator updates
 	router.HandleFunc("/ws/indicators", handleIndicatorConnections)
 
+	//NEW: Heatmap websocket endpoint
+	router.HandleFunc("/ws/heatmap", HeatmapWebSocketHandler(data.GetMarketHeatmap()))
+
 	zap.L().Info("🌐 Unified HTTP + WebSocket server starting...", zap.Int("port", port))
 	if err := http.ListenAndServe(":"+strconv.Itoa(port), router); err != nil {
 		zap.L().Fatal("Failed to start HTTP server", zap.Error(err))

@@ -39,4 +39,4 @@ graceful_shutdown_timeout_seconds: 15
 
 market:
   simulate: true
-  simulation_speed_multiplier: 7.0 # This can be set to any float value >= 0.1
+  simulation_speed_multiplier: 5.0 # This can be set to any float value >= 0.1

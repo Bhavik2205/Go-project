@@ -3,6 +3,7 @@ package data
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -267,6 +268,26 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 	currentSequenceID := m.tickSequenceCounters[uint(tick.InstrumentToken)][normalizedTimestamp] + 1
 	m.tickSequenceCounters[uint(tick.InstrumentToken)][normalizedTimestamp] = currentSequenceID
 	m.sequenceMux.Unlock()
+	fmt.Printf("Tick for %s: LTP=%.2f Bid=%.2f Ask=%.2f Vol=%d PrevClose=%.2f\n",
+		enrichedTick.Symbol,
+		tick.LastPrice,
+		tick.Depth.Buy[0].Price,
+		tick.Depth.Sell[0].Price,
+		tick.VolumeTraded,
+		tick.OHLC.Close,
+	)
+	GetMarketHeatmap().Update(
+		enrichedTick.Symbol,
+		tick.LastPrice,
+		tick.Depth.Buy[0].Price,
+		tick.Depth.Sell[0].Price,
+		int64(tick.Depth.Buy[0].Quantity),
+		int64(tick.Depth.Sell[0].Quantity),
+		int64(tick.VolumeTraded),
+		tick.LastPrice,  // For volume at price
+		tick.OHLC.Close, // Assuming this is the previous close for percentage change calculation
+	)
+	fmt.Println("Heatmap updated for", enrichedTick.Symbol)
 
 	md := db.MarketData{
 		InstrumentToken:    tick.InstrumentToken,

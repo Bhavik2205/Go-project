@@ -1,44 +1,39 @@
 package server
 
 import (
-	"fmt"
-	"sync"
+	"net/http"
+	"time"
 
-	kiteconnect "github.com/zerodha/gokiteconnect/v4/models"
+	"github.com/Bhavik2205/ML-Bot/internal/data"
+	"github.com/gorilla/websocket"
+	"go.uber.org/zap"
 )
 
-var (
-	subscribers     = make(map[chan kiteconnect.Tick]struct{})
-	subscribersLock sync.Mutex
-)
-
-// Register adds a new subscriber channel to broadcast ticks.
-func Register() chan kiteconnect.Tick {
-	ch := make(chan kiteconnect.Tick, 100)
-	subscribersLock.Lock()
-	subscribers[ch] = struct{}{}
-	subscribersLock.Unlock()
-	return ch
+var heatmapUpgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
-// Unregister removes and closes a subscriber channel.
-func Unregister(ch chan kiteconnect.Tick) {
-	subscribersLock.Lock()
-	delete(subscribers, ch)
-	close(ch)
-	subscribersLock.Unlock()
-}
+func HeatmapWebSocketHandler(marketHeatmap *data.MarketHeatmap) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		conn, err := heatmapUpgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
 
-// BroadcastTick sends the tick to all subscribers.
-func BroadcastTick(tick kiteconnect.Tick) {
-	subscribersLock.Lock()
-	defer subscribersLock.Unlock()
+		ticker := time.NewTicker(200 * time.Millisecond)
+		defer ticker.Stop()
 
-	for ch := range subscribers {
-		select {
-		case ch <- tick:
-		default:
-			fmt.Println("❗ Dropping tick: slow client")
+		for {
+			select {
+			case <-ticker.C:
+				snapshot := marketHeatmap.Snapshot()
+				zap.L().Info("Sending heatmap snapshot", zap.Int("count", len(snapshot)))
+				if err := conn.WriteJSON(snapshot); err != nil {
+					zap.L().Error("HeatMap WebSocket write error", zap.Error(err))
+					return // Client disconnected
+				}
+			}
 		}
 	}
 }
