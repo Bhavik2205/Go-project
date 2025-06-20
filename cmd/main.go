@@ -236,12 +236,12 @@ func main() {
 		"ITC", "INDUSINDBK", "INFY", "JSWSTEEL", "KOTAKBANK", "LT", "LTIM", "M&M", "MARUTI", "NESTLEIND",
 		"NTPC", "ONGC", "POWERGRID", "RELIANCE", "SBILIFE", "SBIN", "SUNPHARMA", "TATACONSUM", "TATAMOTORS",
 		"TATASTEEL", "TCS", "TECHM", "TITAN", "ULTRACEMCO", "UPL", "WIPRO", "DMART", "IRCTC", "PIDILITIND",
-		"PAGEIND", "MUTHOOTFIN", "JUBLFOOD", "ZOMATO", "NYKAA", "POLYCAB", "BOSCHLTD", "GUJGASLTD", "DEEPAKNTR",
-		"TATAELXSI", "AARTIIND", "LTTS", "SRF", "ABB", "ADANIGREEN", "ADANITRANS", "ALKEM", "AMBUJACEM",
+		"PAGEIND", "MUTHOOTFIN", "JUBLFOOD", "ETERNAL", "NYKAA", "POLYCAB", "BOSCHLTD", "GUJGASLTD", "DEEPAKNTR",
+		"TATAELXSI", "AARTIIND", "LTTS", "SRF", "ABB", "ADANIGREEN", "ADANIENSOL", "ALKEM", "AMBUJACEM",
 		"AUROPHARMA", "BALKRISIND", "BANDHANBNK", "BANKBARODA", "BERGEPAINT", "BIOCON", "CANBK", "CHOLAFIN",
 		"COLPAL", "CONCOR", "CROMPTON", "DABUR", "DALBHARAT", "DIXON", "ESCORTS", "EXIDEIND", "FEDERALBNK",
 		"GAIL", "GLENMARK", "GODREJCP", "GODREJPROP", "HAVELLS", "HDFCAMC", "HINDPETRO", "ICICIGI", "ICICIPRULI",
-		"IDFCFIRSTB", "IGL", "INDIGO", "INDUSTOWER", "IOC", "IPCALAB", "L&TFH", "LALPATHLAB", "LICHSGFIN",
+		"IDFCFIRSTB", "IGL", "INDIGO", "INDUSTOWER", "IOC", "IPCALAB", "LTF", "LALPATHLAB", "LICHSGFIN",
 	}
 	preferredExchanges := []string{"NSE"}
 	var instruments []*api.InstrumentInfo
@@ -354,7 +354,7 @@ func main() {
 			{Token: 10054, Symbol: "PAGEIND", Exchange: "NSE", InstrumentType: "EQ", Name: "Page Industries", Segment: "EQ", TickSize: 0.05, LotSize: 1},
 			{Token: 10055, Symbol: "MUTHOOTFIN", Exchange: "NSE", InstrumentType: "EQ", Name: "Muthoot Finance", Segment: "EQ", TickSize: 0.05, LotSize: 1},
 			{Token: 10056, Symbol: "JUBLFOOD", Exchange: "NSE", InstrumentType: "EQ", Name: "Jubilant FoodWorks", Segment: "EQ", TickSize: 0.05, LotSize: 1},
-			{Token: 10057, Symbol: "ZOMATO", Exchange: "NSE", InstrumentType: "EQ", Name: "Zomato", Segment: "EQ", TickSize: 0.05, LotSize: 1},
+			{Token: 10057, Symbol: "ETERNAL", Exchange: "NSE", InstrumentType: "EQ", Name: "Zomato", Segment: "EQ", TickSize: 0.05, LotSize: 1},
 			{Token: 10058, Symbol: "NYKAA", Exchange: "NSE", InstrumentType: "EQ", Name: "Nykaa", Segment: "EQ", TickSize: 0.05, LotSize: 1},
 			{Token: 10059, Symbol: "POLYCAB", Exchange: "NSE", InstrumentType: "EQ", Name: "Polycab India", Segment: "EQ", TickSize: 0.05, LotSize: 1},
 			{Token: 10060, Symbol: "BOSCHLTD", Exchange: "NSE", InstrumentType: "EQ", Name: "Bosch", Segment: "EQ", TickSize: 0.05, LotSize: 1},
