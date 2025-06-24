@@ -118,6 +118,13 @@ func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, redisClient *c
 		zap.L().Warn("🔌 Zerodha WebSocket closed", zap.Int("code", code), zap.String("reason", reason))
 	})
 
-	go z.Ticker.Serve()
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				zap.L().Error("Panic in Zerodha Ticker Serve goroutine", zap.Any("recover", r))
+			}
+		}()
+		z.Ticker.Serve()
+	}()
 	return nil
 }

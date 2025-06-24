@@ -4,11 +4,11 @@ package cache
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/Bhavik2205/ML-Bot/internal/utils"
 	"github.com/redis/go-redis/v9" // Using context-aware client
+	"go.uber.org/zap"
 )
 
 // RedisClient represents the Redis client
@@ -30,10 +30,11 @@ func NewRedisClient(cfg *utils.RedisConfig) (*RedisClient, error) {
 
 	_, err := rdb.Ping(ctx).Result()
 	if err != nil {
+		zap.L().Error("Failed to connect to Redis", zap.String("host", cfg.Host), zap.String("port", cfg.Port), zap.Error(err))
 		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
 
-	log.Println("✅ Connected to Redis.")
+	zap.L().Info("Connected to Redis", zap.String("host", cfg.Host), zap.String("port", cfg.Port))
 	return &RedisClient{
 		Client:  rdb,
 		context: context.Background(), // Use a long-lived context for the client

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/gorilla/websocket"
 	kitemodels "github.com/zerodha/gokiteconnect/v4/models"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
 	redis "github.com/redis/go-redis/v9"
@@ -268,13 +270,13 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 	currentSequenceID := m.tickSequenceCounters[uint(tick.InstrumentToken)][normalizedTimestamp] + 1
 	m.tickSequenceCounters[uint(tick.InstrumentToken)][normalizedTimestamp] = currentSequenceID
 	m.sequenceMux.Unlock()
-	fmt.Printf("Tick for %s: LTP=%.2f Bid=%.2f Ask=%.2f Vol=%d PrevClose=%.2f\n",
-		enrichedTick.Symbol,
-		tick.LastPrice,
-		tick.Depth.Buy[0].Price,
-		tick.Depth.Sell[0].Price,
-		tick.VolumeTraded,
-		tick.OHLC.Close,
+	zap.L().Debug("Tick received",
+		zap.String("symbol", enrichedTick.Symbol),
+		zap.Float64("ltp", tick.LastPrice),
+		zap.Float64("bid", tick.Depth.Buy[0].Price),
+		zap.Float64("ask", tick.Depth.Sell[0].Price),
+		zap.Int("volume", int(tick.VolumeTraded)),
+		zap.Float64("prev_close", tick.OHLC.Close),
 	)
 	GetMarketHeatmap().Update(
 		enrichedTick.Symbol,
@@ -287,8 +289,7 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 		tick.LastPrice,  // For volume at price
 		tick.OHLC.Close, // Assuming this is the previous close for percentage change calculation
 	)
-	fmt.Println("Heatmap updated for", enrichedTick.Symbol)
-
+	zap.L().Debug("Heatmap updated", zap.String("symbol", enrichedTick.Symbol))
 	md := db.MarketData{
 		InstrumentToken:    tick.InstrumentToken,
 		Timestamp:          normalizedTimestamp,
@@ -440,15 +441,44 @@ func (m *MarketDataIngestor) startDBWorkers(ctx context.Context) {
 						return
 					}
 					start := time.Now()
-					result := m.dbClient.DB.Clauses(clause.OnConflict{
-						Columns:   []clause.Column{{Name: "instrument_token"}, {Name: "timestamp"}, {Name: "tick_sequence_id"}},
-						DoNothing: true,
-					}).CreateInBatches(dataToFlush, m.cfg.Ingestion.MarketDataBatchSize)
+
+					seen := make(map[string]int)
+					for _, row := range dataToFlush {
+						key := fmt.Sprintf("%d_%s_%d", row.InstrumentToken, row.Timestamp.Format(time.RFC3339Nano), row.TickSequenceID)
+						seen[key]++
+					}
+					for k, v := range seen {
+						if v > 1 {
+							zap.L().Warn("Duplicate in batch before DB insert", zap.String("key", k), zap.Int("count", v))
+						}
+					}
+
+					maxRetries := 3
+					var result *gorm.DB
+					var err error
+					for attempt := 1; attempt <= maxRetries; attempt++ {
+						result = m.dbClient.DB.Clauses(clause.OnConflict{
+							Columns:   []clause.Column{{Name: "instrument_token"}, {Name: "timestamp"}, {Name: "tick_sequence_id"}},
+							DoNothing: true,
+						}).CreateInBatches(dataToFlush, m.cfg.Ingestion.MarketDataBatchSize)
+						err = result.Error
+						if err != nil && err.Error() != "" &&
+							(strings.Contains(err.Error(), "deadlock detected") || strings.Contains(err.Error(), "SQLSTATE 40P01")) {
+							zap.L().Warn("DB deadlock detected, retrying batch insert",
+								zap.Int("worker_id", workerID),
+								zap.Int("attempt", attempt),
+								zap.Error(err),
+							)
+							time.Sleep(100 * time.Millisecond)
+							continue
+						}
+						break
+					}
 					duration := time.Since(start)
-					if result.Error != nil {
+					if err != nil {
 						atomic.AddUint64(&m.dbErrors, 1)
 						zap.L().Error("❌ DB worker failed to batch insert market data",
-							zap.Error(result.Error),
+							zap.Error(err),
 							zap.Int("worker_id", workerID),
 							zap.Int("batch_size", len(dataToFlush)),
 							zap.Duration("duration", duration))
@@ -531,7 +561,7 @@ func (m *MarketDataIngestor) startWebSocketBroadcasterWorkers(ctx context.Contex
 
 // RegisterWebSocketClient adds a new WebSocket client and starts its dedicated write pump.
 func (m *MarketDataIngestor) RegisterWebSocketClient(conn *websocket.Conn) {
-	clientWriteCh := make(chan []byte, 256)
+	clientWriteCh := make(chan []byte, 1024)
 	m.wsClients.Store(conn, clientWriteCh)
 	zap.L().Info("🧑‍💻 New WebSocket client connected", zap.String("remote_addr", conn.RemoteAddr().String()))
 	go m.writePump(conn, clientWriteCh)

@@ -176,7 +176,7 @@ func main() {
 	// 7. Create channels for inter-service communication
 	// This channel transports completed candles from CandleGenerator to IndicatorsManager.
 	// A buffered channel is used to avoid blocking the CandleGenerator.
-	indicatorManagerInputCh := make(chan indicators.Candle, 100) // NEW: Channel for candles -> IndicatorsManager
+	indicatorManagerInputCh := make(chan indicators.Candle, 5000) // NEW: Channel for candles -> IndicatorsManager
 
 	dataIngestor := data.NewMarketDataIngestor(dbClient, redisClient, wsClients, appCfg, indicatorsCfg)
 	// NEW: Pass candleWsClients to CandleGenerator

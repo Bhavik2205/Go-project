@@ -15,8 +15,14 @@ var heatmapUpgrader = websocket.Upgrader{
 
 func HeatmapWebSocketHandler(marketHeatmap *data.MarketHeatmap) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if r := recover(); r != nil {
+				zap.L().Error("Panic in Heatmap WebSocket handler", zap.Any("recover", r))
+			}
+		}()
 		conn, err := heatmapUpgrader.Upgrade(w, r, nil)
 		if err != nil {
+			zap.L().Error("WebSocket upgrade failed", zap.Error(err))
 			return
 		}
 		defer conn.Close()
@@ -28,7 +34,7 @@ func HeatmapWebSocketHandler(marketHeatmap *data.MarketHeatmap) http.HandlerFunc
 			select {
 			case <-ticker.C:
 				snapshot := marketHeatmap.Snapshot()
-				zap.L().Info("Sending heatmap snapshot", zap.Int("count", len(snapshot)))
+				zap.L().Debug("Sending heatmap snapshot", zap.Int("count", len(snapshot)))
 				if err := conn.WriteJSON(snapshot); err != nil {
 					zap.L().Error("HeatMap WebSocket write error", zap.Error(err))
 					return // Client disconnected

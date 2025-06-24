@@ -79,6 +79,7 @@ func StartHTTPServer(port int) {
 	router := mux.NewRouter()
 
 	router.Use(enableCORS)
+	router.Use(recoverMiddleware) // Add panic recovery middleware
 
 	router.HandleFunc("/api/instrument", stockHandler.HandleInstrumentLookup(zerodhaClient.(*api.ZerodhaClient))).Methods("GET")
 
@@ -128,6 +129,12 @@ func StartHTTPServer(port int) {
 
 // handleConnections upgrades HTTP connection to WebSocket and registers the client with the ingestor (for ticks).
 func handleConnections(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if r := recover(); r != nil {
+			zap.L().Error("Panic in WebSocket handler (ticks)", zap.Any("recover", r))
+		}
+	}()
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		zap.L().Error("WebSocket upgrade error for ticks", zap.Error(err))
@@ -152,6 +159,12 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	}
 }
 func handleIndicatorConnections(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if r := recover(); r != nil {
+			zap.L().Error("Panic in WebSocket handler (indicators)", zap.Any("recover", r))
+		}
+	}()
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		zap.L().Error("WebSocket upgrade error for indicators", zap.Error(err))
@@ -181,6 +194,12 @@ func handleIndicatorConnections(w http.ResponseWriter, r *http.Request) {
 
 // UPDATED: handleCandleConnections now uses CandleGenerator for registration and streaming
 func handleCandleConnections(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if r := recover(); r != nil {
+			zap.L().Error("Panic in WebSocket handler (candles)", zap.Any("recover", r))
+		}
+	}()
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		zap.L().Error("WebSocket upgrade error for candles", zap.Error(err))
@@ -222,5 +241,17 @@ func enableCORS(h http.Handler) http.Handler {
 		}
 
 		h.ServeHTTP(w, r)
+	})
+}
+
+func recoverMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if r := recover(); r != nil {
+				zap.L().Error("Panic in HTTP handler", zap.Any("recover", r))
+				http.Error(w, "Internal server error", http.StatusInternalServerError)
+			}
+		}()
+		next.ServeHTTP(w, r)
 	})
 }

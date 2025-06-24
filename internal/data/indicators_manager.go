@@ -66,8 +66,8 @@ func NewIndicatorManager(
 		indicatorWsClients:   wsClients,
 		candleHistory:        make(map[uint32]map[string]*CandleHistory),
 		maxHistoryPeriods:    make(map[string]int),
-		processedIndicatorCh: make(chan indicators.IndicatorResult, 1000),
-		outputWorkerCount:    5,
+		processedIndicatorCh: make(chan indicators.IndicatorResult, 5000),
+		outputWorkerCount:    30,
 	}
 
 	for _, interval := range appCfg.Candles.Intervals {
