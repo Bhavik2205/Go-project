@@ -38,5 +38,5 @@ candles:
 graceful_shutdown_timeout_seconds: 15
 
 market:
-  simulate: false
-  simulation_speed_multiplier: 8.0 # This can be set to any float value >= 0.1
+  simulate: true
+  simulation_speed_multiplier: 1.0 # This can be set to any float value >= 0.1

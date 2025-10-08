@@ -11,6 +11,12 @@ import (
 // Handler function that takes ZerodhaClient as argument
 func HandleInstrumentLookup(z *api.ZerodhaClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if z == nil || z.Kite == nil {
+			zap.L().Warn("instrument lookup called in simulate mode")
+			http.Error(w, "Zerodha disabled in simulate mode", http.StatusServiceUnavailable)
+			return
+		}
+
 		symbol := r.URL.Query().Get("symbol")
 		if symbol == "" {
 			zap.L().Warn("Missing symbol parameter in instrument lookup", zap.String("url", r.URL.String()))
