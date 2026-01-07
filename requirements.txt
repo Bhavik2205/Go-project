@@ -182,7 +182,7 @@ transformers==4.11.3
 typed-ast==1.4.3
 typing-extensions==3.7.4.3
 ujson==4.3.0
-urllib3==1.26.20
+urllib3==2.6.3
 wcwidth==0.2.13
 webdriver-manager==3.7.1
 webencodings==0.5.1
