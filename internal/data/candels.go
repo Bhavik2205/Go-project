@@ -169,7 +169,7 @@ func (cg *CandleGenerator) StartCandleGeneration(ctx context.Context) {
 		case <-ctx.Done():
 			zap.L().Info("Context cancelled, stopping candle generator Redis subscriber.")
 			cg.flushAllOpenCandles()
-			close(cg.monitorStopCh)
+			// close(cg.monitorStopCh)
 			return
 		}
 	}
@@ -560,7 +560,7 @@ func (cg *CandleGenerator) startMonitoring() {
 				zap.Uint64("ticks_per_5s", tps),
 			)
 
-			if tps < 10 {
+			if ticks > 0 && tps < 10 {
 				zap.L().Warn("Low tick processing speed detected", zap.Uint64("ticks_per_5s", tps))
 			}
 		}
