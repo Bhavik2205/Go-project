@@ -3,7 +3,11 @@ package data
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"math"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Bhavik2205/ML-Bot/internal/api"
@@ -13,23 +17,35 @@ import (
 	"github.com/gorilla/websocket"
 	kitemodels "github.com/zerodha/gokiteconnect/v4/models"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	redis "github.com/redis/go-redis/v9"
 )
 
 // MarketDataIngestor holds dependencies for market data ingestion and broadcasting.
 type MarketDataIngestor struct {
 	dbClient             *db.DBClient
 	redisClient          *cache.RedisClient
-	wsClients            *sync.Map
+	wsClients            *sync.Map // maps *websocket.Conn to chan []byte (the write channel for that client)
 	marketDataBuffer     []db.MarketData
 	bufferLock           sync.Mutex
 	lastFlushTime        time.Time
 	tickSequenceCounters map[uint]map[time.Time]int
 	sequenceMux          sync.Mutex
 	lastCleanupTime      time.Time
-	broadcastChannel     chan []byte
-	livePrices           sync.Map
+	broadcastChannel     chan []byte // Channel for sending data to WebSocket broadcasters (now dispatchers)
+	livePrices           *sync.Map   // Should be a pointer to sync.Map if it's the global instance
 	cfg                  *utils.AppConfig
+
+	dbFlushCh              chan []db.MarketData
+	dbWorkerCount          int
+	wsBroadcastWorkerCount int
+
+	// Monitoring metrics
+	dbErrors      uint64
+	wsDrops       uint64
+	wsBroadcasted uint64
 }
 
 // NewMarketDataIngestor creates and returns a new instance of MarketDataIngestor.
@@ -41,10 +57,15 @@ func NewMarketDataIngestor(dbC *db.DBClient, rC *cache.RedisClient, wsClients *s
 		marketDataBuffer:     make([]db.MarketData, 0, cfg.Ingestion.MarketDataBatchSize),
 		lastFlushTime:        time.Now(),
 		tickSequenceCounters: make(map[uint]map[time.Time]int),
+		sequenceMux:          sync.Mutex{},
 		lastCleanupTime:      time.Now(),
-		broadcastChannel:     make(chan []byte, 1000),
-		livePrices:           sync.Map{},
+		broadcastChannel:     make(chan []byte, cfg.Ingestion.WSBroadcastChannelSize),
+		livePrices:           &sync.Map{},
 		cfg:                  cfg,
+
+		dbFlushCh:              make(chan []db.MarketData, cfg.Ingestion.DBFlushChannelSize),
+		dbWorkerCount:          cfg.Ingestion.DBWorkerCount,
+		wsBroadcastWorkerCount: cfg.Ingestion.WSBroadcastWorkerCount,
 	}
 	ingestor.loadInitialTickSequenceCounters()
 	return ingestor
@@ -52,46 +73,123 @@ func NewMarketDataIngestor(dbC *db.DBClient, rC *cache.RedisClient, wsClients *s
 
 // StartIngestionAndBroadcast kicks off the Redis subscription, DB ingestion, and WebSocket broadcasting.
 func (m *MarketDataIngestor) StartIngestionAndBroadcast(ctx context.Context) {
+	// Start workers that handle database flushing
+	m.startDBWorkers(ctx)
+	// Start workers that act as dispatchers for WebSocket broadcasting
+	m.startWebSocketBroadcasterWorkers(ctx)
+
+	// Start monitoring goroutine for metrics
+	go m.startMonitoring()
+
+	// These remain as primary consumers/dispatchers
 	go m.subscribeAndProcessRedis(ctx)
 	go m.startDBFlusher(ctx)
 	go m.startSequenceCounterCleanup(ctx)
-	go m.startWebSocketBroadcaster(ctx)
+
 	zap.L().Info("🚀 Market data ingestion and broadcasting started.")
+}
+
+// Monitoring goroutine for DB errors, WS drops, and broadcast rate.
+func (m *MarketDataIngestor) startMonitoring() {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	var lastBroadcasted uint64
+	for {
+		select {
+		case <-ticker.C:
+			dbErrs := atomic.LoadUint64(&m.dbErrors)
+			wsDrops := atomic.LoadUint64(&m.wsDrops)
+			broadcasted := atomic.LoadUint64(&m.wsBroadcasted)
+			rate := broadcasted - lastBroadcasted
+			lastBroadcasted = broadcasted
+
+			zap.L().Info("MarketDataIngestor monitoring",
+				zap.Uint64("db_errors", dbErrs),
+				zap.Uint64("ws_drops", wsDrops),
+				zap.Uint64("broadcast_rate_per_5s", rate),
+			)
+			if dbErrs > 10 {
+				zap.L().Warn("High DB error count", zap.Uint64("db_errors", dbErrs))
+			}
+			if wsDrops > 10 {
+				zap.L().Warn("High WebSocket drop count", zap.Uint64("ws_drops", wsDrops))
+			}
+			if rate < 10 {
+				zap.L().Warn("Low broadcast rate", zap.Uint64("broadcast_rate_per_5s", rate))
+			}
+		}
+	}
 }
 
 // subscribeAndProcessRedis subscribes to the Redis market data channel and unmarshals ticks.
 func (m *MarketDataIngestor) subscribeAndProcessRedis(ctx context.Context) {
-	pubsub := m.redisClient.Subscribe(ctx, api.RedisMarketDataChannel)
-	defer func() {
-		if err := pubsub.Close(); err != nil {
-			zap.L().Error("Failed to close Redis PubSub connection", zap.Error(err))
+	var pubsub *redis.PubSub
+
+	initialDelay := time.Duration(m.cfg.Ingestion.RedisReconnectInitialDelayMs) * time.Millisecond
+	maxDelay := time.Duration(m.cfg.Ingestion.RedisReconnectMaxDelayMs) * time.Millisecond
+	maxAttempts := m.cfg.Ingestion.RedisReconnectMaxAttempts
+
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		select {
+		case <-ctx.Done():
+			zap.L().Info("Context cancelled, stopping Redis PubSub subscriber before initial subscription.")
+			return
+		default:
+			pubsub = m.redisClient.Subscribe(ctx, api.RedisMarketDataChannel)
+			if pubsub != nil {
+				ch := pubsub.Channel()
+				if ch != nil {
+					zap.L().Info("✅ Subscribed to Redis market data channel",
+						zap.String("channel", api.RedisMarketDataChannel),
+						zap.Int("attempt", attempt+1))
+					m.processRedisMessages(ctx, ch, pubsub)
+					return
+				}
+			}
+			logFields := []zap.Field{
+				zap.Int("attempt", attempt+1),
+				zap.Duration("initial_delay", initialDelay),
+				zap.Duration("max_delay", maxDelay),
+			}
+			logFields = append(logFields, zap.String("reason", "pubsub client or channel is nil after subscribe call (possible Redis connection issue or internal RedisClient error)"))
+			delay := initialDelay * time.Duration(math.Pow(2, float64(attempt)))
+			if delay > maxDelay {
+				delay = maxDelay
+			}
+			logFields = append(logFields, zap.Duration("delay", delay))
+			zap.L().Warn("Failed to obtain Redis PubSub client or channel, retrying...", logFields...)
+			time.Sleep(delay)
 		}
-		zap.L().Info("Redis PubSub subscriber closed.")
+
+		if attempt == maxAttempts-1 {
+			zap.L().Fatal("❌ Failed to subscribe to Redis PubSub after multiple attempts, exiting.",
+				zap.Int("max_attempts", maxAttempts))
+			close(m.dbFlushCh)
+			close(m.broadcastChannel)
+			return
+		}
+	}
+}
+
+// processRedisMessages consumes messages from the Redis PubSub channel.
+func (m *MarketDataIngestor) processRedisMessages(ctx context.Context, ch <-chan *redis.Message, pubsub *redis.PubSub) {
+	defer func() {
+		if pubsub != nil {
+			if err := pubsub.Close(); err != nil {
+				zap.L().Error("Failed to close Redis PubSub connection during shutdown", zap.Error(err))
+			}
+		}
+		close(m.dbFlushCh)
+		close(m.broadcastChannel)
+		zap.L().Info("Redis PubSub subscriber, DB flush channel, and WS broadcast channel closed.")
 	}()
 
-	zap.L().Info("✅ Subscribed to Redis market data channel", zap.String("channel", api.RedisMarketDataChannel))
-
-	ch := pubsub.Channel()
 	for {
 		select {
 		case msg, ok := <-ch:
 			if !ok {
-				zap.L().Warn("Redis PubSub channel closed, attempting reconnect in 5 seconds...")
-				time.Sleep(5 * time.Second)
-				pubsub = m.redisClient.Subscribe(ctx, api.RedisMarketDataChannel)
-				if pubsub == nil {
-					zap.L().Fatal("Failed to resubscribe to Redis PubSub, exiting.")
-					return
-				}
-				ch = pubsub.Channel()
-				zap.L().Info("Successfully reconnected to Redis PubSub.")
-				continue
-			}
-
-			var rawPayload map[string]json.RawMessage
-			if err := json.Unmarshal([]byte(msg.Payload), &rawPayload); err != nil {
-				zap.L().Error("Failed to unmarshal Redis message payload into raw map", zap.Error(err), zap.String("payload_sample", string(msg.Payload[:min(len(msg.Payload), 200)])))
-				continue
+				zap.L().Warn("Redis PubSub channel closed, attempting reconnect...")
+				return
 			}
 
 			var enrichedTick struct {
@@ -143,7 +241,7 @@ func (m *MarketDataIngestor) subscribeAndProcessRedis(ctx context.Context) {
 			m.processTick(processedEnrichedTick)
 
 		case <-ctx.Done():
-			zap.L().Info("Context cancelled, stopping Redis PubSub subscriber.")
+			zap.L().Info("Context cancelled, stopping Redis PubSub message processor.")
 			return
 		}
 	}
@@ -172,7 +270,26 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 	currentSequenceID := m.tickSequenceCounters[uint(tick.InstrumentToken)][normalizedTimestamp] + 1
 	m.tickSequenceCounters[uint(tick.InstrumentToken)][normalizedTimestamp] = currentSequenceID
 	m.sequenceMux.Unlock()
-
+	zap.L().Debug("Tick received",
+		zap.String("symbol", enrichedTick.Symbol),
+		zap.Float64("ltp", tick.LastPrice),
+		zap.Float64("bid", tick.Depth.Buy[0].Price),
+		zap.Float64("ask", tick.Depth.Sell[0].Price),
+		zap.Int("volume", int(tick.VolumeTraded)),
+		zap.Float64("prev_close", tick.OHLC.Close),
+	)
+	GetMarketHeatmap().Update(
+		enrichedTick.Symbol,
+		tick.LastPrice,
+		tick.Depth.Buy[0].Price,
+		tick.Depth.Sell[0].Price,
+		int64(tick.Depth.Buy[0].Quantity),
+		int64(tick.Depth.Sell[0].Quantity),
+		int64(tick.VolumeTraded),
+		tick.LastPrice,  // For volume at price
+		tick.OHLC.Close, // Assuming this is the previous close for percentage change calculation
+	)
+	zap.L().Debug("Heatmap updated", zap.String("symbol", enrichedTick.Symbol))
 	md := db.MarketData{
 		InstrumentToken:    tick.InstrumentToken,
 		Timestamp:          normalizedTimestamp,
@@ -224,7 +341,17 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 	m.bufferLock.Lock()
 	m.marketDataBuffer = append(m.marketDataBuffer, md)
 	if len(m.marketDataBuffer) >= m.cfg.Ingestion.MarketDataBatchSize {
-		m.flushBuffer()
+		dataToFlush := make([]db.MarketData, len(m.marketDataBuffer))
+		copy(dataToFlush, m.marketDataBuffer)
+		select {
+		case m.dbFlushCh <- dataToFlush:
+			m.marketDataBuffer = make([]db.MarketData, 0, m.cfg.Ingestion.MarketDataBatchSize)
+		default:
+			atomic.AddUint64(&m.dbErrors, 1)
+			zap.L().Warn("Dropping DB write batch: DB flush channel is full. Consider increasing buffer size or DB worker count.",
+				zap.Int("batch_size", len(dataToFlush)),
+				zap.String("instrument", enrichedTick.Symbol))
+		}
 	}
 	m.bufferLock.Unlock()
 
@@ -237,14 +364,17 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 	} else {
 		select {
 		case m.broadcastChannel <- frontendData:
+			atomic.AddUint64(&m.wsBroadcasted, 1)
 			m.livePrices.Store(enrichedTick.Symbol, frontendData)
 		default:
-			zap.L().Warn("Dropping WebSocket broadcast message: channel is full. Consider increasing buffer size.")
+			atomic.AddUint64(&m.wsDrops, 1)
+			zap.L().Warn("Dropping WebSocket broadcast message: broadcast channel is full. Consider increasing buffer size or WS worker count.",
+				zap.String("symbol", enrichedTick.Symbol))
 		}
 	}
 }
 
-// startDBFlusher periodically flushes the buffered market data to the database.
+// startDBFlusher periodically checks if the buffer needs flushing based on time.
 func (m *MarketDataIngestor) startDBFlusher(ctx context.Context) {
 	flushInterval := time.Duration(m.cfg.Ingestion.MarketDataFlushIntervalMS) * time.Millisecond
 	if flushInterval <= 0 {
@@ -256,131 +386,193 @@ func (m *MarketDataIngestor) startDBFlusher(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			if time.Since(m.lastFlushTime) >= flushInterval {
-				m.flushBuffer()
-				m.lastFlushTime = time.Now()
-			}
-		case <-ctx.Done():
-			zap.L().Info("Context cancelled, flushing remaining buffer and stopping DB flusher.")
-			m.flushBuffer()
-			return
-		}
-	}
-}
-
-// flushBuffer performs a batch insert of the buffered market data into the database.
-func (m *MarketDataIngestor) flushBuffer() {
-	m.bufferLock.Lock()
-	defer m.bufferLock.Unlock()
-
-	if len(m.marketDataBuffer) == 0 {
-		return
-	}
-
-	dataToFlush := m.marketDataBuffer
-	m.marketDataBuffer = make([]db.MarketData, 0, m.cfg.Ingestion.MarketDataBatchSize)
-
-	zap.L().Debug("Flushing market data buffer to DB", zap.Int("count", len(dataToFlush)))
-
-	result := m.dbClient.DB.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "instrument_token"}, {Name: "timestamp"}, {Name: "tick_sequence_id"}},
-		DoNothing: true,
-	}).CreateInBatches(dataToFlush, m.cfg.Ingestion.MarketDataBatchSize)
-
-	if result.Error != nil {
-		zap.L().Error("❌ Failed to batch insert market data with ON CONFLICT DO NOTHING", zap.Error(result.Error), zap.Int("batch_size", len(dataToFlush)))
-	} else {
-		skippedCount := len(dataToFlush) - int(result.RowsAffected)
-		if skippedCount > 0 {
-			zap.L().Warn("⚠️ Flushed market data to DB with skipped duplicates",
-				zap.Int("total_attempted", len(dataToFlush)),
-				zap.Int64("rows_inserted", result.RowsAffected),
-				zap.Int("rows_skipped", skippedCount))
-		} else {
-			zap.L().Info("✅ Successfully flushed market data to DB", zap.Int64("count", result.RowsAffected))
-		}
-	}
-}
-
-// startSequenceCounterCleanup periodically cleans up old entries from tickSequenceCounters.
-func (m *MarketDataIngestor) startSequenceCounterCleanup(ctx context.Context) {
-	ticker := time.NewTicker(time.Duration(m.cfg.Ingestion.TickSequenceCleanupInterval) * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			m.cleanupOldSequenceCounters()
-		case <-ctx.Done():
-			zap.L().Info("Context cancelled, stopping sequence counter cleanup.")
-			return
-		}
-	}
-}
-
-// cleanupOldSequenceCounters iterates through tickSequenceCounters and removes old timestamps.
-func (m *MarketDataIngestor) cleanupOldSequenceCounters() {
-	m.sequenceMux.Lock()
-	defer m.sequenceMux.Unlock()
-
-	now := time.Now()
-	for instToken, timestampMap := range m.tickSequenceCounters {
-		for ts := range timestampMap {
-			if now.Sub(ts) > time.Duration(m.cfg.Ingestion.MaxTickSequenceCacheDuration)*time.Second {
-				delete(timestampMap, ts)
-			}
-		}
-		if len(timestampMap) == 0 {
-			delete(m.tickSequenceCounters, instToken)
-		}
-	}
-	zap.L().Debug("Cleaned up old tick sequence counters", zap.Duration("duration", time.Duration(m.cfg.Ingestion.MaxTickSequenceCacheDuration)*time.Second))
-}
-
-// startWebSocketBroadcaster listens on the broadcastChannel and sends messages to connected WS clients.
-func (m *MarketDataIngestor) startWebSocketBroadcaster(ctx context.Context) {
-	for {
-		select {
-		case msg := <-m.broadcastChannel:
-			m.wsClients.Range(func(key, value interface{}) bool {
-				conn, ok := key.(*websocket.Conn)
-				if !ok {
-					m.wsClients.Delete(key)
-					return true
+			m.bufferLock.Lock()
+			if len(m.marketDataBuffer) > 0 && time.Since(m.lastFlushTime) >= flushInterval {
+				dataToFlush := make([]db.MarketData, len(m.marketDataBuffer))
+				copy(dataToFlush, m.marketDataBuffer)
+				select {
+				case m.dbFlushCh <- dataToFlush:
+					m.marketDataBuffer = make([]db.MarketData, 0, m.cfg.Ingestion.MarketDataBatchSize)
+					m.lastFlushTime = time.Now()
+					zap.L().Debug("Timed flush: sent batch to DB worker channel", zap.Int("count", len(dataToFlush)))
+				default:
+					atomic.AddUint64(&m.dbErrors, 1)
+					zap.L().Warn("DB timed flush skipped: DB flush channel is full. Data will be re-attempted next interval.",
+						zap.Int("buffered_count", len(dataToFlush)))
 				}
-				err := conn.WriteMessage(websocket.TextMessage, msg)
-				if err != nil {
-					if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-						zap.L().Debug("WebSocket write error (unexpected close), removing client", zap.Error(err), zap.String("remote_addr", conn.RemoteAddr().String()))
-					} else {
-						zap.L().Info("WebSocket write error (graceful close/other), removing client", zap.Error(err), zap.String("remote_addr", conn.RemoteAddr().String()))
+			}
+			m.bufferLock.Unlock()
+		case <-ctx.Done():
+			zap.L().Info("Context cancelled, attempting to flush remaining buffer to DB workers before stopping DB flusher.")
+			m.bufferLock.Lock()
+			if len(m.marketDataBuffer) > 0 {
+				dataToFlush := make([]db.MarketData, len(m.marketDataBuffer))
+				copy(dataToFlush, m.marketDataBuffer)
+				select {
+				case m.dbFlushCh <- dataToFlush:
+					zap.L().Info("Successfully sent final buffer to DB workers.")
+				default:
+					atomic.AddUint64(&m.dbErrors, 1)
+					zap.L().Error("Failed to send final buffer to DB workers: channel full. Data might be lost.",
+						zap.Int("buffered_count", len(dataToFlush)))
+				}
+			}
+			m.bufferLock.Unlock()
+			return
+		}
+	}
+}
+
+// startDBWorkers starts a pool of goroutines to consume from dbFlushCh and perform batch inserts.
+func (m *MarketDataIngestor) startDBWorkers(ctx context.Context) {
+	for i := 0; i < m.dbWorkerCount; i++ {
+		go func(workerID int) {
+			defer func() {
+				if r := recover(); r != nil {
+					zap.L().Error("Panic recovered in DB worker", zap.Int("worker_id", workerID), zap.Any("recover", r))
+				}
+			}()
+			zap.L().Info("📦 DB worker started", zap.Int("worker_id", workerID))
+			for {
+				select {
+				case dataToFlush, ok := <-m.dbFlushCh:
+					if !ok {
+						zap.L().Info("📦 DB flush channel closed, worker stopping", zap.Int("worker_id", workerID))
+						return
 					}
-					conn.Close()
-					m.wsClients.Delete(key)
+					start := time.Now()
+
+					seen := make(map[string]int)
+					for _, row := range dataToFlush {
+						key := fmt.Sprintf("%d_%s_%d", row.InstrumentToken, row.Timestamp.Format(time.RFC3339Nano), row.TickSequenceID)
+						seen[key]++
+					}
+					for k, v := range seen {
+						if v > 1 {
+							zap.L().Warn("Duplicate in batch before DB insert", zap.String("key", k), zap.Int("count", v))
+						}
+					}
+
+					maxRetries := 3
+					var result *gorm.DB
+					var err error
+					for attempt := 1; attempt <= maxRetries; attempt++ {
+						result = m.dbClient.DB.Clauses(clause.OnConflict{
+							Columns:   []clause.Column{{Name: "instrument_token"}, {Name: "timestamp"}, {Name: "tick_sequence_id"}},
+							DoNothing: true,
+						}).CreateInBatches(dataToFlush, m.cfg.Ingestion.MarketDataBatchSize)
+						err = result.Error
+						if err != nil && err.Error() != "" &&
+							(strings.Contains(err.Error(), "deadlock detected") || strings.Contains(err.Error(), "SQLSTATE 40P01")) {
+							zap.L().Warn("DB deadlock detected, retrying batch insert",
+								zap.Int("worker_id", workerID),
+								zap.Int("attempt", attempt),
+								zap.Error(err),
+							)
+							time.Sleep(100 * time.Millisecond)
+							continue
+						}
+						break
+					}
+					duration := time.Since(start)
+					if err != nil {
+						atomic.AddUint64(&m.dbErrors, 1)
+						zap.L().Error("❌ DB worker failed to batch insert market data",
+							zap.Error(err),
+							zap.Int("worker_id", workerID),
+							zap.Int("batch_size", len(dataToFlush)),
+							zap.Duration("duration", duration))
+						if duration > time.Second {
+							zap.L().Warn("DB write took too long", zap.Duration("duration", duration))
+						}
+					} else {
+						skippedCount := len(dataToFlush) - int(result.RowsAffected)
+						if skippedCount > 0 {
+							zap.L().Warn("⚠️ DB worker flushed market data with skipped duplicates",
+								zap.Int("worker_id", workerID),
+								zap.Int("total_attempted", len(dataToFlush)),
+								zap.Int64("rows_inserted", result.RowsAffected),
+								zap.Int("rows_skipped", skippedCount))
+						} else {
+							zap.L().Debug("✅ DB worker successfully flushed market data",
+								zap.Int("worker_id", workerID),
+								zap.Int64("count", result.RowsAffected))
+						}
+					}
+				case <-ctx.Done():
+					zap.L().Info("📦 Context cancelled, DB worker stopping", zap.Int("worker_id", workerID))
+					return
 				}
-				return true
-			})
-		case <-ctx.Done():
-			zap.L().Info("Context cancelled, stopping WebSocket broadcaster.")
-			return
-		}
+			}
+		}(i)
 	}
 }
 
-// RegisterWebSocketClient adds a new WebSocket client for broadcasting.
-func (m *MarketDataIngestor) RegisterWebSocketClient(conn *websocket.Conn) {
-	m.wsClients.Store(conn, true)
-	zap.L().Info("🧑‍💻 New WebSocket client connected", zap.String("remote_addr", conn.RemoteAddr().String()))
+// startWebSocketBroadcasterWorkers starts a pool of goroutines to consume from broadcastChannel
+// and dispatch messages to individual client write channels.
+func (m *MarketDataIngestor) startWebSocketBroadcasterWorkers(ctx context.Context) {
+	for i := 0; i < m.wsBroadcastWorkerCount; i++ {
+		go func(workerID int) {
+			defer func() {
+				if r := recover(); r != nil {
+					zap.L().Error("Panic recovered in WS dispatcher worker", zap.Int("worker_id", workerID), zap.Any("recover", r))
+				}
+			}()
+			zap.L().Info("🌐 WS dispatcher worker started", zap.Int("worker_id", workerID))
+			for {
+				select {
+				case msg, ok := <-m.broadcastChannel:
+					if !ok {
+						zap.L().Info("🌐 WS dispatch channel closed, worker stopping", zap.Int("worker_id", workerID))
+						return
+					}
+					m.wsClients.Range(func(key, value interface{}) bool {
+						conn, ok := key.(*websocket.Conn)
+						if !ok {
+							zap.L().Warn("Found non-websocket.Conn in wsClients map, deleting.", zap.Any("key", key))
+							m.wsClients.Delete(key)
+							return true
+						}
+						clientWriteCh, ok := value.(chan []byte)
+						if !ok {
+							zap.L().Error("Value in wsClients map is not a chan []byte, deleting.", zap.Any("key", key))
+							m.wsClients.Delete(key)
+							return true
+						}
+						select {
+						case clientWriteCh <- msg:
+							// Message successfully queued for this client
+						default:
+							atomic.AddUint64(&m.wsDrops, 1)
+							zap.L().Warn("Dropping WebSocket message for client: client's write channel is full.",
+								zap.String("remote_addr", conn.RemoteAddr().String()),
+								zap.Int("worker_id", workerID))
+						}
+						return true
+					})
+				case <-ctx.Done():
+					zap.L().Info("🌐 Context cancelled, WS dispatcher worker stopping", zap.Int("worker_id", workerID))
+					return
+				}
+			}
+		}(i)
+	}
+}
 
+// RegisterWebSocketClient adds a new WebSocket client and starts its dedicated write pump.
+func (m *MarketDataIngestor) RegisterWebSocketClient(conn *websocket.Conn) {
+	clientWriteCh := make(chan []byte, 1024)
+	m.wsClients.Store(conn, clientWriteCh)
+	zap.L().Info("🧑‍💻 New WebSocket client connected", zap.String("remote_addr", conn.RemoteAddr().String()))
+	go m.writePump(conn, clientWriteCh)
 	m.livePrices.Range(func(key, value interface{}) bool {
-		symbol := key.(string)
 		data := value.([]byte)
-		err := conn.WriteMessage(websocket.TextMessage, data)
-		if err != nil {
-			zap.L().Warn("Failed to send initial live price to new WS client",
-				zap.String("symbol", symbol),
-				zap.String("remote_addr", conn.RemoteAddr().String()),
-				zap.Error(err))
+		select {
+		case clientWriteCh <- data:
+		default:
+			zap.L().Warn("Failed to send initial live price to new WS client (channel full during init)",
+				zap.String("symbol", key.(string)),
+				zap.String("remote_addr", conn.RemoteAddr().String()))
 			conn.Close()
 			m.wsClients.Delete(conn)
 			return false
@@ -389,11 +581,91 @@ func (m *MarketDataIngestor) RegisterWebSocketClient(conn *websocket.Conn) {
 	})
 }
 
-// UnregisterWebSocketClient removes a WebSocket client.
+// UnregisterWebSocketClient removes a WebSocket client and signals its write pump to stop.
 func (m *MarketDataIngestor) UnregisterWebSocketClient(conn *websocket.Conn) {
-	m.wsClients.Delete(conn)
-	conn.Close()
-	zap.L().Info("🔌 WebSocket client disconnected", zap.String("remote_addr", conn.RemoteAddr().String()))
+	if clientWriteCh, ok := m.wsClients.Load(conn); ok {
+		select {
+		case <-clientWriteCh.(chan []byte):
+		default:
+			close(clientWriteCh.(chan []byte))
+		}
+		m.wsClients.Delete(conn)
+		conn.Close()
+		zap.L().Info("🔌 WebSocket client disconnected", zap.String("remote_addr", conn.RemoteAddr().String()))
+	} else {
+		zap.L().Warn("Attempted to unregister a WebSocket client that was not found.", zap.String("remote_addr", conn.RemoteAddr().String()))
+	}
+}
+
+// writePump reads messages from a client's dedicated channel and writes them to the WebSocket connection.
+func (m *MarketDataIngestor) writePump(conn *websocket.Conn, clientWriteCh <-chan []byte) {
+	defer func() {
+		m.UnregisterWebSocketClient(conn)
+		zap.L().Info("🚽 WebSocket write pump stopped for client", zap.String("remote_addr", conn.RemoteAddr().String()))
+	}()
+	for {
+		select {
+		case message, ok := <-clientWriteCh:
+			if !ok {
+				zap.L().Info("WebSocket client write channel closed, write pump exiting gracefully", zap.String("remote_addr", conn.RemoteAddr().String()))
+				return
+			}
+			err := conn.WriteMessage(websocket.TextMessage, message)
+			if err != nil {
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+					zap.L().Error("WebSocket write error (unexpected close) in write pump", zap.Error(err), zap.String("remote_addr", conn.RemoteAddr().String()))
+				} else {
+					zap.L().Info("WebSocket write error (graceful close/other) in write pump", zap.Error(err), zap.String("remote_addr", conn.RemoteAddr().String()))
+				}
+				return
+			}
+		}
+	}
+}
+
+// startSequenceCounterCleanup periodically cleans up old entries in tickSequenceCounters to prevent memory leaks.
+func (m *MarketDataIngestor) startSequenceCounterCleanup(ctx context.Context) {
+	cleanupInterval := time.Duration(m.cfg.Ingestion.TickSequenceCleanupInterval) * time.Second
+	if cleanupInterval <= 0 {
+		cleanupInterval = 10 * time.Minute
+		zap.L().Warn("Invalid TickSequenceCleanupInterval in config, defaulting to 10 minutes", zap.Int("configured_value", m.cfg.Ingestion.TickSequenceCleanupInterval))
+	}
+
+	expiryDuration := time.Duration(m.cfg.Ingestion.MaxTickSequenceCacheDuration) * time.Second
+	if expiryDuration <= 0 {
+		expiryDuration = 24 * time.Hour
+		zap.L().Warn("Invalid MaxTickSequenceCacheDuration in config, defaulting to 24 hours", zap.Int("configured_value", m.cfg.Ingestion.MaxTickSequenceCacheDuration))
+	}
+
+	ticker := time.NewTicker(cleanupInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			m.sequenceMux.Lock()
+			now := time.Now()
+			for instrument, tsMap := range m.tickSequenceCounters {
+				for ts := range tsMap {
+					if now.Sub(ts) > expiryDuration {
+						delete(tsMap, ts)
+					}
+				}
+				if len(tsMap) == 0 {
+					delete(m.tickSequenceCounters, instrument)
+				}
+			}
+			m.sequenceMux.Unlock()
+			m.lastCleanupTime = time.Now()
+			zap.L().Debug("Cleaned up old tick sequence counters",
+				zap.Time("cleanup_time", m.lastCleanupTime),
+				zap.Duration("removed_older_than", expiryDuration),
+			)
+		case <-ctx.Done():
+			zap.L().Info("Context cancelled, stopping sequence counter cleanup goroutine.")
+			return
+		}
+	}
 }
 
 // loadInitialTickSequenceCounters loads the max tick sequence IDs from DB on startup.

@@ -3,10 +3,10 @@ package db
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/Bhavik2205/ML-Bot/internal/utils"
+	"go.uber.org/zap"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -35,16 +35,16 @@ func NewPostgresClient(cfg *utils.DatabaseConfig) (*DBClient, error) {
 	sqlDB.SetMaxIdleConns(cfg.IdleConnections)
 	sqlDB.SetConnMaxLifetime(time.Duration(cfg.ConnectionTimeoutSeconds) * time.Second)
 
-	log.Println("✅ Connected to PostgreSQL database.")
+	zap.L().Info("✅ Connected to PostgreSQL database...")
 	return &DBClient{DB: db}, nil
 }
 
 // AutoMigrate runs database migrations for the given models.
 func (c *DBClient) AutoMigrate(models ...interface{}) error {
-	log.Println("⚙️  Running database migrations...")
+	zap.L().Info("⚙️ Starting database migrations...")
 	if err := c.DB.AutoMigrate(models...); err != nil {
 		return fmt.Errorf("failed to auto migrate database: %w", err)
 	}
-	log.Println("✅ Database migrations completed successfully.")
+	zap.L().Info("✅ Database migrations completed successfully.")
 	return nil
 }

@@ -793,3 +793,6 @@ Navigate to your project's root directory (`equity-trading-bot/`).
 * **Backup**: Always back up your database before running migrations in production.
 
 * **Environment**: Ensure `.env` is correctly configured for the script's execution environment.
+
+*** cmd command to startup the server with logging
+go run cmd/main.go 2>&1 | tee startup.log

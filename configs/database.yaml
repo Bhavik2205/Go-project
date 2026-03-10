@@ -4,3 +4,10 @@
 max_open_connections: 20 # Maximum number of open connections to the database
 max_idle_connections: 10 # Maximum number of connections in the idle connection pool
 connection_max_lifetime_minutes: 5 # Maximum amount of time a connection may be reused
+connection_timeout_seconds: 30
+retry:
+  max_attempts: 3
+  initial_delay_ms: 100
+  max_delay_ms: 1000
+query_timeout_seconds: 10
+statement_cache_size: 1000 # Size of the statement cache for prepared statements

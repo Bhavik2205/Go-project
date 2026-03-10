@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -65,7 +64,7 @@ func getBoolEnv(key string, defaultVal bool) bool {
 	}
 	val, err := strconv.ParseBool(valStr)
 	if err != nil {
-		log.Printf("Warning: unable to parse %s as bool, defaulting to %v", key, defaultVal)
+		logger.Warnw("Unable to parse env var as bool, using default", "key", key, "value", valStr, "default", defaultVal)
 		return defaultVal
 	}
 	return val
@@ -74,7 +73,7 @@ func getBoolEnv(key string, defaultVal bool) bool {
 func init() {
 	// Load .env file
 	if err := godotenv.Load(); err != nil {
-		fmt.Println("Warning: .env file not loaded, relying on system env variables")
+		zap.L().Warn("Failed to load .env file, relying on system env variables")
 	}
 
 	for _, k := range []string{
@@ -83,7 +82,7 @@ func init() {
 		"USE_EODHD", "EODHD_LIMIT",
 		"USE_GOOGLE_CSE", "GOOGLE_CSE_LIMIT",
 	} {
-		fmt.Printf("%s = %s\n", k, os.Getenv(k))
+		zap.L().Debug("Env var", zap.String("key", k), zap.String("value", os.Getenv(k)))
 	}
 
 	// Register Prometheus metrics
@@ -175,7 +174,7 @@ func RunNewsPipeline(ctx context.Context, company string, cfg *NewsPipelineConfi
 		cfg = config
 	}
 
-	logger.Infow("Starting news pipeline", "company", company)
+	zap.L().Info("Starting news pipeline", zap.String("company", company))
 
 	// Clone config to avoid mutating passed config with limit decrement
 	cfgCopy := *cfg
@@ -214,14 +213,18 @@ func RunNewsPipeline(ctx context.Context, company string, cfg *NewsPipelineConfi
 
 	for _, fetcher := range fetchers {
 		if !fetcher.use || fetcher.skip || fetcher.limit <= 0 {
-			logger.Debugw("Skipping source", "source", fetcher.name)
+			zap.L().Debug("Skipping source", zap.String("source", fetcher.name))
 			continue
 		}
 
 		wg.Add(1)
 		go func(name string, fetch func(context.Context, string, *NewsPipelineConfig) ([]NewsArticle, error)) {
 			defer wg.Done()
-
+			defer func() {
+				if r := recover(); r != nil {
+					zap.L().Error("Panic in news fetcher goroutine", zap.String("source", name), zap.Any("recover", r))
+				}
+			}()
 			start := time.Now()
 			newsFetchCount.WithLabelValues(name).Inc()
 
@@ -234,12 +237,13 @@ func RunNewsPipeline(ctx context.Context, company string, cfg *NewsPipelineConfi
 
 			if err != nil {
 				newsFetchErrors.WithLabelValues(name).Inc()
-				logger.Errorw("Error fetching news", "source", name, "error", err)
+				zap.L().Error("Error fetching news", zap.String("source", name), zap.Error(err))
 				errs = append(errs, fmt.Errorf("%s: %w", name, err))
+
 				return
 			}
 
-			logger.Infow("Fetched articles", "source", name, "count", len(articles), "duration_sec", duration)
+			zap.L().Info("Fetched articles", zap.String("source", name), zap.Int("count", len(articles)), zap.Float64("duration_sec", duration))
 			allArticles = append(allArticles, articles...)
 		}(fetcher.name, fetcher.fetch)
 	}
@@ -247,7 +251,7 @@ func RunNewsPipeline(ctx context.Context, company string, cfg *NewsPipelineConfi
 	wg.Wait()
 
 	uniqueArticles := deduplicateArticles(allArticles)
-	logger.Infow("Pipeline complete", "unique_articles_count", len(uniqueArticles))
+	zap.L().Info("Deduplicated articles", zap.Int("count", len(uniqueArticles)))
 
 	return uniqueArticles, errors.Join(errs...)
 }
@@ -287,7 +291,7 @@ func fetchFromMarketaux(ctx context.Context, company string, cfg *NewsPipelineCo
 	for _, item := range resp.Data {
 		t, err := time.Parse(time.RFC3339, item.PublishedAt)
 		if err != nil {
-			logger.Warnw("Failed to parse Marketaux published_at", "value", item.PublishedAt, "error", err)
+			zap.L().Warn("Failed to parse Marketaux published_at", zap.String("value", item.PublishedAt), zap.Error(err))
 			t = time.Time{}
 		}
 		articles = append(articles, NewsArticle{
@@ -377,7 +381,7 @@ func fetchFromEODHD(ctx context.Context, company string, cfg *NewsPipelineConfig
 	for _, item := range resp {
 		t, err := time.Parse(time.RFC3339, item.PubDate)
 		if err != nil {
-			logger.Warnw("Failed to parse EODHD published_at", "value", item.PubDate, "error", err)
+			zap.L().Warn("Failed to parse EODHD published_at", zap.String("value", item.PubDate), zap.Error(err))
 			t = time.Time{}
 		}
 		articles = append(articles, NewsArticle{
@@ -441,7 +445,7 @@ func fetchFromGoogleCSE(ctx context.Context, company string, cfg *NewsPipelineCo
 				if err == nil {
 					publishedAt = t
 				} else {
-					logger.Warnw("Failed to parse Google CSE article:published_time", "value", pt, "error", err)
+					zap.L().Warn("Failed to parse Google CSE article:published_time", zap.String("value", pt), zap.Error(err))
 				}
 			}
 		}

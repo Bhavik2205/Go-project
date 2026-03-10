@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 type InstrumentInfo struct {
@@ -38,7 +40,7 @@ func (z *ZerodhaClient) EnsureInstrumentsCSV(path string) error {
 
 	// Check file age
 	if time.Since(info.ModTime()) > 24*time.Hour {
-		fmt.Println("Instruments file is older than 24 hours, downloading new copy...")
+		zap.L().Info("Instruments file is older than 24 hours, downloading new copy")
 		return z.DownloadInstrumentsCSV(path)
 	}
 
@@ -50,25 +52,30 @@ func (z *ZerodhaClient) DownloadInstrumentsCSV(path string) error {
 	url := "https://api.kite.trade/instruments"
 	resp, err := http.Get(url)
 	if err != nil {
+		zap.L().Error("Failed to download instruments", zap.String("url", url), zap.Error(err))
+		// Return a formatted error message
 		return fmt.Errorf("failed to download instruments from %s: %v", url, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		zap.L().Error("Failed to download instruments", zap.String("url", url), zap.Error(err))
 		return fmt.Errorf("failed to download instruments: received non-OK HTTP status %d", resp.StatusCode)
 	}
 
 	out, err := os.Create(path)
 	if err != nil {
+		zap.L().Error("Failed to create instruments file", zap.String("path", path), zap.Error(err))
 		return fmt.Errorf("failed to create instruments file '%s': %v", path, err)
 	}
 	defer out.Close()
 
 	_, err = out.ReadFrom(resp.Body)
 	if err != nil {
+		zap.L().Error("Failed to write downloaded instruments to file", zap.String("path", path), zap.Error(err))
 		return fmt.Errorf("failed to write downloaded instruments to file '%s': %v", path, err)
 	}
-	fmt.Printf("Successfully downloaded instruments CSV to '%s'\n", path)
+	zap.L().Info("Successfully downloaded instruments CSV", zap.String("path", path))
 	return nil
 }
 
@@ -76,11 +83,13 @@ func (z *ZerodhaClient) FindInstrumentToken(symbol string, preferredExchanges []
 	const instrumentsFile = "instruments.csv"
 
 	if err := z.EnsureInstrumentsCSV(instrumentsFile); err != nil {
+		zap.L().Error("Failed to ensure instruments.csv", zap.Error(err))
 		return nil, fmt.Errorf("failed to ensure instruments.csv: %v", err)
 	}
 
 	file, err := os.Open(instrumentsFile)
 	if err != nil {
+		zap.L().Error("Failed to open instruments file", zap.String("file", instrumentsFile), zap.Error(err))
 		return nil, fmt.Errorf("failed to open instruments file '%s': %v", instrumentsFile, err)
 	}
 	defer file.Close()
@@ -88,6 +97,7 @@ func (z *ZerodhaClient) FindInstrumentToken(symbol string, preferredExchanges []
 	r := csv.NewReader(file)
 	header, err := r.Read() // Read the header row
 	if err != nil {
+		zap.L().Error("Failed to read CSV header", zap.String("file", instrumentsFile), zap.Error(err))
 		return nil, fmt.Errorf("failed to read CSV header from '%s': %v", instrumentsFile, err)
 	}
 
@@ -102,6 +112,7 @@ func (z *ZerodhaClient) FindInstrumentToken(symbol string, preferredExchanges []
 	getColIndex := func(name string) (int, error) {
 		idx, ok := colMap[strings.ToLower(name)]
 		if !ok {
+			zap.L().Error("Column not found in CSV header", zap.String("column", name), zap.String("file", instrumentsFile))
 			return -1, fmt.Errorf("column '%s' not found in CSV header", name)
 		}
 		return idx, nil
@@ -165,13 +176,14 @@ func (z *ZerodhaClient) FindInstrumentToken(symbol string, preferredExchanges []
 			if err.Error() == "EOF" {
 				break // End of file
 			}
+			zap.L().Error("Failed to read CSV record", zap.String("file", instrumentsFile), zap.Error(err))
 			return nil, fmt.Errorf("failed to read CSV record: %v", err)
 		}
 
 		// Basic check: ensure the record has enough columns to avoid out-of-bounds access
 		// Using the largest index you'll access (e.g., idxExchange)
 		if len(record) <= idxExchange {
-			fmt.Printf("Warning: Skipping malformed row with insufficient columns: %v\n", record)
+			zap.L().Warn("Skipping malformed row with insufficient columns", zap.Strings("record", record))
 			continue
 		}
 
@@ -182,31 +194,31 @@ func (z *ZerodhaClient) FindInstrumentToken(symbol string, preferredExchanges []
 			// Parse Token
 			token64, parseErr := strconv.ParseUint(record[idxInstrumentToken], 10, 32)
 			if parseErr != nil {
-				fmt.Printf("Warning: Invalid instrument_token format '%s' for %s: %v. Skipping row.\n", record[idxInstrumentToken], tradingSymbol, parseErr)
+				zap.L().Warn("Invalid instrument_token format", zap.String("token", record[idxInstrumentToken]), zap.String("symbol", tradingSymbol), zap.Error(parseErr))
 				continue
 			}
 			exchangeToken64, parseErr := strconv.ParseUint(record[idxExchangeToken], 10, 32)
 			if parseErr != nil {
-				fmt.Printf("Warning: Invalid exchange_token format '%s' for %s: %v. Defaulting to 0.\n", record[idxExchangeToken], tradingSymbol, parseErr)
+				zap.L().Warn("Invalid exchange_token format", zap.String("token", record[idxExchangeToken]), zap.String("symbol", tradingSymbol), zap.Error(parseErr))
 				exchangeToken64 = 0
 			}
 
 			// Parse numerical fields
 			lastPrice, parseErr := strconv.ParseFloat(record[idxLastPrice], 64)
 			if parseErr != nil {
-				fmt.Printf("Warning: Invalid last_price format '%s' for %s: %v. Defaulting to 0.0.\n", record[idxLastPrice], tradingSymbol, parseErr)
+				zap.L().Warn("Invalid last_price format", zap.String("last_price", record[idxLastPrice]), zap.String("symbol", tradingSymbol), zap.Error(parseErr))
 				lastPrice = 0.0
 			}
 
 			tickSize, parseErr := strconv.ParseFloat(record[idxTickSize], 64)
 			if parseErr != nil {
-				fmt.Printf("Warning: Invalid tick_size format '%s' for %s: %v. Defaulting to 0.0.\n", record[idxTickSize], tradingSymbol, parseErr)
+				zap.L().Warn("Invalid tick_size format", zap.String("tick_size", record[idxTickSize]), zap.String("symbol", tradingSymbol), zap.Error(parseErr))
 				tickSize = 0.0
 			}
 
 			lotSize, parseErr := strconv.ParseUint(record[idxLotSize], 10, 32)
 			if parseErr != nil {
-				fmt.Printf("Warning: Invalid lot_size format '%s' for %s: %v. Defaulting to 0.\n", record[idxLotSize], tradingSymbol, parseErr)
+				zap.L().Warn("Invalid lot_size format", zap.String("lot_size", record[idxLotSize]), zap.String("symbol", tradingSymbol), zap.Error(parseErr))
 				lotSize = 0
 			}
 
@@ -217,7 +229,7 @@ func (z *ZerodhaClient) FindInstrumentToken(symbol string, preferredExchanges []
 				if dateParseErr == nil {
 					expiry = &t
 				} else {
-					fmt.Printf("Warning: Failed to parse expiry date '%s' for %s: %v\n", record[idxExpiry], tradingSymbol, dateParseErr)
+					zap.L().Warn("Invalid expiry format", zap.String("expiry", record[idxExpiry]), zap.String("symbol", tradingSymbol), zap.Error(dateParseErr))
 				}
 			}
 
@@ -227,7 +239,7 @@ func (z *ZerodhaClient) FindInstrumentToken(symbol string, preferredExchanges []
 				if strikeParseErr == nil {
 					strike = &s
 				} else {
-					fmt.Printf("Warning: Failed to parse strike price '%s' for %s: %v\n", record[idxStrike], tradingSymbol, strikeParseErr)
+					zap.L().Warn("Invalid strike price format", zap.String("strike", record[idxStrike]), zap.String("symbol", tradingSymbol), zap.Error(strikeParseErr))
 				}
 			}
 
@@ -255,5 +267,6 @@ func (z *ZerodhaClient) FindInstrumentToken(symbol string, preferredExchanges []
 		}
 	}
 
-	return nil, fmt.Errorf("symbol '%s' not found in preferred exchanges %v", symbol, preferredExchanges)
+	zap.L().Warn("Symbol not found in preferred exchanges", zap.String("symbol", symbol), zap.Strings("preferredExchanges", preferredExchanges))
+	return nil, fmt.Errorf("symbol '%s' not found in preferred exchanges: %v", symbol, preferredExchanges)
 }

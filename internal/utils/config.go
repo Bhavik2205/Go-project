@@ -1,4 +1,3 @@
-// internal/utils/config.go
 package utils
 
 import (
@@ -25,15 +24,26 @@ type AppConfig struct {
 	Ingestion struct {
 		MarketDataBatchSize          int `yaml:"market_data_batch_size"`
 		MarketDataFlushIntervalMS    int `yaml:"market_data_flush_interval_ms"`
-		MaxTickSequenceCacheDuration int `yaml:"max_tick_sequence_cache_duration"`
+		MaxTickSequenceCacheDuration int `yaml:"max_tick_sequence_cache_duration_s"`
 		TickSequenceCleanupInterval  int `yaml:"tick_sequence_cleanup_interval_s"`
+		DBWorkerCount                int `yaml:"db_worker_count"`                  // Number of workers for DB writes
+		DBFlushChannelSize           int `yaml:"db_flush_channel_size"`            // Size of channel for DB writes
+		WSBroadcastWorkerCount       int `yaml:"ws_broadcast_worker_count"`        // Number of workers for WebSocket broadcasting
+		WSBroadcastChannelSize       int `yaml:"ws_broadcast_channel_size"`        // Size of channel for WebSocket broadcasting
+		RedisReconnectInitialDelayMs int `yaml:"redis_reconnect_initial_delay_ms"` // Initial delay for Redis reconnect
+		RedisReconnectMaxDelayMs     int `yaml:"redis_reconnect_max_delay_ms"`     // Max delay for Redis reconnect
+		RedisReconnectMaxAttempts    int `yaml:"redis_reconnect_max_attempts"`     // Max attempts for Redis reconnect
 	} `yaml:"ingestion"`
-	Monitor struct { // ADD THIS
+	Monitor struct {
 		BroadcastInterval time.Duration `yaml:"broadcast_interval"`
 	} `yaml:"monitor"`
 	Candles struct {
 		Intervals []string `yaml:"intervals"` // e.g., ["1m", "5m", "15m", "1h", "1d"]
 	}
+	Market struct {
+		Simulate                  bool    `yaml:"simulate"`
+		SimulationSpeedMultiplier float64 `yaml:"simulation_speed_multiplier"`
+	} `yaml:"market"`
 }
 
 // DatabaseConfig holds database connection settings
@@ -74,39 +84,76 @@ type StrategyConfig struct {
 	MarketDataTimeframe string `yaml:"market_data_timeframe"`
 }
 
-// IndicatorsConfig holds default parameters for various technical indicators. (NEW STRUCT)
+// Define individual indicator config structs with an "Enabled" field.
+// This matches the structure expected by indicators_manager.go and indicators/interface.go.
+type SMAConfig struct {
+	Enabled bool `yaml:"enabled"`
+	Period  int  `yaml:"period"`
+}
+
+type EMAConfig struct {
+	Enabled     bool `yaml:"enabled"`
+	ShortPeriod int  `yaml:"short_period"`
+	LongPeriod  int  `yaml:"long_period"`
+}
+
+type RSIConfig struct {
+	Enabled       bool    `yaml:"enabled"`
+	Period        int     `yaml:"period"`
+	BuyThreshold  float64 `yaml:"buy_threshold"`
+	SellThreshold float64 `yaml:"sell_threshold"`
+}
+
+type MACDConfig struct {
+	Enabled      bool `yaml:"enabled"`
+	FastPeriod   int  `yaml:"fast_period"`
+	SlowPeriod   int  `yaml:"slow_period"`
+	SignalPeriod int  `yaml:"signal_period"`
+}
+
+type ATRConfig struct {
+	Enabled bool `yaml:"enabled"`
+	Period  int  `yaml:"period"`
+}
+
+type StochasticConfig struct {
+	Enabled bool `yaml:"enabled"`
+	KPeriod int  `yaml:"k_period"`
+	DPeriod int  `yaml:"d_period"`
+}
+
+type BollingerBandsConfig struct {
+	Enabled   bool    `yaml:"enabled"`
+	Period    int     `yaml:"period"`
+	NumStdDev float64 `yaml:"num_std_dev"`
+}
+
+type ADXConfig struct {
+	Enabled bool `yaml:"enabled"`
+	Period  int  `yaml:"period"`
+}
+
+// Add OBV and VWAP configs
+type OBVConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+
+type VWAPConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+
+// IndicatorsConfig now embeds these new individual config structs.
 type IndicatorsConfig struct {
-	SMA struct {
-		Period int `yaml:"period"`
-	} `yaml:"sma"`
-	EMA struct {
-		ShortPeriod int `yaml:"short_period"`
-		LongPeriod  int `yaml:"long_period"`
-	} `yaml:"ema"`
-	RSI struct {
-		Period        int     `yaml:"period"`
-		BuyThreshold  float64 `yaml:"buy_threshold"`
-		SellThreshold float64 `yaml:"sell_threshold"`
-	} `yaml:"rsi"`
-	MACD struct {
-		FastPeriod   int `yaml:"fast_period"`
-		SlowPeriod   int `yaml:"slow_period"`
-		SignalPeriod int `yaml:"signal_period"`
-	} `yaml:"macd"`
-	ATR struct {
-		Period int `yaml:"period"`
-	} `yaml:"atr"`
-	Stochastic struct {
-		KPeriod int `yaml:"k_period"`
-		DPeriod int `yaml:"d_period"`
-	} `yaml:"stochastic"`
-	BollingerBands struct {
-		Period    int     `yaml:"period"`
-		NumStdDev float64 `yaml:"num_std_dev"`
-	} `yaml:"bollinger_bands"`
-	ADX struct {
-		Period int `yaml:"period"`
-	} `yaml:"adx"`
+	SMA            SMAConfig            `yaml:"sma"`
+	EMA            EMAConfig            `yaml:"ema"`
+	RSI            RSIConfig            `yaml:"rsi"`
+	MACD           MACDConfig           `yaml:"macd"`
+	ATR            ATRConfig            `yaml:"atr"`
+	Stochastic     StochasticConfig     `yaml:"stochastic"`
+	BollingerBands BollingerBandsConfig `yaml:"bollinger_bands"`
+	ADX            ADXConfig            `yaml:"adx"`
+	OBV            OBVConfig            `yaml:"obv"`  // New
+	VWAP           VWAPConfig           `yaml:"vwap"` // New
 }
 
 // ZerodhaConfig holds Zerodha API connection settings
@@ -127,6 +174,30 @@ func LoadAppConfig(path string) (*AppConfig, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal app config %s: %w", path, err)
 	}
+
+	// Set default values if not explicitly set in config
+	if cfg.Ingestion.DBWorkerCount == 0 {
+		cfg.Ingestion.DBWorkerCount = 4
+	}
+	if cfg.Ingestion.DBFlushChannelSize == 0 {
+		cfg.Ingestion.DBFlushChannelSize = 100
+	}
+	if cfg.Ingestion.WSBroadcastWorkerCount == 0 {
+		cfg.Ingestion.WSBroadcastWorkerCount = 8
+	}
+	if cfg.Ingestion.WSBroadcastChannelSize == 0 {
+		cfg.Ingestion.WSBroadcastChannelSize = 10000 // A large buffer for high-frequency
+	}
+	if cfg.Ingestion.RedisReconnectInitialDelayMs == 0 {
+		cfg.Ingestion.RedisReconnectInitialDelayMs = 100 // Default to 100ms
+	}
+	if cfg.Ingestion.RedisReconnectMaxDelayMs == 0 {
+		cfg.Ingestion.RedisReconnectMaxDelayMs = 5000 // Default to 5 seconds
+	}
+	if cfg.Ingestion.RedisReconnectMaxAttempts == 0 {
+		cfg.Ingestion.RedisReconnectMaxAttempts = 10 // Default to 10 attempts
+	}
+
 	return &cfg, nil
 }
 
@@ -200,14 +271,6 @@ func LoadRedisConfig() (*RedisConfig, error) {
 	cfg.Host = host
 	cfg.Port = port
 
-	// IMPORTANT: For Redis Cloud, typically the `rediss://` or `redis://` scheme
-	// implies TLS/SSL. If using `rediss://`, the `go-redis` client will
-	// automatically handle TLS. If just `redis://` and Redis Cloud requires TLS,
-	// you might need to manually set opts.TLSConfig in NewRedisClient.
-	// However, sticking to the URL and let ParseURL handle it is generally best.
-	// Since we are not passing 'opts' directly, we need to ensure RedisClient
-	// can handle TLS if necessary. For now, assume it's handled by redis.Options.
-
 	return cfg, nil
 }
 
@@ -236,16 +299,3 @@ func LoadIndicatorsConfig(path string) (*IndicatorsConfig, error) {
 	}
 	return &cfg, nil
 }
-
-// // LoadZerodhaConfig loads Zerodha API configurations from a YAML file.
-// func LoadZerodhaConfig(path string) (*ZerodhaConfig, error) {
-//     data, err := os.ReadFile(path)
-//     if err != nil {
-//         return nil, fmt.Errorf("failed to read Zerodha config file %s: %w", path, err)
-//     }
-//     var cfg ZerodhaConfig
-//     if err := yaml.Unmarshal(data, &cfg); err != nil {
-//         return nil, fmt.Errorf("failed to unmarshal Zerodha config %s: %w", path, err)
-//     }
-//     return &cfg, nil
-// }
