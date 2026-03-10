@@ -14,7 +14,7 @@ import (
 	"github.com/Bhavik2205/ML-Bot/internal/cache"
 	"github.com/Bhavik2205/ML-Bot/internal/data"
 	"github.com/Bhavik2205/ML-Bot/internal/db"
-	"github.com/Bhavik2205/ML-Bot/internal/execution"
+	monitor "github.com/Bhavik2205/ML-Bot/internal/execution"
 	"github.com/Bhavik2205/ML-Bot/internal/indicators"
 	"github.com/Bhavik2205/ML-Bot/internal/server"
 	"github.com/Bhavik2205/ML-Bot/internal/utils"
@@ -169,15 +169,15 @@ func main() {
 	server.SetRedisClient(redisClient)
 
 	// ─── Validate Zerodha Session ───────────────────────────────────────────────
-	// if !appCfg.Market.Simulate {
-	// 	user, err := client.Kite.GetUserProfile()
-	// 	if err != nil {
-	// 		wrappedErr := utils.WrapError(3003, "Invalid Zerodha session or token expired", err)
-	// 		zap.L().Fatal(wrappedErr.Error())
-	// 	}
-	// 	zap.L().Info("✅ Zerodha login success", zap.String("username", user.UserName), zap.String("userID", user.UserID))
-	// 	fmt.Println("✅ Zerodha session validated")
-	// }
+	if !appCfg.Market.Simulate {
+		user, err := client.Kite.GetUserProfile()
+		if err != nil {
+			wrappedErr := utils.WrapError(3003, "Invalid Zerodha session or token expired", err)
+			zap.L().Fatal(wrappedErr.Error())
+		}
+		zap.L().Info("✅ Zerodha login success", zap.String("username", user.UserName), zap.String("userID", user.UserID))
+		fmt.Println("✅ Zerodha session validated")
+	}
 
 	// ─── Setup graceful shutdown context ────────────────────────────────────────
 	ctx, cancel := context.WithCancel(context.Background())
