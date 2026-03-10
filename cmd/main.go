@@ -14,7 +14,7 @@ import (
 	"github.com/Bhavik2205/ML-Bot/internal/cache"
 	"github.com/Bhavik2205/ML-Bot/internal/data"
 	"github.com/Bhavik2205/ML-Bot/internal/db"
-	monitor "github.com/Bhavik2205/ML-Bot/internal/execution"
+	"github.com/Bhavik2205/ML-Bot/internal/execution"
 	"github.com/Bhavik2205/ML-Bot/internal/indicators"
 	"github.com/Bhavik2205/ML-Bot/internal/server"
 	"github.com/Bhavik2205/ML-Bot/internal/utils"
