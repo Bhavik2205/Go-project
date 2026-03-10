@@ -299,16 +299,3 @@ func LoadIndicatorsConfig(path string) (*IndicatorsConfig, error) {
 	}
 	return &cfg, nil
 }
-
-// // LoadZerodhaConfig loads Zerodha API configurations from a YAML file.
-// func LoadZerodhaConfig(path string) (*ZerodhaConfig, error) {
-//     data, err := os.ReadFile(path)
-//     if err != nil {
-//         return nil, fmt.Errorf("failed to read Zerodha config file %s: %w", path, err)
-//     }
-//     var cfg ZerodhaConfig
-//     if err := yaml.Unmarshal(data, &cfg); err != nil {
-//         return nil, fmt.Errorf("failed to unmarshal Zerodha config %s: %w", path, err)
-//     }
-//     return &cfg, nil
-// }
