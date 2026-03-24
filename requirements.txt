@@ -126,7 +126,7 @@ pyasn1-modules==0.3.0
 pycparser==2.21
 pyDeprecate==0.3.1
 pydicom==2.3.1
-Pygments==2.14.0
+Pygments==2.19.2
 pylint==3.0.0a4
 PyMeeus==0.5.12
 pyparsing==3.1.4
