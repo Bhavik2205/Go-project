@@ -178,7 +178,7 @@ torchvision==0.17.1
 tornado==6.1
 tqdm==4.64.1
 traitlets==4.3.3
-transformers==4.11.3
+transformers==5.0.0rc3
 typed-ast==1.4.3
 typing-extensions==3.7.4.3
 ujson==4.3.0
