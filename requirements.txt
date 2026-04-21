@@ -136,7 +136,7 @@ pyrsistent==0.18.0
 pystan==2.19.1.1
 pytest==7.0.1
 python-dateutil==2.8.2
-python-dotenv==0.20.0
+python-dotenv==1.2.2
 pytorch-forecasting==0.9.0
 pytorch-lightning==1.5.10.post0
 pytz==2023.3.post1
