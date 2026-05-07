@@ -1,6 +1,6 @@
 # configs/app.yaml
 server:
-  http_port: 8080
+  http_port: 8000
   websocket_path: "/ws"
   # If WebSocket runs on a separate port:
   # websocket_port: 8081
@@ -38,5 +38,5 @@ candles:
 graceful_shutdown_timeout_seconds: 15
 
 market:
-  simulate: false
+  simulate: true
   simulation_speed_multiplier: 8.0 # This can be set to any float value >= 0.1

@@ -11,6 +11,7 @@ import (
 
 	"github.com/Bhavik2205/ML-Bot/internal/api"
 	"github.com/Bhavik2205/ML-Bot/internal/cache"
+
 	"github.com/Bhavik2205/ML-Bot/internal/data"
 	"github.com/Bhavik2205/ML-Bot/internal/db"
 	monitor "github.com/Bhavik2205/ML-Bot/internal/execution"
@@ -156,16 +157,6 @@ func main() {
 	// ─── Setup graceful shutdown context ────────────────────────────────────────
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel() // Ensure cancel is called on exit
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	go func() {
-		defer recoverGoroutine("SignalHandler") // --- NEW: Panic recovery
-		sig := <-sigChan
-		zap.L().Info("Received shutdown signal", zap.String("signal", sig.String()))
-		cancel() // Trigger context cancellation
-	}()
 
 	// ─── Initialize and inject Ingestor and other Dependencies ──────────────────
 	// wsClients will be shared between server (for accepting connections) and ingestor (for broadcasting)
@@ -472,6 +463,17 @@ func main() {
 	}
 
 	// ─── Block until context is cancelled (e.g., via SIGINT/SIGTERM) ────────────
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		defer recoverGoroutine("SignalHandler") // --- NEW: Panic recovery
+		sig := <-sigChan
+		zap.L().Info("Received shutdown signal", zap.String("signal", sig.String()))
+		cancel() // Trigger context cancellation
+	}()
+
 	<-ctx.Done()
 	zap.L().Info("Shutting down ML-Bot service gracefully...")
 
