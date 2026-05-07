@@ -1,0 +1,48 @@
+openapi: 3.0.3
+info:
+  title: Go-project API
+  version: "v1"
+  description: API specification for Go-project (health endpoint only)
+paths:
+  /api/v1/health:
+    get:
+      summary: Service health and dependency status
+      description: Returns service health information and dependency checks (postgres, redis, zerodha)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                      service:
+                        type: string
+                      version:
+                        type: string
+                      uptimeSeconds:
+                        type: integer
+                      mode:
+                        type: string
+                      dependencies:
+                        type: object
+                        additionalProperties:
+                          type: string
+                  meta:
+                    type: object
+                    properties:
+                      requestId:
+                        type: string
+                      serverTime:
+                        type: string
+                      version:
+                        type: string
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+components: {}
