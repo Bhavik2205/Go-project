@@ -1,16 +1,1145 @@
 openapi: 3.0.3
+
 info:
-  title: Go-project API
-  version: "v1"
-  description: API specification for Go-project (health endpoint only)
+  title: TradingBot API
+  version: 0.1.0
+  description: |
+    Full API and WebSocket reference for the TradingBot Go backend.
+    Base path for all REST endpoints: `/api/v1`
+    WebSocket endpoints are documented under the `x-websocket` extension sections at the bottom.
+
+    ## Authentication
+    All protected endpoints require a Bearer JWT in the `Authorization` header.
+    Tokens are obtained via `POST /api/v1/auth/login` or `POST /api/v1/auth/signup`.
+    Access tokens expire in **15 minutes**. Use `POST /api/v1/auth/refresh` to rotate.
+
+    ## Response Envelope
+    Every response (success or error) is wrapped in a standard envelope:
+    ```json
+    { "data": {}, "meta": { "requestId": "", "serverTime": "", "version": "v1" } }
+    { "error": { "code": "", "message": "", "details": {} }, "meta": { ... } }
+    ```
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+
+security:
+  - BearerAuth: []
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Security Schemes
+# ─────────────────────────────────────────────────────────────────────────────
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        HS256-signed JWT. Obtain via /auth/login or /auth/signup.
+        Include as: `Authorization: Bearer <token>`
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Shared Schemas
+  # ───────────────────────────────────────────────────────────────────────────
+  schemas:
+
+    Meta:
+      type: object
+      properties:
+        requestId:
+          type: string
+          example: req_1234567890
+        serverTime:
+          type: string
+          format: date-time
+          example: "2026-05-06T23:10:00+05:30"
+        version:
+          type: string
+          example: v1
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    Pagination:
+      type: object
+      properties:
+        limit:
+          type: integer
+          example: 50
+        cursor:
+          type: string
+        nextCursor:
+          type: string
+        hasMore:
+          type: boolean
+
+    APIError:
+      type: object
+      properties:
+        code:
+          type: string
+          example: VALIDATION_ERROR
+        message:
+          type: string
+          example: One or more fields are invalid.
+        details:
+          nullable: true
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          $ref: '#/components/schemas/APIError'
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    # ── Auth ──────────────────────────────────────────────────────────────────
+
+    UserPayload:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        userName:
+          type: string
+          example: Bhavik
+        isActive:
+          type: boolean
+          example: true
+
+    AuthResponse:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/UserPayload'
+        accessToken:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        refreshToken:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        expiresIn:
+          type: integer
+          description: Access token TTL in seconds
+          example: 900
+
+    RefreshResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+          description: Rotated refresh token — old token is invalidated
+        expiresIn:
+          type: integer
+          example: 900
+
+    # ── Health ────────────────────────────────────────────────────────────────
+
+    HealthDependencies:
+      type: object
+      properties:
+        postgres:
+          type: string
+          enum: [ok, error, not_configured]
+        redis:
+          type: string
+          enum: [ok, error, not_configured]
+        zerodha:
+          type: string
+          enum: [ok, error, not_configured]
+
+    HealthData:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        service:
+          type: string
+          example: go-project
+        version:
+          type: string
+          example: 0.1.0
+        uptimeSeconds:
+          type: integer
+          example: 3600
+        mode:
+          type: string
+          enum: [live, simulation]
+        dependencies:
+          $ref: '#/components/schemas/HealthDependencies'
+
+    # ── Broker ────────────────────────────────────────────────────────────────
+
+    BrokerStatusData:
+      type: object
+      properties:
+        broker:
+          type: string
+          example: ZERODHA
+        connected:
+          type: boolean
+        brokerUserId:
+          type: string
+          example: AB1234
+        accountName:
+          type: string
+          example: Zerodha Personal
+        sessionExpiry:
+          type: string
+          format: date-time
+          nullable: true
+        lastSyncedAt:
+          type: string
+          format: date-time
+          nullable: true
+        tradingEnabled:
+          type: boolean
+
+    # ── Market ────────────────────────────────────────────────────────────────
+
+    OHLC:
+      type: object
+      properties:
+        open:
+          type: number
+          format: double
+        high:
+          type: number
+          format: double
+        low:
+          type: number
+          format: double
+        close:
+          type: number
+          format: double
+
+    QuoteItem:
+      type: object
+      properties:
+        symbol:
+          type: string
+          example: NSE:RELIANCE
+        instrumentToken:
+          type: integer
+          example: 738561
+        lastPrice:
+          type: number
+          format: double
+          example: 3000.5
+        netChange:
+          type: number
+          format: double
+          example: 15.25
+        percentChange:
+          type: number
+          format: double
+          example: 0.51
+        volumeTraded:
+          type: integer
+          format: int64
+          example: 123456
+        ohlc:
+          $ref: '#/components/schemas/OHLC'
+        updatedAt:
+          type: string
+          format: date-time
+
+    MarketOverviewItem:
+      type: object
+      properties:
+        symbol:
+          type: string
+          example: NSE:RELIANCE
+        lastPrice:
+          type: number
+          format: double
+        percentChange:
+          type: number
+          format: double
+        volume:
+          type: integer
+          format: int64
+        bid:
+          type: number
+          format: double
+        ask:
+          type: number
+          format: double
+        updatedAt:
+          type: string
+          format: date-time
+
+    MarketBreadth:
+      type: object
+      properties:
+        advancers:
+          type: integer
+        decliners:
+          type: integer
+        unchanged:
+          type: integer
+
+    MarketOverviewData:
+      type: object
+      properties:
+        indices:
+          type: array
+          items:
+            $ref: '#/components/schemas/MarketOverviewItem'
+        topGainers:
+          type: array
+          items:
+            $ref: '#/components/schemas/MarketOverviewItem'
+        topLosers:
+          type: array
+          items:
+            $ref: '#/components/schemas/MarketOverviewItem'
+        mostActiveByVolume:
+          type: array
+          items:
+            $ref: '#/components/schemas/MarketOverviewItem'
+        marketBreadth:
+          $ref: '#/components/schemas/MarketBreadth'
+        updatedAt:
+          type: string
+          format: date-time
+
+    Instrument:
+      type: object
+      properties:
+        instrumentToken:
+          type: integer
+          example: 738561
+        symbol:
+          type: string
+          example: NSE:RELIANCE
+        tradingSymbol:
+          type: string
+          example: RELIANCE
+        exchange:
+          type: string
+          example: NSE
+        name:
+          type: string
+          example: Reliance Industries
+        instrumentType:
+          type: string
+          example: EQ
+        lotSize:
+          type: integer
+          example: 1
+        tickSize:
+          type: number
+          format: double
+          example: 0.05
+
+    OHLCVCandle:
+      type: object
+      properties:
+        instrumentToken:
+          type: integer
+        symbol:
+          type: string
+        interval:
+          type: string
+          example: 1m
+        timestamp:
+          type: string
+          format: date-time
+        open:
+          type: number
+          format: double
+        high:
+          type: number
+          format: double
+        low:
+          type: number
+          format: double
+        close:
+          type: number
+          format: double
+        volume:
+          type: number
+          format: double
+        tradeCount:
+          type: integer
+
+    IndicatorValue:
+      type: object
+      properties:
+        instrumentToken:
+          type: integer
+        symbol:
+          type: string
+        interval:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        name:
+          type: string
+          example: RSI
+        values:
+          type: object
+          additionalProperties: true
+          example:
+            period: 14
+            value: 62.5
+
+    # ── Watchlist ─────────────────────────────────────────────────────────────
+
+    WatchlistItem:
+      type: object
+      properties:
+        symbol:
+          type: string
+          example: NSE:RELIANCE
+        instrumentToken:
+          type: integer
+          example: 738561
+        addedAt:
+          type: string
+          format: date-time
+
+    Watchlist:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          example: Default
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WatchlistItem'
+
+    # ── Orders ────────────────────────────────────────────────────────────────
+
+    Order:
+      type: object
+      properties:
+        id:
+          type: integer
+        brokerOrderId:
+          type: string
+        symbol:
+          type: string
+        instrumentToken:
+          type: integer
+        transactionType:
+          type: string
+          enum: [BUY, SELL]
+        orderType:
+          type: string
+          enum: [MARKET, LIMIT, SL, SL-M]
+        product:
+          type: string
+          enum: [MIS, CNC, NRML]
+        quantity:
+          type: integer
+        price:
+          type: number
+          format: double
+        triggerPrice:
+          type: number
+          format: double
+        status:
+          type: string
+          enum: [PENDING, OPEN, FILLED, CANCELLED, REJECTED]
+        placedAt:
+          type: string
+          format: date-time
+
+    PlaceOrderRequest:
+      type: object
+      required: [symbol, instrumentToken, transactionType, orderType, product, quantity]
+      properties:
+        symbol:
+          type: string
+          example: NSE:RELIANCE
+        instrumentToken:
+          type: integer
+          example: 738561
+        transactionType:
+          type: string
+          enum: [BUY, SELL]
+        orderType:
+          type: string
+          enum: [MARKET, LIMIT, SL, SL-M]
+        product:
+          type: string
+          enum: [MIS, CNC, NRML]
+        quantity:
+          type: integer
+          example: 10
+        price:
+          type: number
+          format: double
+          default: 0
+        triggerPrice:
+          type: number
+          format: double
+          default: 0
+        validity:
+          type: string
+          enum: [DAY, IOC]
+          default: DAY
+        tag:
+          type: string
+          example: manual
+
+    # ── Positions ─────────────────────────────────────────────────────────────
+
+    Position:
+      type: object
+      properties:
+        symbol:
+          type: string
+        instrumentToken:
+          type: integer
+        product:
+          type: string
+        quantity:
+          type: integer
+        averagePrice:
+          type: number
+          format: double
+        lastPrice:
+          type: number
+          format: double
+        realizedPnl:
+          type: number
+          format: double
+        unrealizedPnl:
+          type: number
+          format: double
+        updatedAt:
+          type: string
+          format: date-time
+
+    # ── Trades ────────────────────────────────────────────────────────────────
+
+    Trade:
+      type: object
+      properties:
+        id:
+          type: integer
+        orderId:
+          type: integer
+        symbol:
+          type: string
+        transactionType:
+          type: string
+          enum: [BUY, SELL]
+        quantity:
+          type: integer
+        price:
+          type: number
+          format: double
+        tradeTime:
+          type: string
+          format: date-time
+        exchange:
+          type: string
+
+    # ── Strategies ────────────────────────────────────────────────────────────
+
+    Strategy:
+      type: object
+      properties:
+        name:
+          type: string
+          example: IntradayMomentum
+        displayName:
+          type: string
+          example: Intraday Momentum
+        status:
+          type: string
+          enum: [available, running, stopped]
+        supportedModes:
+          type: array
+          items:
+            type: string
+            enum: [Paper, Live]
+        parametersSchema:
+          type: object
+          additionalProperties: true
+
+    UserStrategyConfig:
+      type: object
+      properties:
+        strategyName:
+          type: string
+        enabled:
+          type: boolean
+        parameters:
+          type: object
+          additionalProperties: true
+
+    Signal:
+      type: object
+      properties:
+        id:
+          type: string
+        strategyName:
+          type: string
+        symbol:
+          type: string
+        action:
+          type: string
+          enum: [BUY, SELL, HOLD]
+        confidence:
+          type: number
+          format: double
+        generatedAt:
+          type: string
+          format: date-time
+
+    # ── Backtests ─────────────────────────────────────────────────────────────
+
+    BacktestJob:
+      type: object
+      properties:
+        jobId:
+          type: string
+        strategyName:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, RUNNING, COMPLETED, FAILED]
+        result:
+          type: object
+          nullable: true
+          additionalProperties: true
+        errorMessage:
+          type: string
+          nullable: true
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    BacktestRequest:
+      type: object
+      required: [strategyName, symbols, from, to, initialCapital]
+      properties:
+        strategyName:
+          type: string
+          example: IntradayMomentum
+        symbols:
+          type: array
+          items:
+            type: string
+          example: [NSE:RELIANCE]
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        initialCapital:
+          type: number
+          format: double
+          example: 100000
+        fees:
+          type: object
+          properties:
+            brokerageType:
+              type: string
+              enum: [Flat, Percentage]
+            brokerageValue:
+              type: number
+              format: double
+            slippagePercent:
+              type: number
+              format: double
+        parameters:
+          type: object
+          additionalProperties: true
+
+    # ── Models ────────────────────────────────────────────────────────────────
+
+    MLModel:
+      type: object
+      properties:
+        id:
+          type: string
+          example: model_sentiment_optimized
+        name:
+          type: string
+          example: Sentiment Optimized
+        type:
+          type: string
+          example: sentiment
+        path:
+          type: string
+          example: models/sentiment_optimized.onnx
+        active:
+          type: boolean
+        version:
+          type: string
+          example: 0.1.0
+        metrics:
+          type: object
+          properties:
+            accuracy:
+              type: number
+              nullable: true
+            latencyMs:
+              type: number
+              nullable: true
+
+    # ── News & Sentiment ──────────────────────────────────────────────────────
+
+    NewsArticle:
+      type: object
+      properties:
+        id:
+          type: string
+        symbol:
+          type: string
+          nullable: true
+        source:
+          type: string
+          example: NewsAPI
+        title:
+          type: string
+        url:
+          type: string
+          format: uri
+        publishedAt:
+          type: string
+          format: date-time
+        sentimentScore:
+          type: number
+          format: double
+          nullable: true
+        sentimentLabel:
+          type: string
+          enum: [Positive, Neutral, Negative]
+          nullable: true
+
+    SentimentSummary:
+      type: object
+      properties:
+        label:
+          type: string
+          enum: [Positive, Neutral, Negative]
+        count:
+          type: integer
+        avgScore:
+          type: number
+          format: double
+
+    # ── Notifications ─────────────────────────────────────────────────────────
+
+    NotificationTestRequest:
+      type: object
+      required: [channel, message]
+      properties:
+        channel:
+          type: string
+          enum: [telegram, whatsapp]
+        message:
+          type: string
+          example: Test alert from TradingBot
+
+    NotificationHistory:
+      type: object
+      properties:
+        id:
+          type: integer
+        channelType:
+          type: string
+        eventType:
+          type: string
+        message:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, SENT, FAILED]
+        providerMessageId:
+          type: string
+          nullable: true
+        errorMessage:
+          type: string
+          nullable: true
+        sentAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    # ── Settings ──────────────────────────────────────────────────────────────
+
+    Settings:
+      type: object
+      properties:
+        zerodha:
+          type: object
+          properties:
+            apiKey:
+              type: string
+            apiSecretSet:
+              type: boolean
+            accessTokenSet:
+              type: boolean
+            redirectUrl:
+              type: string
+            brokerageType:
+              type: string
+            environment:
+              type: string
+              enum: [Paper, Live]
+        notifications:
+          type: object
+          additionalProperties: true
+        general:
+          type: object
+          additionalProperties: true
+        strategy:
+          type: object
+          additionalProperties: true
+        data:
+          type: object
+          additionalProperties: true
+        performance:
+          type: object
+          additionalProperties: true
+
+    # ── Runtime ───────────────────────────────────────────────────────────────
+
+    RuntimeConfig:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [live, simulation]
+        serverTime:
+          type: string
+          format: date-time
+        jwtExpirySeconds:
+          type: integer
+          example: 900
+        candleIntervals:
+          type: array
+          items:
+            type: string
+
+    RuntimeMetrics:
+      type: object
+      properties:
+        connectedWsClients:
+          type: integer
+        dbPingLatencyMs:
+          type: number
+          format: double
+        redisPingLatencyMs:
+          type: number
+          format: double
+        memoryAllocMB:
+          type: number
+          format: double
+
+    # ── Audit ─────────────────────────────────────────────────────────────────
+
+    AuditEvent:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+          nullable: true
+        eventType:
+          type: string
+        resourceType:
+          type: string
+          nullable: true
+        resourceId:
+          type: string
+          nullable: true
+        action:
+          type: string
+        status:
+          type: string
+          enum: [SUCCESS, FAILURE]
+        ipAddress:
+          type: string
+          nullable: true
+        requestId:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Shared Response Wrappers
+  # ───────────────────────────────────────────────────────────────────────────
+  responses:
+    Unauthorized:
+      description: Missing or invalid Bearer token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: invalid or expired token
+            meta:
+              requestId: req_123
+              version: v1
+
+    BadRequest:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Conflict:
+      description: Resource already exists
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+# =============================================================================
+# PATHS
+# =============================================================================
 paths:
+
+  # ── Health ──────────────────────────────────────────────────────────────────
   /api/v1/health:
     get:
+      tags: [Health]
       summary: Service health and dependency status
-      description: Returns service health information and dependency checks (postgres, redis, zerodha)
+      operationId: getHealth
+      security: []
       responses:
         '200':
-          description: OK
+          description: Health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/HealthData'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+              example:
+                data:
+                  status: ok
+                  service: go-project
+                  version: 0.1.0
+                  uptimeSeconds: 3600
+                  mode: simulation
+                  dependencies:
+                    postgres: ok
+                    redis: ok
+                    zerodha: not_configured
+                meta:
+                  requestId: req_123
+                  serverTime: "2026-05-06T23:10:00+05:30"
+                  version: v1
+
+  # ── Auth ────────────────────────────────────────────────────────────────────
+  /api/v1/auth/signup:
+    post:
+      tags: [Auth]
+      summary: Register a new user account
+      operationId: signup
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                password:
+                  type: string
+                  minLength: 8
+                  example: StrongPass123!
+                userName:
+                  type: string
+                  example: Bhavik
+            example:
+              email: user@example.com
+              password: StrongPass123!
+              userName: Bhavik
+      responses:
+        '201':
+          description: User created — returns token pair
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AuthResponse'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Authenticate and receive JWT token pair
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                password:
+                  type: string
+                  example: StrongPass123!
+            example:
+              email: user@example.com
+              password: StrongPass123!
+      responses:
+        '200':
+          description: Login successful — returns token pair
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AuthResponse'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Account inactive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate refresh token and issue new access token
+      operationId: refreshToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+                  example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+      responses:
+        '200':
+          description: New token pair issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/RefreshResponse'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Invalidate refresh token and end session
+      operationId: logout
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+                  example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+      responses:
+        '204':
+          description: Session ended — no body
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  # ── Profile ─────────────────────────────────────────────────────────────────
+  /api/v1/me:
+    get:
+      tags: [Profile]
+      summary: Get authenticated user profile
+      operationId: getMe
+      responses:
+        '200':
+          description: User profile
           content:
             application/json:
               schema:
@@ -19,30 +1148,1030 @@ paths:
                   data:
                     type: object
                     properties:
-                      status:
-                        type: string
-                      service:
-                        type: string
-                      version:
-                        type: string
-                      uptimeSeconds:
+                      id:
                         type: integer
-                      mode:
+                        example: 1
+                      email:
                         type: string
-                      dependencies:
-                        type: object
-                        additionalProperties:
-                          type: string
+                        format: email
+                        example: user@example.com
+                      userName:
+                        type: string
+                        example: Bhavik
+                      isActive:
+                        type: boolean
+                        example: true
+                      createdAt:
+                        type: string
+                        format: date-time
                   meta:
+                    $ref: '#/components/schemas/Meta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Profile]
+      summary: Update display name
+      operationId: patchMe
+      description: Only `userName` can be updated here. Email and password changes require separate flows.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userName]
+              properties:
+                userName:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                  example: Bhavik Updated
+      responses:
+        '200':
+          description: Updated user profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
                     type: object
                     properties:
-                      requestId:
+                      id:
+                        type: integer
+                      email:
                         type: string
-                      serverTime:
+                      userName:
                         type: string
-                      version:
+                      isActive:
+                        type: boolean
+                      createdAt:
                         type: string
-servers:
-  - url: http://localhost:8000
-    description: Local development server
-components: {}
+                        format: date-time
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ── Broker ──────────────────────────────────────────────────────────────────
+  /api/v1/brokers/zerodha/status:
+    get:
+      tags: [Broker]
+      summary: Get Zerodha broker connection status
+      operationId: getBrokerStatus
+      responses:
+        '200':
+          description: Broker status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/BrokerStatusData'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+              example:
+                data:
+                  broker: ZERODHA
+                  connected: true
+                  brokerUserId: AB1234
+                  accountName: Zerodha Personal
+                  sessionExpiry: "2026-05-07T06:00:00+05:30"
+                  lastSyncedAt: "2026-05-06T23:10:00+05:30"
+                  tradingEnabled: false
+                meta:
+                  requestId: req_123
+                  version: v1
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/brokers/zerodha/connect:
+    post:
+      tags: [Broker]
+      summary: Store API credentials and generate Zerodha OAuth login URL
+      operationId: brokerConnect
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [apiKey, apiSecret]
+              properties:
+                apiKey:
+                  type: string
+                  example: kite_api_key
+                apiSecret:
+                  type: string
+                  example: kite_api_secret
+                redirectUrl:
+                  type: string
+                  example: http://localhost:8000/api/v1/brokers/zerodha/callback
+                accountName:
+                  type: string
+                  example: Zerodha Personal
+      responses:
+        '200':
+          description: OAuth login URL generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      loginUrl:
+                        type: string
+                        format: uri
+                      state:
+                        type: string
+                      expiresAt:
+                        type: string
+                        format: date-time
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/brokers/zerodha/callback:
+    get:
+      tags: [Broker]
+      summary: Zerodha OAuth callback — exchange request_token for access_token
+      operationId: brokerCallback
+      security: []
+      parameters:
+        - name: request_token
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [success, error]
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Broker session established
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      connected:
+                        type: boolean
+                      broker:
+                        type: string
+                      brokerUserId:
+                        type: string
+                      sessionExpiry:
+                        type: string
+                        format: date-time
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/brokers/zerodha/disconnect:
+    post:
+      tags: [Broker]
+      summary: Revoke broker session
+      operationId: brokerDisconnect
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                revokeLocalSession:
+                  type: boolean
+                  default: true
+      responses:
+        '200':
+          description: Broker disconnected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      connected:
+                        type: boolean
+                        example: false
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ── Market Data ─────────────────────────────────────────────────────────────
+  /api/v1/instruments/search:
+    get:
+      tags: [Market]
+      summary: Search instruments by symbol or name
+      operationId: searchInstruments
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Search query — matches tradingsymbol or name (ILIKE)
+          schema:
+            type: string
+            example: RELIANCE
+        - name: exchange
+          in: query
+          required: false
+          schema:
+            type: string
+            example: NSE
+      responses:
+        '200':
+          description: Matching instruments (max 20)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Instrument'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/instruments/{token}:
+    get:
+      tags: [Market]
+      summary: Get instrument detail by token
+      operationId: getInstrument
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: integer
+            example: 738561
+      responses:
+        '200':
+          description: Instrument detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Instrument'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/quotes:
+    get:
+      tags: [Market]
+      summary: Batch quote lookup for multiple symbols
+      operationId: getQuotes
+      parameters:
+        - name: symbols
+          in: query
+          required: true
+          description: Comma-separated symbols e.g. NSE:RELIANCE,NSE:TCS
+          schema:
+            type: string
+            example: NSE:RELIANCE,NSE:TCS
+      responses:
+        '200':
+          description: Quote list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/QuoteItem'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/candles:
+    get:
+      tags: [Market]
+      summary: Historical OHLCV candles for a given instrument and interval
+      operationId: getCandles
+      parameters:
+        - name: instrumentToken
+          in: query
+          required: true
+          schema:
+            type: integer
+            example: 738561
+        - name: interval
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [1m, 5m, 15m, 1h, 1d]
+            example: 1m
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+            example: "2026-05-06T09:15:00+05:30"
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+            example: "2026-05-06T15:30:00+05:30"
+      responses:
+        '200':
+          description: OHLCV candle array
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OHLCVCandle'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/indicators:
+    get:
+      tags: [Market]
+      summary: Historical indicator values for chart seed data
+      operationId: getIndicators
+      parameters:
+        - name: instrumentToken
+          in: query
+          required: true
+          schema:
+            type: integer
+            example: 738561
+        - name: interval
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [1m, 5m, 15m, 1h, 1d]
+        - name: indicator
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [SMA, EMA, RSI, MACD, ATR, STOCHASTIC, BOLLINGER, OBV, VWAP, ADX]
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: integer
+            example: 14
+      responses:
+        '200':
+          description: Indicator value array
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/IndicatorValue'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/market/overview:
+    get:
+      tags: [Market]
+      summary: Market snapshot — indices, top gainers/losers, breadth
+      operationId: getMarketOverview
+      responses:
+        '200':
+          description: Market overview snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/MarketOverviewData'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/market/heatmap:
+    get:
+      tags: [Market]
+      summary: Current market heatmap snapshot for initial render
+      operationId: getMarketHeatmap
+      responses:
+        '200':
+          description: Heatmap snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MarketOverviewItem'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ── Watchlist ────────────────────────────────────────────────────────────────
+  /api/v1/watchlists/default:
+    get:
+      tags: [Watchlist]
+      summary: Get the default watchlist with all items
+      operationId: getDefaultWatchlist
+      responses:
+        '200':
+          description: Default watchlist
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Watchlist'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/watchlists/default/items:
+    post:
+      tags: [Watchlist]
+      summary: Add a symbol to the default watchlist
+      operationId: addWatchlistItem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [symbol, instrumentToken]
+              properties:
+                symbol:
+                  type: string
+                  example: NSE:RELIANCE
+                instrumentToken:
+                  type: integer
+                  example: 738561
+      responses:
+        '200':
+          description: Item added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      added:
+                        type: boolean
+                        example: true
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  # ── Orders ───────────────────────────────────────────────────────────────────
+  /api/v1/orders:
+    get:
+      tags: [Orders]
+      summary: List orders for the authenticated user
+      operationId: getOrders
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [PENDING, OPEN, FILLED, CANCELLED, REJECTED]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated order list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Order'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Orders]
+      summary: Place a new order (paper or live)
+      operationId: placeOrder
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Unique key to prevent duplicate order placement on retry
+          schema:
+            type: string
+            example: ordreq_01HX123
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlaceOrderRequest'
+      responses:
+        '201':
+          description: Order placed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      brokerOrderId:
+                        type: string
+                      status:
+                        type: string
+                      placedAt:
+                        type: string
+                        format: date-time
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Duplicate idempotency key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Semantically invalid order (risk check failed, market closed, etc.)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/orders/{id}:
+    put:
+      tags: [Orders]
+      summary: Modify an open order (price or quantity)
+      operationId: modifyOrder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                price:
+                  type: number
+                  format: double
+                quantity:
+                  type: integer
+      responses:
+        '200':
+          description: Order modified
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Order'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Orders]
+      summary: Cancel an open order
+      operationId: cancelOrder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Order cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      cancelled:
+                        type: boolean
+                        example: true
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/gtt:
+    get:
+      tags: [Orders]
+      summary: List GTT (Good Till Triggered) orders
+      operationId: getGTTOrders
+      responses:
+        '200':
+          description: GTT order list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Order'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Orders]
+      summary: Place a GTT order
+      operationId: placeGTTOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [symbol, instrumentToken, transactionType, quantity, triggerPrice]
+              properties:
+                symbol:
+                  type: string
+                  example: NSE:RELIANCE
+                instrumentToken:
+                  type: integer
+                  example: 738561
+                transactionType:
+                  type: string
+                  enum: [BUY, SELL]
+                quantity:
+                  type: integer
+                  example: 10
+                triggerPrice:
+                  type: number
+                  format: double
+                  example: 2950.0
+                limitPrice:
+                  type: number
+                  format: double
+                  example: 2948.0
+      responses:
+        '201':
+          description: GTT order placed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Order'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ── Positions ────────────────────────────────────────────────────────────────
+  /api/v1/positions:
+    get:
+      tags: [Positions]
+      summary: Get current open positions
+      operationId: getPositions
+      responses:
+        '200':
+          description: Open positions list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Position'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ── Trades ───────────────────────────────────────────────────────────────────
+  /api/v1/trades:
+    get:
+      tags: [Trades]
+      summary: Get executed trade history
+      operationId: getTrades
+      parameters:
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated trade list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Trade'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ── Strategies ───────────────────────────────────────────────────────────────
+  /api/v1/strategies:
+    get:
+      tags: [Strategies]
+      summary: List all available strategies with user-specific enabled status
+      operationId: getStrategies
+      responses:
+        '200':
+          description: Strategy list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Strategy'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/user/strategies/{strategyName}:
+    put:
+      tags: [Strategies]
+      summary: Enable or disable a strategy and set its parameters
+      operationId: updateUserStrategy
+      parameters:
+        - name: strategyName
+          in: path
+          required: true
+          schema:
+            type: string
+            example: IntradayMomentum
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled:
+                  type: boolean
+                parameters:
+                  type: object
+                  additionalProperties: true
+                  example:
+                    riskPerTrade: 1
+                    symbols: [NSE:RELIANCE]
+                    timeframe: 1m
+      responses:
+        '200':
+          description: Strategy config saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/UserStrategyConfig'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/strategies/{strategyName}/start:
+    post:
+      tags: [Strategies]
+      summary: Start a strategy runner for the authenticated user
+      operationId: startStrategy
+      parameters:
+        - name: strategyName
+          in: path
+          required: true
+          schema:
+            type: string
+            example: IntradayMomentum
+      responses:
+        '200':
+          description: Strategy started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      strategyName:
+                        type: string
+                      running:
+                        type: boolean
+                        example: true
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/strategies/{strategyName}/stop:
+    post:
+      tags: [Strategies]
+      summary: Stop a running strategy
+      operationId: stopStrategy
+      parameters:
+        - name: strategyName
+          in: path
+          required: true
+          schema:
+            type: string
+            example: IntradayMomentum
+      responses:
+        '200':
+          description: Strategy stopped
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      strategyName:
+                        type: string
+                      running:
+                        type: boolean
+                        example: false
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/signals:
+    get:
+      tags: [Strategies]
+      summary: Get latest generated trading signals
+      operationId: getSignals
+      parameters:
+        - name: strategyName
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Signal list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Signal'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+

@@ -59,12 +59,12 @@ Created backend package structure in `Go-project`:
 - `internal/telemetry`
 - `internal/validation`
 
-Created placeholder migration files:
-- `000012_create_user_settings_table`
-- `000013_create_watchlists_table`
-- `000014_create_backtest_jobs_table`
-- `000015_create_notification_tables`
-- `000016_create_audit_events_table`
+Created placeholder migration files — now fully implemented:
+- `000012_create_user_settings_table` `DONE`
+- `000013_create_watchlists_table` `DONE`
+- `000014_create_backtest_jobs_table` `DONE`
+- `000015_create_notification_tables` `DONE`
+- `000016_create_audit_events_table` `DONE`
 
 Fixed structural compile blockers by adding package declarations:
 - `Go-project/cmd/backtest.go`
@@ -470,7 +470,9 @@ Tasks:
 
 #### `POST /api/v1/auth/signup`
 
-Status: `TODO`
+Status: `DONE`
+
+Implemented in `internal/api/handlers/auth/signup.go`. Validates email + password (min 8 chars), hashes with bcrypt cost 12, inserts User row, returns 201 with access + refresh token pair.
 
 Headers:
 
@@ -523,7 +525,9 @@ Security tasks:
 
 #### `POST /api/v1/auth/login`
 
-Status: `TODO`
+Status: `DONE`
+
+Implemented in `internal/api/handlers/auth/login.go`. Fetches user by email, bcrypt compare, IsActive check, returns token pair. Generic error message used for both not-found and wrong-password to prevent email enumeration.
 
 Payload:
 
@@ -564,7 +568,9 @@ Security tasks:
 
 #### `POST /api/v1/auth/refresh`
 
-Status: `TODO`
+Status: `DONE`
+
+Implemented in `internal/api/handlers/auth/refresh.go`. Validates refresh token signature + type, issues new rotated access + refresh token pair.
 
 Payload:
 
@@ -593,7 +599,9 @@ Response:
 
 #### `POST /api/v1/auth/logout`
 
-Status: `TODO`
+Status: `DONE`
+
+Implemented in `internal/api/handlers/auth/logout.go`. Parses refresh token, writes `blocklist:refresh:<token>` key to Redis with remaining TTL, returns 204.
 
 Headers:
 
@@ -618,7 +626,9 @@ Response:
 
 #### `GET /api/v1/me`
 
-Status: `TODO`
+Status: `DONE`
+
+Implemented in `internal/api/handlers/profile/me.go`. Reads userID from context via `middleware.UserIDFromContext`, queries `users` table by PK, returns `meResponse` — never returns `PasswordHash`.
 
 Headers:
 
@@ -1548,15 +1558,15 @@ Status: `OPEN`
 
 ## Next Backend Tasks
 
-1. Move command entrypoints into `cmd/server`, `cmd/get-token`, and `cmd/heatmap-cli`.
+1. Move command entrypoints into `cmd/server`, `cmd/get-token`, and `cmd/heatmap-cli`. `DONE`
 2. Run `go test ./...` and fix any compile issues after command structure changes.
 3. Create `internal/contracts` response envelope structs. `DONE`
 4. Create `internal/security` encryption and redaction utilities. `DONE` AES-GCM encryption and redaction utilities are in place; KMS integration remains a production enhancement.
-5. Create `internal/middleware` request ID, recovery, logging, CORS, and auth placeholders.
-6. Refactor `internal/server/routes.go` into versioned route registration.
+5. Create `internal/middleware` request ID, recovery, logging, CORS, and auth placeholders. `PARTIAL` — auth middleware `DONE` at `internal/middleware/auth.go`; request ID, logging, rate limit still TODO.
+6. Refactor `internal/server/routes.go` into versioned route registration. `DONE` — `registerVersionedRoutes` wired into `StartHTTPServer`.
 7. Implement `GET /api/v1/health`.
-8. Implement auth models/session tables if needed.
-9. Implement settings migration and API.
+8. Implement auth models/session tables if needed. `DONE` — users table (migration 000001) already existed; JWT is stateless; blocklist uses Redis.
+9. Implement settings migration and API. `PARTIAL` — migration 000012 `DONE`; handler still TODO.
 10. Implement broker status/connect/callback/disconnect.
 11. Implement watchlist and batch quotes.
 12. Implement WebSocket hub and topic subscriptions.

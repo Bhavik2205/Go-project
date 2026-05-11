@@ -1,2 +1,2 @@
--- Planned migration rollback: drop notification tables.
-
+DROP TABLE IF EXISTS notification_history;
+DROP TABLE IF EXISTS notification_channels;

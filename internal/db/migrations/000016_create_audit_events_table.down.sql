@@ -1,2 +1,1 @@
--- Planned migration rollback: drop audit_events.
-
+DROP TABLE IF EXISTS audit_events;

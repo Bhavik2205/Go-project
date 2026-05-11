@@ -81,6 +81,8 @@ func StartHTTPServer(port int) {
 	router.Use(enableCORS)
 	router.Use(recoverMiddleware) // Add panic recovery middleware
 
+	registerVersionedRoutes(router)
+
 	router.HandleFunc("/api/instrument", stockHandler.HandleInstrumentLookup(zerodhaClient.(*api.ZerodhaClient))).Methods("GET")
 
 	router.HandleFunc("/api/data/users", func(w http.ResponseWriter, r *http.Request) {

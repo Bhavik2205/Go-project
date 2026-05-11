@@ -1,2 +1,2 @@
--- Planned migration rollback: drop watchlist tables.
-
+DROP TABLE IF EXISTS watchlist_items;
+DROP TABLE IF EXISTS watchlists;
