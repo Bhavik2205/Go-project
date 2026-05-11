@@ -63,6 +63,10 @@ func (hm *MarketHeatmap) Update(symbol string, lastPrice, bidPrice, askPrice flo
 	stock.Volume = volume
 	priceKey := fmt.Sprintf("%.2f", priceLevel)
 	stock.VolumeAtPrice[priceKey] += 1
+	// Prune to prevent unbounded memory growth — keep only the 100 most recent price levels.
+	if len(stock.VolumeAtPrice) > 100 {
+		stock.VolumeAtPrice = make(map[string]int64)
+	}
 	stock.LastUpdated = time.Now()
 	if prevClose > 0 {
 		stock.PriceChangePct = ((lastPrice - prevClose) / prevClose) * 100

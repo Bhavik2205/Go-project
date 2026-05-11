@@ -263,6 +263,19 @@ func handleV1MarketOverview(w http.ResponseWriter, r *http.Request) {
 		MarketBreadth:      breadth,
 		UpdatedAt:          updatedAt,
 	}
+	// Ensure slices are never null in JSON — use empty slice instead.
+	if resp.Indices == nil {
+		resp.Indices = []marketOverviewItem{}
+	}
+	if resp.TopGainers == nil {
+		resp.TopGainers = []marketOverviewItem{}
+	}
+	if resp.TopLosers == nil {
+		resp.TopLosers = []marketOverviewItem{}
+	}
+	if resp.MostActiveByVolume == nil {
+		resp.MostActiveByVolume = []marketOverviewItem{}
+	}
 	writeSuccess(w, http.StatusOK, requestID, resp)
 }
 
@@ -377,10 +390,24 @@ func dependencyStatusZerodha() string {
 	if !ok || client == nil || client.Kite == nil {
 		return "not_configured"
 	}
-	if _, err := client.Kite.GetUserProfile(); err != nil {
-		return "error"
+	// Use a short timeout so a slow Zerodha API doesn't block the health endpoint.
+	type result struct {
+		status string
 	}
-	return "ok"
+	ch := make(chan result, 1)
+	go func() {
+		if _, err := client.Kite.GetUserProfile(); err != nil {
+			ch <- result{"error"}
+		} else {
+			ch <- result{"ok"}
+		}
+	}()
+	select {
+	case r := <-ch:
+		return r.status
+	case <-time.After(3 * time.Second):
+		return "timeout"
+	}
 }
 
 func parseSymbols(raw string) []string {

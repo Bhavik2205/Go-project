@@ -34,9 +34,9 @@ func Authenticate(redisClient *cache.RedisClient) func(http.Handler) http.Handle
 				return
 			}
 
-			// Check Redis blocklist (populated by logout handler)
+			// Check Redis blocklist for revoked access tokens (written by logout handler)
 			if redisClient != nil {
-				key := "blocklist:refresh:" + tokenStr
+				key := "blocklist:access:" + tokenStr
 				if val, _ := redisClient.Get(key); val != "" {
 					writeUnauthorized(w, r, "token has been revoked")
 					return

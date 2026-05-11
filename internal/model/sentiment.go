@@ -45,7 +45,7 @@ func initializeORT() error {
 		// Consider making this path configurable
 		dllPath := os.Getenv("ONNX_DLL_PATH")
 		if dllPath == "" {
-			fmt.Println("Please set the ONNX_DLL_PATH environment variable.")
+			ortInitErr = fmt.Errorf("ONNX_DLL_PATH environment variable is not set")
 			return
 		}
 		onnxruntime.SetSharedLibraryPath(dllPath)
@@ -101,10 +101,12 @@ func AnalyzeSentiment(text string) (string, float32, error) {
 	if err != nil {
 		return "", 0, fmt.Errorf("input_ids tensor error: %w", err)
 	}
+	defer inputIDsTensor.Destroy()
 	attentionMaskTensor, err := onnxruntime.NewTensor(shape, input.AttentionMask)
 	if err != nil {
 		return "", 0, fmt.Errorf("attention_mask tensor error: %w", err)
 	}
+	defer attentionMaskTensor.Destroy()
 
 	// Create empty output tensor (type float32, as expected by the model's "logits" output)
 	outputShape := onnxruntime.Shape{1, 3} // [batch_size, num_sentiment_classes]
@@ -113,7 +115,10 @@ func AnalyzeSentiment(text string) (string, float32, error) {
 		return "", 0, fmt.Errorf("failed to create output tensor: %w", err)
 	}
 
-	modelPath := "D:/troject/go-project/models/sentiment_optimized.onnx" // Consider making this configurable
+	modelPath := os.Getenv("ONNX_MODEL_PATH")
+	if modelPath == "" {
+		modelPath = "models/sentiment_optimized.onnx"
+	}
 
 	// Use NewAdvancedSession (function call with parentheses)
 	session, err := onnxruntime.NewAdvancedSession(
@@ -146,9 +151,9 @@ func AnalyzeSentiment(text string) (string, float32, error) {
 	probabilities := softmax(logits)
 	maxIdx := 0
 	maxVal := probabilities[0]
-	for i := 1; i < len(logits); i++ {
-		if logits[i] > maxVal {
-			maxVal = logits[i]
+	for i := 1; i < len(probabilities); i++ {
+		if probabilities[i] > maxVal {
+			maxVal = probabilities[i]
 			maxIdx = i
 		}
 	}

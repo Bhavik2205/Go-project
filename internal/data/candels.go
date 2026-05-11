@@ -24,8 +24,8 @@ import (
 const (
 	marketOpenHour    = 9
 	marketOpenMinute  = 15
-	marketCloseHour   = 23 // actual 15
-	marketCloseMinute = 59 // actual 30
+	marketCloseHour   = 15
+	marketCloseMinute = 30
 	marketTimezone    = "Asia/Kolkata"
 )
 
@@ -129,6 +129,9 @@ func (cg *CandleGenerator) StartCandleGeneration(ctx context.Context) {
 		case msg, ok := <-ch:
 			if !ok {
 				zap.L().Warn("Redis PubSub channel for candle generator closed. Attempting reconnect in 5 seconds...")
+				if pubsub != nil {
+					_ = pubsub.Close()
+				}
 				time.Sleep(5 * time.Second)
 				pubsub = cg.redisClient.Subscribe(ctx, api.RedisMarketDataChannel)
 				if pubsub == nil {
@@ -521,8 +524,19 @@ func (cg *CandleGenerator) flushAllOpenCandles() {
 	for _, ic := range cg.openCandles {
 		ic.mu.Lock()
 		for _, candle := range ic.candles {
-			tempCandleToFlush := *candle
-			cg.flushCandle(&tempCandleToFlush)
+			tempCandleToFlush := &CandleData{
+				InstrumentToken: candle.InstrumentToken,
+				Interval:        candle.Interval,
+				Timestamp:       candle.Timestamp,
+				Open:            candle.Open,
+				High:            candle.High,
+				Low:             candle.Low,
+				Close:           candle.Close,
+				Volume:          candle.Volume,
+				TradeCount:      candle.TradeCount,
+				LastTickTime:    candle.LastTickTime,
+			}
+			cg.flushCandle(tempCandleToFlush)
 		}
 		ic.mu.Unlock()
 	}

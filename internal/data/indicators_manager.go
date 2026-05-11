@@ -103,7 +103,9 @@ func NewIndicatorManager(
 // --- WebSocket Write Pump ---
 func (im *IndicatorManager) writePump(client *wsClient) {
 	defer func() {
-		im.recoverGoroutine("writePump")
+		if r := recover(); r != nil {
+			zap.L().Error("Panic in indicator writePump", zap.Any("recover", r))
+		}
 		client.conn.Close()
 		im.indicatorWsClients.Delete(client.conn)
 	}()
@@ -176,7 +178,12 @@ func (im *IndicatorManager) startMonitoring(ctx context.Context) {
 func (im *IndicatorManager) StartOutputProcessing(ctx context.Context) {
 	for i := 0; i < im.outputWorkerCount; i++ {
 		go func(workerID int) {
-			defer im.recoverGoroutine(fmt.Sprintf("IndicatorOutputWorker-%d", workerID))
+			defer func() {
+				if r := recover(); r != nil {
+					zap.L().Error("Panic in indicator output worker",
+						zap.Int("worker_id", workerID), zap.Any("recover", r))
+				}
+			}()
 			zap.L().Info("📦 Indicator output worker started", zap.Int("worker_id", workerID))
 			for {
 				select {
@@ -266,15 +273,9 @@ func (im *IndicatorManager) handleOutput(indicator indicators.IndicatorResult) {
 	im.indicatorWsClients.Range(func(key, value interface{}) bool {
 		client, ok := value.(*wsClient)
 		if !ok {
-			if conn, ok2 := value.(*websocket.Conn); ok2 {
-				client = &wsClient{conn: conn, send: make(chan []byte, 32)}
-				im.indicatorWsClients.Store(key, client)
-				go im.writePump(client)
-			} else {
-				zap.L().Warn("Found non-wsClient in indicatorWsClients map, deleting.", zap.Any("key", key))
-				im.indicatorWsClients.Delete(key)
-				return true
-			}
+			zap.L().Warn("Found non-wsClient in indicatorWsClients map, deleting.", zap.Any("key", key))
+			im.indicatorWsClients.Delete(key)
+			return true
 		}
 		select {
 		case client.send <- message:
@@ -380,7 +381,13 @@ func (im *IndicatorManager) calculateAndStoreAllIndicators(token uint32, interva
 			wg.Add(1)
 			go func(indicatorType indicators.Indicator) {
 				defer wg.Done()
-				defer im.recoverGoroutine(fmt.Sprintf("IndicatorCalc-%s", indicatorType.GetName()))
+				defer func() {
+					if r := recover(); r != nil {
+						zap.L().Error("Panic in indicator calculation",
+							zap.String("indicator", indicatorType.GetName()),
+							zap.Any("recover", r))
+					}
+				}()
 				minHistory := indicatorType.GetMinRequiredCandles(im.indicatorsCfg)
 				if len(candles) < minHistory {
 					zap.L().Debug("Not enough candles for indicator calculation yet",
@@ -397,13 +404,21 @@ func (im *IndicatorManager) calculateAndStoreAllIndicators(token uint32, interva
 				switch v := results.(type) {
 				case []indicators.SMA:
 					if len(v) > 0 && !math.IsNaN(v[len(v)-1].Value) {
-						im.processedIndicatorCh <- v[len(v)-1]
+						select {
+						case im.processedIndicatorCh <- v[len(v)-1]:
+						default:
+							atomic.AddUint64(&im.wsDrops, 1)
+						}
 					} else {
 						zap.L().Warn(fmt.Sprintf("Latest %s value is NaN or no results", indicatorType.GetName()), zap.Uint32("token", token), zap.String("interval", interval))
 					}
 				case []indicators.EMA:
 					if len(v) > 0 && !math.IsNaN(v[len(v)-1].Value) {
-						im.processedIndicatorCh <- v[len(v)-1]
+						select {
+						case im.processedIndicatorCh <- v[len(v)-1]:
+						default:
+							atomic.AddUint64(&im.wsDrops, 1)
+						}
 					} else {
 						zap.L().Warn(fmt.Sprintf("Latest %s value is NaN or no results", indicatorType.GetName()), zap.Uint32("token", token), zap.String("interval", interval))
 					}
@@ -411,20 +426,32 @@ func (im *IndicatorManager) calculateAndStoreAllIndicators(token uint32, interva
 					if len(v) > 0 {
 						latest := v[len(v)-1]
 						if !math.IsNaN(latest.MACDLine) && !math.IsNaN(latest.SignalLine) && !math.IsNaN(latest.Histogram) {
-							im.processedIndicatorCh <- latest
+							select {
+							case im.processedIndicatorCh <- latest:
+							default:
+								atomic.AddUint64(&im.wsDrops, 1)
+							}
 						} else {
 							zap.L().Warn(fmt.Sprintf("Latest %s value is NaN or no results", indicatorType.GetName()), zap.Uint32("token", token), zap.String("interval", interval))
 						}
 					}
 				case []indicators.ATR:
 					if len(v) > 0 && !math.IsNaN(v[len(v)-1].Value) {
-						im.processedIndicatorCh <- v[len(v)-1]
+						select {
+						case im.processedIndicatorCh <- v[len(v)-1]:
+						default:
+							atomic.AddUint64(&im.wsDrops, 1)
+						}
 					} else {
 						zap.L().Warn(fmt.Sprintf("Latest %s value is NaN or no results", indicatorType.GetName()), zap.Uint32("token", token), zap.String("interval", interval))
 					}
 				case []indicators.RSI:
 					if len(v) > 0 && !math.IsNaN(v[len(v)-1].Value) {
-						im.processedIndicatorCh <- v[len(v)-1]
+						select {
+						case im.processedIndicatorCh <- v[len(v)-1]:
+						default:
+							atomic.AddUint64(&im.wsDrops, 1)
+						}
 					} else {
 						zap.L().Warn(fmt.Sprintf("Latest %s value is NaN or no results", indicatorType.GetName()), zap.Uint32("token", token), zap.String("interval", interval))
 					}
@@ -432,7 +459,11 @@ func (im *IndicatorManager) calculateAndStoreAllIndicators(token uint32, interva
 					if len(v) > 0 {
 						latest := v[len(v)-1]
 						if !math.IsNaN(latest.KValue) && !math.IsNaN(latest.DValue) {
-							im.processedIndicatorCh <- latest
+							select {
+							case im.processedIndicatorCh <- latest:
+							default:
+								atomic.AddUint64(&im.wsDrops, 1)
+							}
 						} else {
 							zap.L().Warn(fmt.Sprintf("Latest %s value is NaN or no results", indicatorType.GetName()), zap.Uint32("token", token), zap.String("interval", interval))
 						}
@@ -441,20 +472,32 @@ func (im *IndicatorManager) calculateAndStoreAllIndicators(token uint32, interva
 					if len(v) > 0 {
 						latest := v[len(v)-1]
 						if !math.IsNaN(latest.MiddleBand) && !math.IsNaN(latest.UpperBand) && !math.IsNaN(latest.LowerBand) {
-							im.processedIndicatorCh <- latest
+							select {
+							case im.processedIndicatorCh <- latest:
+							default:
+								atomic.AddUint64(&im.wsDrops, 1)
+							}
 						} else {
 							zap.L().Warn(fmt.Sprintf("Latest %s value is NaN or no results", indicatorType.GetName()), zap.Uint32("token", token), zap.String("interval", interval))
 						}
 					}
 				case []indicators.OBV:
 					if len(v) > 0 && !math.IsNaN(v[len(v)-1].Value) {
-						im.processedIndicatorCh <- v[len(v)-1]
+						select {
+						case im.processedIndicatorCh <- v[len(v)-1]:
+						default:
+							atomic.AddUint64(&im.wsDrops, 1)
+						}
 					} else {
 						zap.L().Warn(fmt.Sprintf("Latest %s value is NaN or no results", indicatorType.GetName()), zap.Uint32("token", token), zap.String("interval", interval))
 					}
 				case []indicators.VWAP:
 					if len(v) > 0 && !math.IsNaN(v[len(v)-1].Value) {
-						im.processedIndicatorCh <- v[len(v)-1]
+						select {
+						case im.processedIndicatorCh <- v[len(v)-1]:
+						default:
+							atomic.AddUint64(&im.wsDrops, 1)
+						}
 					} else {
 						zap.L().Warn(fmt.Sprintf("Latest %s value is NaN or no results", indicatorType.GetName()), zap.Uint32("token", token), zap.String("interval", interval))
 					}
@@ -462,7 +505,11 @@ func (im *IndicatorManager) calculateAndStoreAllIndicators(token uint32, interva
 					if len(v) > 0 {
 						latest := v[len(v)-1]
 						if !math.IsNaN(latest.ADXValue) {
-							im.processedIndicatorCh <- latest
+							select {
+							case im.processedIndicatorCh <- latest:
+							default:
+								atomic.AddUint64(&im.wsDrops, 1)
+							}
 						} else {
 							zap.L().Warn(fmt.Sprintf("Latest %s value is NaN or no results", indicatorType.GetName()), zap.Uint32("token", token), zap.String("interval", interval))
 						}

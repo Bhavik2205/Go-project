@@ -79,7 +79,7 @@ func (m *MarketDataIngestor) StartIngestionAndBroadcast(ctx context.Context) {
 	m.startWebSocketBroadcasterWorkers(ctx)
 
 	// Start monitoring goroutine for metrics
-	go m.startMonitoring()
+	go m.startMonitoring(ctx)
 
 	// These remain as primary consumers/dispatchers
 	go m.subscribeAndProcessRedis(ctx)
@@ -90,7 +90,7 @@ func (m *MarketDataIngestor) StartIngestionAndBroadcast(ctx context.Context) {
 }
 
 // Monitoring goroutine for DB errors, WS drops, and broadcast rate.
-func (m *MarketDataIngestor) startMonitoring() {
+func (m *MarketDataIngestor) startMonitoring(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	var lastBroadcasted uint64
@@ -117,6 +117,8 @@ func (m *MarketDataIngestor) startMonitoring() {
 			if rate < 10 {
 				zap.L().Warn("Low broadcast rate", zap.Uint64("broadcast_rate_per_5s", rate))
 			}
+		case <-ctx.Done():
+			return
 		}
 	}
 }
@@ -270,6 +272,14 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 	currentSequenceID := m.tickSequenceCounters[uint(tick.InstrumentToken)][normalizedTimestamp] + 1
 	m.tickSequenceCounters[uint(tick.InstrumentToken)][normalizedTimestamp] = currentSequenceID
 	m.sequenceMux.Unlock()
+	// Guard against brokers returning fewer than 5 depth levels.
+	if len(tick.Depth.Buy) < 5 || len(tick.Depth.Sell) < 5 {
+		zap.L().Warn("Tick depth insufficient, skipping",
+			zap.String("symbol", enrichedTick.Symbol),
+			zap.Int("buy_levels", len(tick.Depth.Buy)),
+			zap.Int("sell_levels", len(tick.Depth.Sell)))
+		return
+	}
 	zap.L().Debug("Tick received",
 		zap.String("symbol", enrichedTick.Symbol),
 		zap.Float64("ltp", tick.LastPrice),
@@ -286,8 +296,8 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 		int64(tick.Depth.Buy[0].Quantity),
 		int64(tick.Depth.Sell[0].Quantity),
 		int64(tick.VolumeTraded),
-		tick.LastPrice,  // For volume at price
-		tick.OHLC.Close, // Assuming this is the previous close for percentage change calculation
+		tick.LastPrice,
+		tick.OHLC.Close,
 	)
 	zap.L().Debug("Heatmap updated", zap.String("symbol", enrichedTick.Symbol))
 	md := db.MarketData{
@@ -583,26 +593,16 @@ func (m *MarketDataIngestor) RegisterWebSocketClient(conn *websocket.Conn) {
 
 // UnregisterWebSocketClient removes a WebSocket client and signals its write pump to stop.
 func (m *MarketDataIngestor) UnregisterWebSocketClient(conn *websocket.Conn) {
-	if clientWriteCh, ok := m.wsClients.Load(conn); ok {
-		select {
-		case <-clientWriteCh.(chan []byte):
-		default:
-			close(clientWriteCh.(chan []byte))
-		}
-		m.wsClients.Delete(conn)
+	if clientWriteCh, ok := m.wsClients.LoadAndDelete(conn); ok {
+		close(clientWriteCh.(chan []byte))
 		conn.Close()
 		zap.L().Info("🔌 WebSocket client disconnected", zap.String("remote_addr", conn.RemoteAddr().String()))
-	} else {
-		zap.L().Warn("Attempted to unregister a WebSocket client that was not found.", zap.String("remote_addr", conn.RemoteAddr().String()))
 	}
 }
 
 // writePump reads messages from a client's dedicated channel and writes them to the WebSocket connection.
 func (m *MarketDataIngestor) writePump(conn *websocket.Conn, clientWriteCh <-chan []byte) {
-	defer func() {
-		m.UnregisterWebSocketClient(conn)
-		zap.L().Info("🚽 WebSocket write pump stopped for client", zap.String("remote_addr", conn.RemoteAddr().String()))
-	}()
+	defer zap.L().Info("🚽 WebSocket write pump stopped for client", zap.String("remote_addr", conn.RemoteAddr().String()))
 	for {
 		select {
 		case message, ok := <-clientWriteCh:

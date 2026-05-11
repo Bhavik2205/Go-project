@@ -125,26 +125,26 @@ func main() {
 		zap.L().Info("✅ Redis GET success", zap.String("value", val))
 	}
 
-	// ─── Load Zerodha Credentials ───────────────────────────────────────────────
-	apiKey := os.Getenv("ZERODHA_API_KEY")
-	apiSecret := os.Getenv("ZERODHA_API_SECRET")
-	if apiKey == "" || apiSecret == "" {
-		err := utils.WrapError(3001, "ZERODHA_API_KEY or ZERODHA_API_SECRET not set in environment", nil)
-		zap.L().Fatal(err.Error())
+	var client *api.ZerodhaClient
+	if !appCfg.Market.Simulate {
+		apiKey := os.Getenv("ZERODHA_API_KEY")
+		apiSecret := os.Getenv("ZERODHA_API_SECRET")
+		if apiKey == "" || apiSecret == "" {
+			zap.L().Fatal("ZERODHA_API_KEY or ZERODHA_API_SECRET not set in environment")
+		}
+		accessToken, err := api.LoadAccessTokenFromFile(".access_token")
+		if err != nil {
+			wrappedErr := utils.WrapError(3002, "Failed to load Zerodha access token", err)
+			zap.L().Fatal(wrappedErr.Error())
+		}
+		client = api.NewZerodhaClient(apiKey, apiSecret, accessToken)
+		if _, err := client.Kite.GetUserProfile(); err != nil {
+			wrappedErr := utils.WrapError(3003, "Invalid Zerodha session or token expired", err)
+			zap.L().Fatal(wrappedErr.Error())
+		}
+		zap.L().Info("✅ Zerodha session validated")
 	}
 
-	accessToken, err := api.LoadAccessTokenFromFile(".access_token")
-	if err != nil {
-		wrappedErr := utils.WrapError(3002, "Failed to load Zerodha access token", err)
-		zap.L().Fatal(wrappedErr.Error())
-	}
-
-	client := api.NewZerodhaClient(apiKey, apiSecret, accessToken)
-
-	// ─── Inject Dependencies ────────────────────────────────────────────────────
-	server.SetZerodhaClient(client)
-	server.SetDBClient(dbClient)
-	server.SetRedisClient(redisClient)
 
 	// ─── Validate Zerodha Session ───────────────────────────────────────────────
 	user, err := client.Kite.GetUserProfile()
@@ -179,9 +179,13 @@ func main() {
 	}()
 	indicatorManager := data.NewIndicatorManager(dbClient, appCfg, indicatorsCfg, indicatorManagerInputCh, indicatorWsClients)
 
-	server.SetZerodhaClient(client)
+	if client != nil {
+		server.SetZerodhaClient(client)
+	}
 	server.SetDBClient(dbClient)
 	server.SetRedisClient(redisClient)
+	server.SetAppConfig(appCfg)
+	server.SetStartupTime(time.Now())
 	server.SetIngestor(dataIngestor, wsClients)    // Inject the ingestor and shared WS map for ticks
 	server.SetCandleClients(candleWsClients)       // NEW: Inject the shared WS map for candles
 	server.SetIndicatorClients(indicatorWsClients) // NEW: Inject the shared WS map for indicators

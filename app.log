@@ -34,3 +34,5 @@
 {"level":"INFO","timestamp":"2025-09-14T01:42:13.201+0530","caller":"cmd/main.go:48","msg":"✅ .env file loaded successfully"}
 {"level":"INFO","timestamp":"2026-05-06T23:52:19.029+0530","caller":"cmd/main.go:48","msg":"✅ .env file loaded successfully"}
 {"level":"INFO","timestamp":"2026-05-11T18:09:27.981+0530","caller":"server/main.go:48","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2026-05-11T21:53:54.052+0530","caller":"server/main.go:48","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2026-05-11T21:59:23.291+0530","caller":"server/main.go:48","msg":"✅ .env file loaded successfully"}

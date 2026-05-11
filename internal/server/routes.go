@@ -1,11 +1,14 @@
 package server
 
 import (
-	"encoding/json"
-	"fmt"
+	"context"
 	"net/http"
+	"os"
+	"os/signal"
 	"strconv"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/Bhavik2205/ML-Bot/internal/api"
@@ -13,6 +16,7 @@ import (
 	"github.com/Bhavik2205/ML-Bot/internal/cache"
 	"github.com/Bhavik2205/ML-Bot/internal/data"
 	"github.com/Bhavik2205/ML-Bot/internal/db"
+	"github.com/Bhavik2205/ML-Bot/internal/middleware"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
@@ -79,38 +83,20 @@ func StartHTTPServer(port int) {
 	router := mux.NewRouter()
 
 	router.Use(enableCORS)
-	router.Use(recoverMiddleware) // Add panic recovery middleware
-
+	router.Use(recoverMiddleware)
+	router.Use(middleware.RequestID)
+	router.Use(middleware.Logger)
+	// Handle OPTIONS preflight for all routes so CORS middleware fires correctly.
+	router.Methods(http.MethodOptions).HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
 	registerVersionedRoutes(router)
 
-	router.HandleFunc("/api/instrument", stockHandler.HandleInstrumentLookup(zerodhaClient.(*api.ZerodhaClient))).Methods("GET")
+	if zc, ok := zerodhaClient.(*api.ZerodhaClient); ok && zc != nil {
+		router.HandleFunc("/api/instrument", stockHandler.HandleInstrumentLookup(zc)).Methods("GET")
+	}
 
-	router.HandleFunc("/api/data/users", func(w http.ResponseWriter, r *http.Request) {
-		var users []db.User
-		if err := dbClient.Find(&users).Error; err != nil {
-			zap.L().Error("Failed to fetch users from DB", zap.Error(err))
-			http.Error(w, "Failed to fetch users", http.StatusInternalServerError)
-			return
-		}
-		json.NewEncoder(w).Encode(users)
-	}).Methods("GET")
 
-	router.HandleFunc("/api/cache/test", func(w http.ResponseWriter, r *http.Request) {
-		err := redisClient.Set("test_web_key", "Value from Web!", 5*time.Minute)
-		if err != nil {
-			zap.L().Error("Failed to set cache key", zap.Error(err))
-			http.Error(w, fmt.Sprintf("Failed to set cache: %v", err), http.StatusInternalServerError)
-			return
-		}
-		val, err := redisClient.Get("test_web_key")
-		if err != nil {
-			zap.L().Error("Failed to get cache key", zap.Error(err))
-			http.Error(w, fmt.Sprintf("Failed to get cache: %v", err), http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "Cache test successful: %s", val)
-	}).Methods("GET")
 
 	// Existing WebSocket endpoint for tick data
 	router.HandleFunc("/ws", handleConnections)
@@ -123,9 +109,31 @@ func StartHTTPServer(port int) {
 	//NEW: Heatmap websocket endpoint
 	router.HandleFunc("/ws/heatmap", HeatmapWebSocketHandler(data.GetMarketHeatmap()))
 
+	srv := &http.Server{
+		Addr:         ":" + strconv.Itoa(port),
+		Handler:      router,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+
 	zap.L().Info("🌐 Unified HTTP + WebSocket server starting...", zap.Int("port", port))
-	if err := http.ListenAndServe(":"+strconv.Itoa(port), router); err != nil {
-		zap.L().Fatal("Failed to start HTTP server", zap.Error(err))
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			zap.L().Fatal("HTTP server error", zap.Error(err))
+		}
+	}()
+
+	<-quit
+	zap.L().Info("HTTP server shutting down gracefully...")
+	shutCtx, shutCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer shutCancel()
+	if err := srv.Shutdown(shutCtx); err != nil {
+		zap.L().Error("HTTP server forced shutdown", zap.Error(err))
 	}
 }
 
@@ -232,18 +240,40 @@ func handleCandleConnections(w http.ResponseWriter, r *http.Request) {
 }
 
 func enableCORS(h http.Handler) http.Handler {
+	allowedOrigins := corsAllowedOrigins()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
+		origin := r.Header.Get("Origin")
+		if origin != "" && allowedOrigins[origin] {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+		}
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID")
 		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK) // Respond to preflight request
+			w.WriteHeader(http.StatusOK)
 			return
 		}
-
 		h.ServeHTTP(w, r)
 	})
+}
+
+func corsAllowedOrigins() map[string]bool {
+	raw := os.Getenv("ALLOWED_ORIGINS")
+	if raw == "" {
+		// Default: allow localhost dev origins only
+		return map[string]bool{
+			"http://localhost:3000": true,
+			"http://localhost:5173": true,
+			"http://localhost:8080": true,
+		}
+	}
+	result := map[string]bool{}
+	for _, o := range strings.Split(raw, ",") {
+		if o = strings.TrimSpace(o); o != "" {
+			result[o] = true
+		}
+	}
+	return result
 }
 
 func recoverMiddleware(next http.Handler) http.Handler {
