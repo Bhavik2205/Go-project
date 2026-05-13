@@ -181,7 +181,7 @@ traitlets==4.3.3
 transformers==4.11.3
 typed-ast==1.4.3
 typing-extensions==3.7.4.3
-ujson==4.3.0
+ujson==5.12.1
 urllib3==1.26.20
 wcwidth==0.2.13
 webdriver-manager==3.7.1
