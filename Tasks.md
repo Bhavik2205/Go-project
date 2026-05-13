@@ -1559,15 +1559,34 @@ Status: `OPEN`
 ## Next Backend Tasks
 
 1. Move command entrypoints into `cmd/server`, `cmd/get-token`, and `cmd/heatmap-cli`. `DONE`
-2. Run `go test ./...` and fix any compile issues after command structure changes.
+2. Run `go test ./...` and fix any compile issues after command structure changes. `DONE`
 3. Create `internal/contracts` response envelope structs. `DONE`
 4. Create `internal/security` encryption and redaction utilities. `DONE` AES-GCM encryption and redaction utilities are in place; KMS integration remains a production enhancement.
-5. Create `internal/middleware` request ID, recovery, logging, CORS, and auth placeholders. `PARTIAL` — auth middleware `DONE` at `internal/middleware/auth.go`; request ID, logging, rate limit still TODO.
+5. Create `internal/middleware` request ID, recovery, logging, CORS, and auth placeholders. `DONE` — auth middleware, request ID (with atomic counter), logger, rate limiter all implemented.
 6. Refactor `internal/server/routes.go` into versioned route registration. `DONE` — `registerVersionedRoutes` wired into `StartHTTPServer`.
-7. Implement `GET /api/v1/health`.
+7. Implement `GET /api/v1/health`. `DONE` — implemented in `api_v1.go` with DB/Redis/Zerodha dependency checks.
 8. Implement auth models/session tables if needed. `DONE` — users table (migration 000001) already existed; JWT is stateless; blocklist uses Redis.
 9. Implement settings migration and API. `PARTIAL` — migration 000012 `DONE`; handler still TODO.
-10. Implement broker status/connect/callback/disconnect.
-11. Implement watchlist and batch quotes.
-12. Implement WebSocket hub and topic subscriptions.
-13. Replace old `/ws`, `/ws/candles`, `/ws/indicators`, `/ws/heatmap` with compatible typed events.
+10. Implement broker status/connect/callback/disconnect. `PARTIAL` — `GET /api/v1/brokers/zerodha/status` `DONE`; connect/callback/disconnect TODO.
+11. Implement watchlist and batch quotes. `PARTIAL` — `GET /api/v1/quotes` `DONE`; watchlist CRUD TODO.
+12. Implement WebSocket hub and topic subscriptions. `TODO`
+13. Replace old `/ws`, `/ws/candles`, `/ws/indicators`, `/ws/heatmap` with compatible typed events. `TODO`
+
+## Stability Fixes Applied (2026-05-06)
+
+Status: `DONE`
+
+- Fixed simulation mode nil-pointer crash — Zerodha validation and instrument subscription now fully guarded behind `!simulate` flag.
+- Fixed variable shadowing of `instruments` in simulate block — renamed to `simInstruments`.
+- Added WebSocket read deadlines, pong handlers, and read limits to all four WS handlers (`/ws`, `/ws/candles`, `/ws/indicators`, `/ws/heatmap`).
+- Added periodic ping and write deadlines to all three `writePump` implementations (tick, candle, indicator).
+- Added context cancellation, write deadlines, ping/pong, and background read drain to heatmap WS handler.
+- Fixed Redis pubsub reconnect leak in `CandleGenerator` — old pubsub is now closed and nil'd before reassigning.
+- Replaced `time.Sleep` on reconnect with context-aware `select` so shutdown is not blocked.
+- Replaced all `zap.L().Fatal` calls inside worker goroutines with `Error + return` to prevent process kill from background workers.
+- Fixed `startDBFlusher` Fatal on invalid config — now logs error and defaults to 500ms.
+- Fixed tick depth access — `tick.Depth.Buy/Sell` are fixed `[5]DepthItem` arrays; direct assignment used safely.
+- Fixed double-close panic on `monitorStopCh` — safe-close pattern applied.
+- Fixed flaky `TestRequestID_UniquePerRequest` — atomic counter suffix added to generated request IDs.
+- Fixed `execution/order.go` package declaration comment for clarity.
+- All tests pass: `go build ./...` ✅ `go vet ./...` ✅ `go test ./...` ✅

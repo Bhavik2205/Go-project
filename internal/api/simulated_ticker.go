@@ -132,10 +132,11 @@ func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*Ins
 		zap.String("real_time_delay_between_ticks", realTimeDelay.String()),
 	)
 
-	// Start time of the simulation (real-world time when simulation began)
+	// simulationStartTime tracks the real-world start of the current simulated day.
+	// It is reset each time a simulated market day completes.
 	simulationStartTime := time.Now()
 
-	// Main simulation loop
+	// Main simulation loop — restarts each simulated market day continuously
 	for {
 		select {
 		case <-ctx.Done():
@@ -147,13 +148,25 @@ func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*Ins
 			elapsedRealTime := time.Since(simulationStartTime)
 			elapsedSimulatedTime := time.Duration(float64(elapsedRealTime) * simulationSpeedMultiplier)
 
-			// Check if the total simulated market duration has been reached
+			// When a simulated market day ends, roll over to the next day instead of stopping
 			if elapsedSimulatedTime >= simulatedMarketDuration {
-				zap.L().Info("✅ Simulated market duration completed.")
-				// Optionally, set the 'previous day's close' for the next simulation run
-				// to the last recorded `ohlc.Close` for each instrument.
-				// This would be for a multi-day simulation, not needed for single run.
-				return nil
+				zap.L().Info("✅ Simulated market day completed — restarting for next day")
+				for _, info := range infos {
+					previousDayCloses[info.Token] = ohlcData[info.Token].Close
+					ohlcData[info.Token] = struct {
+						Open  float64
+						High  float64
+						Low   float64
+						Close float64
+					}{
+						Open:  currentPrices[info.Token],
+						High:  currentPrices[info.Token],
+						Low:   currentPrices[info.Token],
+						Close: currentPrices[info.Token],
+					}
+				}
+				simulationStartTime = time.Now()
+				continue
 			}
 
 			// Generate and publish a tick for each subscribed instrument

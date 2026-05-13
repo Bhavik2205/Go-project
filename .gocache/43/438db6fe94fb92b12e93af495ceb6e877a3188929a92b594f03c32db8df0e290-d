@@ -1,0 +1,7 @@
+./csv.go
+./decode.go
+./encode.go
+./reflect.go
+./safe_csv.go
+./types.go
+./unmarshaller.go

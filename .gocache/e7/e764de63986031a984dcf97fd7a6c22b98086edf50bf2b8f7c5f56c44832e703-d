@@ -1,0 +1,6 @@
+./instruments.go
+./marketwatch.go
+./newsapi.go
+./simulated_ticker.go
+./ticker.go
+./zerodha.go

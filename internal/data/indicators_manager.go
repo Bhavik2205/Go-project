@@ -100,7 +100,7 @@ func NewIndicatorManager(
 	return im
 }
 
-// --- WebSocket Write Pump ---
+// writePump writes messages from the channel to the WebSocket with deadlines and periodic pings.
 func (im *IndicatorManager) writePump(client *wsClient) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -109,28 +109,58 @@ func (im *IndicatorManager) writePump(client *wsClient) {
 		client.conn.Close()
 		im.indicatorWsClients.Delete(client.conn)
 	}()
-	for msg := range client.send {
-		if err := client.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-			zap.L().Error("WebSocket write error, closing connection", zap.Error(err))
-			break
+	pingTicker := time.NewTicker(wsPingPeriod)
+	defer pingTicker.Stop()
+	for {
+		select {
+		case msg, ok := <-client.send:
+			if !ok {
+				_ = client.conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
+				_ = client.conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+				return
+			}
+			_ = client.conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
+			if err := client.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+				zap.L().Error("WebSocket write error, closing connection", zap.Error(err))
+				return
+			}
+		case <-pingTicker.C:
+			_ = client.conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
+			if err := client.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
 		}
 	}
 }
 
-// RegisterWebSocketClient should be called when a new client connects
+// RegisterWebSocketClient should be called when a new client connects.
 func (im *IndicatorManager) RegisterWebSocketClient(conn *websocket.Conn) {
 	client := &wsClient{
 		conn: conn,
-		send: make(chan []byte, 32),
+		send: make(chan []byte, 256),
 	}
 	im.indicatorWsClients.Store(conn, client)
 	go im.writePump(client)
+	zap.L().Info("Indicator WebSocket client registered", zap.String("remote_addr", conn.RemoteAddr().String()))
+}
+
+// UnregisterWebSocketClient closes and removes a WebSocket client.
+func (im *IndicatorManager) UnregisterWebSocketClient(conn *websocket.Conn) {
+	if val, ok := im.indicatorWsClients.LoadAndDelete(conn); ok {
+		client := val.(*wsClient)
+		close(client.send)
+	}
+	conn.Close()
+	zap.L().Info("Indicator WebSocket client unregistered", zap.String("remote_addr", conn.RemoteAddr().String()))
 }
 
 // StartIndicatorCalculations listens for incoming candles and processes them
 // for indicator calculation. This function should be run as a goroutine.
 func (im *IndicatorManager) StartIndicatorCalculations(ctx context.Context) {
 	zap.L().Info("✅ Indicator manager started, listening for new candles...")
+
+	// Load historical candles from DB so indicators can calculate immediately on restart
+	im.loadHistoricalCandles()
 
 	// Start the output processing workers
 	im.StartOutputProcessing(ctx)
@@ -526,5 +556,79 @@ func (im *IndicatorManager) calculateAndStoreAllIndicators(token uint32, interva
 func (im *IndicatorManager) recoverGoroutine(where string) {
 	if r := recover(); r != nil {
 		zap.L().Error("Panic recovered", zap.String("where", where), zap.Any("recover", r))
+	}
+}
+
+// loadHistoricalCandles loads existing candles from ohlcv_candles into memory
+// so indicators can be calculated immediately on restart without waiting for
+// new candles to accumulate.
+func (im *IndicatorManager) loadHistoricalCandles() {
+	type row struct {
+		InstrumentToken uint32    `gorm:"column:instrument_token"`
+		Interval        string    `gorm:"column:interval"`
+		Timestamp       time.Time `gorm:"column:timestamp"`
+		Open            float64   `gorm:"column:open"`
+		High            float64   `gorm:"column:high"`
+		Low             float64   `gorm:"column:low"`
+		Close           float64   `gorm:"column:close"`
+		Volume          float64   `gorm:"column:volume"`
+	}
+
+	// For each configured interval, load the last N candles needed for indicators
+	for _, interval := range im.appCfg.Candles.Intervals {
+		maxNeeded := im.maxHistoryPeriods[interval] + 100
+		var rows []row
+		err := im.dbClient.DB.Raw(`
+			SELECT instrument_token, interval, timestamp, open, high, low, close, volume
+			FROM ohlcv_candles
+			WHERE interval = ?
+			ORDER BY instrument_token, timestamp ASC
+		`, interval).Scan(&rows).Error
+		if err != nil {
+			zap.L().Error("Failed to load historical candles from DB",
+				zap.String("interval", interval), zap.Error(err))
+			continue
+		}
+
+		// Group by instrument token
+		byToken := make(map[uint32][]row)
+		for _, r := range rows {
+			byToken[r.InstrumentToken] = append(byToken[r.InstrumentToken], r)
+		}
+
+		loaded := 0
+		for token, tokenRows := range byToken {
+			// Keep only the last maxNeeded candles
+			if len(tokenRows) > maxNeeded {
+				tokenRows = tokenRows[len(tokenRows)-maxNeeded:]
+			}
+
+			candles := make([]indicators.Candle, len(tokenRows))
+			for i, r := range tokenRows {
+				candles[i] = indicators.Candle{
+					InstrumentToken: r.InstrumentToken,
+					Interval:        r.Interval,
+					Timestamp:       r.Timestamp,
+					Open:            r.Open,
+					High:            r.High,
+					Low:             r.Low,
+					Close:           r.Close,
+					Volume:          r.Volume,
+				}
+			}
+
+			im.historyMu.Lock()
+			if _, ok := im.candleHistory[token]; !ok {
+				im.candleHistory[token] = make(map[string]*CandleHistory)
+			}
+			im.candleHistory[token][interval] = &CandleHistory{Candles: candles}
+			im.historyMu.Unlock()
+			loaded++
+		}
+
+		zap.L().Info("Loaded historical candles for interval",
+			zap.String("interval", interval),
+			zap.Int("instruments", loaded),
+			zap.Int("total_rows", len(rows)))
 	}
 }

@@ -1,6 +1,45 @@
 # Go-project to signal-execution-desk Integration Audit
 
 Date: 2026-05-06
+Last Updated: 2026-05-07
+
+## Integration Status Summary
+
+| Area | Status |
+|---|---|
+| Auth (signup / login / refresh / logout) | DONE |
+| JWT middleware on all protected routes | DONE |
+| GET /api/v1/me + PATCH /api/v1/me | DONE |
+| GET /api/v1/health | DONE |
+| GET /api/v1/brokers/zerodha/status | DONE |
+| GET /api/v1/quotes (batch) | DONE |
+| GET /api/v1/market/overview | DONE |
+| Request ID middleware | DONE |
+| Logging middleware | DONE |
+| Rate limiting middleware | DONE |
+| Input validation layer | DONE |
+| JSON response envelope (contracts) | DONE |
+| CORS restricted to allowlist | DONE |
+| Graceful HTTP server shutdown | DONE |
+| WebSocket read/write deadlines + heartbeat | DONE |
+| WebSocket ping/pong on all handlers | DONE |
+| Heatmap WS context cancellation + backpressure | DONE |
+| Redis pubsub reconnect leak fixed | DONE |
+| Simulation mode nil-pointer crash fixed | DONE |
+| Fatal-in-worker-goroutine replaced with Error+return | DONE |
+| DB migrations 000012-000016 | DONE |
+| GET /api/v1/settings + PUT /api/v1/settings | TODO |
+| Zerodha OAuth connect/callback/disconnect | TODO |
+| Watchlist CRUD | TODO |
+| Orders + Positions + Trades handlers | TODO |
+| Strategy runner + signals | TODO |
+| Backtest engine | TODO |
+| WebSocket unified hub (/ws/v1/dashboard) | TODO |
+| News pipeline + sentiment endpoints | TODO |
+| Notifications delivery | TODO |
+| Runtime config + metrics endpoints | TODO |
+| WS auth handshake | TODO |
+| Audit event logging in handlers | TODO |
 
 This document inventories what exists today, what the frontend needs from the Go backend, what is missing, what is duplicated, and what must be fixed before `Go-project` can be cleanly integrated with `signal-execution-desk`.
 
@@ -89,189 +128,103 @@ Validation:
 Base URL from config:
 - `http://localhost:8000`
 
-### `GET /api/instrument?symbol={SYMBOL}`
+### `GET /api/instrument?symbol={SYMBOL}` — Status: `PARTIAL` (legacy, kept for backward compat)
 
 Location:
 - `Go-project/internal/server/routes.go`
 - `Go-project/internal/api/handlers/stockHandler/instrumentData.go`
 
-Purpose:
-- Fetches a live quote from Zerodha for `NSE:{SYMBOL}` using `z.Kite.GetQuote`.
+Replacement: `GET /api/v1/quotes` is `DONE`. Legacy route kept temporarily.
 
-Frontend usage today:
-- `signal-execution-desk/src/components/DashboardHeader.tsx`
-- Used as fallback quote fetch for `NIFTY 50`, `NIFTY BANK`, `RELIANCE`, `TCS`.
-
-Current response shape:
-- Zerodha quote map keyed by values such as `NSE:RELIANCE`.
-- Frontend expects fields like `last_price` and `net_change`.
-
-Issues:
+Remaining issues:
 - Hardcoded to NSE.
 - No auth.
-- No backend-side symbol validation beyond missing query param.
-- Handler type-casts `zerodhaClient.(*api.ZerodhaClient)` in routes, which can panic if a different `ZerodhaAPI` implementation is injected.
-- No local/simulated fallback for this endpoint when market simulation is enabled.
-- No response wrapper or consistent error envelope.
+- No response envelope.
+- Must be removed when frontend migrates to `/api/v1/quotes`.
 
-### `GET /api/data/users`
+### `GET /api/data/users` — Status: `REMOVED`
 
-Location:
-- `Go-project/internal/server/routes.go`
+Route removed from `registerVersionedRoutes`. Replaced by protected `GET /api/v1/me`.
 
-Purpose:
-- Dumps all users from DB.
+Remaining: inline lambda in routes.go still present — must be deleted before production.
 
-Frontend usage today:
-- None.
-
-Issues:
-- No auth.
-- Unsafe for production because it exposes user records.
-- Should be removed, protected, or replaced by `GET /api/me`.
-
-### `GET /api/cache/test`
+### `GET /api/cache/test` — Status: `OPEN — must remove before production`
 
 Location:
 - `Go-project/internal/server/routes.go`
 
-Purpose:
-- Sets and reads a Redis test key.
-
-Frontend usage today:
-- None.
-
-Issues:
-- Debug endpoint; should not remain public in production.
-- Should become `GET /api/health/cache` or be hidden behind admin auth.
+Debug endpoint still present. Must be removed or protected behind admin auth before production deploy.
 
 ## Current Built WebSockets
 
-### `WS /ws`
+### `WS /ws` — Status: `PARTIAL` (stability hardened, auth + typed envelope TODO)
 
 Location:
 - `Go-project/internal/server/routes.go`
 - `Go-project/internal/data/ingest.go`
 
-Purpose:
-- Streams tick data consumed from Redis channel `market_data_ticks`.
+Stability fixes applied:
+- Read deadline (60s) + pong handler + read limit (512KB) added.
+- Ping heartbeat (45s) added to writePump.
+- Write deadline (10s) added to writePump.
 
-Frontend usage today:
-- `signal-execution-desk/src/components/DashboardHeader.tsx`
-
-Current message shape:
-
-```json
-{
-  "symbol": "RELIANCE (NSE)",
-  "tick": {
-    "InstrumentToken": 738561,
-    "LastPrice": 3000.5,
-    "NetChange": 15.25,
-    "OHLC": {},
-    "Depth": {},
-    "VolumeTraded": 123456
-  }
-}
-```
-
-Notes:
-- Real Zerodha ticks use `kitemodels.Tick`.
-- Simulated ticks use a custom `SimTick`, but the frontend currently reads the same key names it needs: `LastPrice`, `NetChange`.
-
-Issues:
+Remaining issues:
 - No auth.
-- No subscription message from client; every connected frontend receives the full broadcast.
-- No heartbeat/ping protocol.
-- No typed envelope such as `{type:"TICK", data:{...}}`.
+- No typed envelope.
 - `DashboardHeader.tsx` has hardcoded `ws://localhost:8000/ws`.
-- Reconnect loop is always enabled even when the user presses Stop Bot; closing the socket can schedule reconnect.
 
-### `WS /ws/candles`
+### `WS /ws/candles` — Status: `PARTIAL` (stability hardened, auth + typed envelope TODO)
 
 Location:
 - `Go-project/internal/server/routes.go`
 - `Go-project/internal/data/candels.go`
 
-Purpose:
-- Streams generated OHLCV candles.
+Stability fixes applied:
+- Read deadline + pong handler + read limit added.
+- Ping heartbeat + write deadline added to writePump.
+- Redis pubsub reconnect leak fixed.
+- Fatal on subscribe failure replaced with Error+return.
 
-Frontend usage today:
-- None.
-
-Current message shape:
-
-```json
-{
-  "instrument_token": 738561,
-  "interval": "1m",
-  "timestamp": "2026-05-06T09:15:00Z",
-  "open": 3000,
-  "high": 3005,
-  "low": 2998,
-  "close": 3002,
-  "volume": 10000,
-  "trade_count": 50
-}
-```
-
-Issues:
+Remaining issues:
 - No frontend consumer.
-- No symbol included, only instrument token.
+- No symbol in message, only instrument token.
 - No subscribe/filter by symbol or interval.
-- No initial historical candles endpoint to seed charts.
+- No historical candles REST seed endpoint.
 
-### `WS /ws/indicators`
+### `WS /ws/indicators` — Status: `PARTIAL` (stability hardened, auth + typed envelope TODO)
 
 Location:
 - `Go-project/internal/server/routes.go`
 - `Go-project/internal/data/indicators_manager.go`
 
-Purpose:
-- Streams calculated indicator updates.
+Stability fixes applied:
+- Read deadline + pong handler + read limit added.
+- Ping heartbeat + write deadline added to writePump.
+- Indicator handler cleanup moved to defer (was inside read loop).
 
-Frontend usage today:
-- None.
-
-Current message shape:
-
-```json
-{
-  "type": "INDICATOR_UPDATE",
-  "instrumentToken": 738561,
-  "interval": "1m",
-  "timestamp": "2026-05-06T09:15:00Z",
-  "indicator": {
-    "indicator_name": "RSI"
-  }
-}
-```
-
-Issues:
+Remaining issues:
 - No frontend consumer.
-- Field casing differs from candles and ticks (`instrumentToken` vs `instrument_token` vs `InstrumentToken`).
+- Field casing inconsistent with candles and ticks.
 - No subscription/filtering.
 
-### `WS /ws/heatmap`
+### `WS /ws/heatmap` — Status: `PARTIAL` (stability hardened, auth TODO)
 
 Location:
 - `Go-project/internal/server/routes.go`
 - `Go-project/internal/server/broadcast.go`
 - `Go-project/internal/data/heatmap.go`
 
-Purpose:
-- Streams heatmap snapshots every 200 ms.
+Stability fixes applied:
+- Context cancellation added — handler exits cleanly on server shutdown.
+- Write deadline (10s) added to every WriteJSON call.
+- Ping heartbeat (45s) added.
+- Pong handler + read limit added.
+- Background read drain goroutine added so pong handler fires.
 
-Frontend usage today:
-- None.
-
-Known client:
-- `cmd/heatmap_cli.go` connects to `ws://localhost:8000/ws/heatmap`.
-
-Issues:
+Remaining issues:
 - No frontend panel consuming it.
-- Broadcast frequency may be heavy for browser rendering; should be throttled or client-configurable.
-- No auth or subscription/filtering.
+- No auth.
+- Broadcast frequency (200ms) not client-configurable.
 
 ## Backend APIs To Build For Frontend Integration
 
@@ -642,78 +595,75 @@ Needs APIs:
 
 ## Backend Fixes Required
 
-### Compile blockers
+### Compile blockers — Status: `DONE`
 
-These files are empty and make `go test ./...` fail:
-- `cmd/backtest.go`
-- `internal/strategy/intraday.go`
-- `internal/strategy/scalping.go`
-- `internal/strategy/swing.go`
-- `internal/strategy/selector.go`
+All previously empty files now have valid package declarations and compile cleanly:
+- `cmd/backtest/backtest.go` — `DONE` (empty main placeholder, compiles)
+- `internal/strategy/intraday.go` — `DONE` (package strategy)
+- `internal/strategy/scalping.go` — `DONE` (package strategy)
+- `internal/strategy/swing.go` — `DONE` (package strategy)
+- `internal/strategy/selector.go` — `DONE` (package strategy)
 
-Observed test result:
-
-```text
-cmd/backtest.go:1:1: expected 'package', found 'EOF'
-internal/strategy/intraday.go:1:1: expected 'package', found 'EOF'
-```
-
-Fix:
-- Either remove empty files, add valid package declarations, or implement minimal skeletons.
-- Example: `package strategy` for strategy files and `package main` for `cmd/backtest.go`.
+`go build ./...` ✅ `go vet ./...` ✅ `go test ./...` ✅
 
 ### Security gaps
 
-- No auth middleware on any HTTP or WebSocket route.
-- CORS allows all origins.
-- `/api/data/users` exposes all users publicly.
-- `/api/cache/test` is publicly writable to Redis.
-- Access token is loaded from `.access_token` file globally, not per user.
-- README mentions encrypted token storage and `internal/utils/encryption.go`, but no encryption helper file exists.
-- `.access_token`, `.env`, logs, and `instruments.csv` are modified in the working tree and should be reviewed for accidental secret/data commits.
+| Gap | Status |
+|---|---|
+| No auth middleware on HTTP routes | DONE — Authenticate middleware + protected subrouter |
+| CORS allows all origins | DONE — corsAllowedOrigins() reads ALLOWED_ORIGINS env var |
+| /api/data/users exposes all users publicly | DONE — route removed, replaced by /api/v1/me |
+| /api/cache/test is publicly writable to Redis | OPEN — must remove before production |
+| Access token loaded from .access_token file globally | OPEN — must be per-user encrypted in DB |
+| No encryption helper | DONE — AES-GCM in internal/security/encryption.go |
+| .access_token and .env in working tree | OPEN — review .gitignore before commit |
 
 ### API design gaps
 
-- No consistent JSON envelope for success/errors.
-- No request validation layer.
-- No versioning (`/api/v1/...`).
-- No OpenAPI/Swagger contract.
-- No typed DTO package shared by handlers.
-- No pagination for lists.
-- No filtering/sorting standards.
-- No websocket subscription protocol.
+| Gap | Status |
+|---|---|
+| No consistent JSON envelope | DONE — contracts package + writeSuccess/writeError helpers |
+| No request validation layer | DONE — internal/validation/validate.go |
+| No versioning /api/v1/ | DONE — registerVersionedRoutes in api_v1.go |
+| No OpenAPI/Swagger contract | PARTIAL — inline spec stub in handleV1OpenAPISpec |
+| No typed DTO package | OPEN |
+| No pagination for lists | OPEN |
+| No WebSocket subscription protocol | OPEN — planned in hub refactor |
 
 ### Runtime gaps
 
-- `cmd/main.go` validates Zerodha session even when `market.simulate: true`; simulation should not require live Zerodha credentials/session.
-- Instrument subscription list is hardcoded in `cmd/main.go`.
-- Simulated instrument list duplicates much of the real hardcoded list.
-- There is no graceful HTTP server shutdown; `ListenAndServe` is started but not shut down through `http.Server.Shutdown`.
-- Several goroutines call `zap.L().Fatal`, which exits the process from worker paths instead of surfacing recoverable errors.
-- WebSocket handlers do not set read deadlines, pong handlers, write deadlines, or max message sizes.
-- `/ws/heatmap` publishes every 200 ms to every client with no backpressure strategy beyond write failure.
+| Gap | Status |
+|---|---|
+| Zerodha session validated in simulate mode | DONE — guarded behind !simulate |
+| Instrument list hardcoded in main.go | OPEN — move to DB watchlist |
+| No graceful HTTP server shutdown | DONE — srv.Shutdown with 15s context |
+| Fatal calls in worker goroutines | DONE — all replaced with Error+return |
+| WS handlers no read deadlines or max message size | DONE — SetReadLimit + SetReadDeadline added |
+| WS handlers no ping/pong | DONE — ping ticker + pong handler added to all handlers |
+| /ws/heatmap no backpressure or context cancel | DONE — write deadlines + context cancel + ping added |
 
 ### Data and schema gaps
 
-- `Instrument.InstrumentToken` is `uint` in model while tick/candle/indicator flows use `uint32`; migrations use BIGINT for instruments and INTEGER for market data/indicators. This should be normalized.
-- `positions`, `orders`, and `trades` models exist but there is no broker reconciliation API/worker exposed to frontend.
-- No settings table exists.
-- No watchlist table exists.
-- No notification channel/history table exists.
-- No backtest job/result schema exists.
-- No WebSocket connection/session table or audit log exists.
+| Gap | Status |
+|---|---|
+| No settings table | DONE — migration 000012 |
+| No watchlist table | DONE — migration 000013 |
+| No notification channel/history table | DONE — migration 000015 |
+| No backtest job/result schema | DONE — migration 000014 |
+| No audit log table | DONE — migration 000016 |
+| InstrumentToken type mismatch uint vs uint32 | OPEN — normalize before production |
+| No broker reconciliation worker | OPEN |
 
 ### Frontend integration gaps
 
-- Backend emits mixed casing:
-  - Tick: `InstrumentToken`, `LastPrice`, `NetChange`.
-  - Candle: `instrument_token`, `trade_count`.
-  - Indicator: `instrumentToken`.
-- Backend tick symbol is `"RELIANCE (NSE)"`, while REST quote keys are `"NSE:RELIANCE"` and DB instruments use `Tradingsymbol` plus `Exchange`.
-- No common `apiClient` or `wsClient` exists in frontend.
-- No React Query hooks are defined for backend data.
-- No environment variable abstraction exists.
-- No frontend type definitions match backend payloads.
+| Gap | Status |
+|---|---|
+| Mixed WS message casing | OPEN — normalize when hub is built |
+| Symbol format inconsistency | PARTIAL — normalizeToAPISymbol helper in api_v1.go |
+| No common apiClient or wsClient in frontend | OPEN |
+| No React Query hooks | OPEN |
+| No VITE_API_BASE_URL env var | OPEN |
+| No frontend type definitions for backend payloads | OPEN |
 
 ## Duplicated or Risky Code/Concepts
 
@@ -837,13 +787,44 @@ Backend:
 
 ## Immediate Pending Checklist
 
-- Fix empty Go files.
-- Add env-based frontend API/WS base URLs.
-- Add backend settings API and secure secret storage.
-- Replace public debug endpoints.
-- Add auth and protect WebSockets.
-- Normalize message casing and symbols.
-- Build initial data endpoints for candles/indicators/heatmap.
-- Add order/position/trade handlers.
-- Replace mock frontend panels one by one.
-- Update README so it matches actual code.
+### DONE
+- [x] Fix empty Go files (package declarations added to all strategy + backtest files)
+- [x] Add auth middleware and protect all /api/v1/ routes
+- [x] Add JWT signup / login / refresh / logout
+- [x] Add GET /api/v1/me and PATCH /api/v1/me
+- [x] Add GET /api/v1/health with DB + Redis + Zerodha dependency checks
+- [x] Add GET /api/v1/brokers/zerodha/status
+- [x] Add GET /api/v1/quotes (batch quote endpoint)
+- [x] Add GET /api/v1/market/overview
+- [x] Add request ID middleware with atomic counter
+- [x] Add logging middleware
+- [x] Add rate limiting middleware
+- [x] Add input validation layer
+- [x] Add JSON response envelope (contracts package)
+- [x] Restrict CORS to allowlist from ALLOWED_ORIGINS env var
+- [x] Add graceful HTTP server shutdown
+- [x] Add WebSocket read deadlines + pong handlers + read limits to all four WS handlers
+- [x] Add ping heartbeat + write deadlines to all three writePump implementations
+- [x] Fix heatmap WS context cancellation + write deadlines + ping
+- [x] Fix Redis pubsub reconnect connection leak
+- [x] Fix simulation mode nil-pointer crash
+- [x] Replace Fatal calls in worker goroutines with Error+return
+- [x] Fix double-close panic on monitorStopCh
+- [x] Fix flaky TestRequestID_UniquePerRequest test
+- [x] Run DB migrations 000012-000016
+- [x] Add AES-GCM encryption utilities in internal/security
+
+### TODO — Next Priority
+- [ ] Remove /api/cache/test debug route
+- [ ] Add backend settings API (GET + PUT /api/v1/settings)
+- [ ] Add Zerodha OAuth connect/callback/disconnect
+- [ ] Add watchlist CRUD
+- [ ] Add orders + positions + trades handlers
+- [ ] Add env-based frontend API/WS base URLs (VITE_API_BASE_URL)
+- [ ] Add WS auth handshake
+- [ ] Add audit event logging in handlers
+- [ ] Normalize WS message casing and symbol format
+- [ ] Build candles + indicators REST seed endpoints
+- [ ] Build unified WebSocket hub (/ws/v1/dashboard)
+- [ ] Replace mock frontend panels one by one
+- [ ] Update README to match actual code structure

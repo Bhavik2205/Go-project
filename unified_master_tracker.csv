@@ -1,0 +1,136 @@
+ID,Phase,Category,Priority,Status,Title,Description,File/Location,Blocks_Production,Notes
+1,Foundation,Auth,Critical,DONE,JWT auth system,HS256 access token (15m) + refresh token (7d) + ParseToken + JWT_SECRET from env,internal/auth/jwt.go,YES,GenerateAccessToken + GenerateRefreshToken + ParseToken implemented
+2,Foundation,Auth,Critical,DONE,POST /api/v1/auth/signup,bcrypt cost 12 + email validation + token pair on 201,internal/api/handlers/auth/signup.go,YES,
+3,Foundation,Auth,Critical,DONE,POST /api/v1/auth/login,bcrypt compare + IsActive check + generic error prevents email enumeration,internal/api/handlers/auth/login.go,YES,
+4,Foundation,Auth,Critical,DONE,POST /api/v1/auth/refresh,Validates refresh token type + issues new rotated access+refresh pair,internal/api/handlers/auth/refresh.go,YES,
+5,Foundation,Auth,Critical,DONE,POST /api/v1/auth/logout,Writes refresh token to Redis blocklist with remaining TTL + returns 204,internal/api/handlers/auth/logout.go,YES,
+6,Foundation,Auth,Critical,DONE,JWT auth middleware on all protected routes,Authenticate middleware parses Bearer JWT + checks Redis blocklist + stores userID in context,internal/middleware/auth.go,YES,Protected subrouter applied in api_v1.go
+7,Foundation,Profile,Critical,DONE,GET /api/v1/me,Reads userID from context + queries User by PK + returns meResponse (no PasswordHash),internal/api/handlers/profile/me.go,YES,
+8,Foundation,Profile,Low,DONE,PATCH /api/v1/me,Validates userName (min 1 max 100) + updates user_name column + returns updated meResponse,internal/api/handlers/profile/me.go,NO,
+9,Foundation,Middleware,Medium,DONE,Request ID middleware,Reads X-Request-ID header or generates id with atomic counter suffix for uniqueness,internal/middleware/requestid.go,NO,Fixes flaky test — atomic counter guarantees uniqueness
+10,Foundation,Middleware,Medium,DONE,Logging middleware,Logs method + path + status + duration using zap,internal/middleware/logger.go,NO,
+11,Foundation,Middleware,Medium,DONE,Rate limiting middleware,Per-IP token bucket using golang.org/x/time/rate with cleanup goroutine,internal/middleware/ratelimit.go,NO,Not yet wired to auth routes specifically
+12,Foundation,Middleware,Medium,DONE,Input validation layer,BindAndValidate decodes JSON + runs go-playground/validator + returns 400 on failure,internal/validation/validate.go,NO,
+13,Foundation,Contracts,Medium,DONE,JSON response envelope,NewSuccess and NewError helpers used by all api_v1.go handlers,internal/contracts/envelope.go,NO,Auth and profile handlers still use inline encoding — migrate later
+14,Foundation,Security,Critical,DONE,CORS restricted to allowlist,corsAllowedOrigins() reads ALLOWED_ORIGINS env var. Defaults to localhost dev origins only.,internal/server/routes.go,YES,Wildcard removed
+15,Foundation,Security,Critical,DONE,AES-GCM encryption utilities,Encrypt/decrypt string values for secrets at rest,internal/security/encryption.go,NO,KMS integration is a future enhancement
+16,Foundation,Security,Critical,DONE,Graceful HTTP server shutdown,srv.Shutdown with 15s context timeout on SIGINT/SIGTERM,internal/server/routes.go,YES,
+17,Foundation,DB,Medium,DONE,DB migration 000012 — user_settings table,JSONB settings_json per section + UNIQUE(user_id section) + CASCADE delete,internal/db/migrations/000012,NO,
+18,Foundation,DB,Medium,DONE,DB migration 000013 — watchlists table,watchlists + watchlist_items tables,internal/db/migrations/000013,NO,
+19,Foundation,DB,Medium,DONE,DB migration 000014 — backtest_jobs table,backtest_jobs with status + result JSONB,internal/db/migrations/000014,NO,
+20,Foundation,DB,Medium,DONE,DB migration 000015 — notification tables,notification_channels + notification_history tables,internal/db/migrations/000015,NO,
+21,Foundation,DB,Medium,DONE,DB migration 000016 — audit_events table,audit_events with event_type + resource + action + metadata JSONB,internal/db/migrations/000016,NO,
+22,Stability,WebSocket,Critical,DONE,Fix simulation mode nil-pointer crash,Server crashed on startup in simulate=true mode — client.Kite dereferenced when nil,cmd/server/main.go,YES,Zerodha validation + instrument subscription guarded behind !simulate
+23,Stability,WebSocket,Critical,DONE,Add WS read deadlines + pong handlers to all four WS handlers,Connections hung indefinitely with no timeout or stale connection detection,internal/server/routes.go,YES,SetReadLimit(512KB) + SetReadDeadline(60s) + SetPongHandler on /ws /ws/candles /ws/indicators /ws/heatmap
+24,Stability,WebSocket,High,DONE,Add ping ticker + write deadlines to all writePump implementations,No heartbeat meant dead clients were never detected; writes had no timeout,internal/data/ingest.go + candels.go + indicators_manager.go,YES,Ping ticker 45s + write deadline 10s + close frame on channel close
+25,Stability,WebSocket,High,DONE,Fix heatmap broadcast — context cancellation + write deadlines + ping,Blocking WriteJSON with no deadline and no shutdown path caused goroutine leak,internal/server/broadcast.go,YES,Context cancel + write deadlines + ping ticker + background read drain goroutine
+26,Stability,Redis,High,DONE,Fix Redis pubsub reconnect connection leak in CandleGenerator,Old pubsub not closed before reassigning on reconnect — connection accumulation,internal/data/candels.go,YES,pubsub.Close() + nil before reassign. time.Sleep replaced with context-aware select.
+27,Stability,Goroutines,High,DONE,Replace Fatal calls in worker goroutines with Error+return,zap.L().Fatal from background goroutines killed entire process on recoverable errors,internal/data/ingest.go + candels.go,YES,Fatal in subscribeAndProcessRedis + startDBFlusher + candle subscribe all replaced
+28,Stability,Goroutines,Medium,DONE,Fix double-close panic on monitorStopCh,ctx.Done branch and deferred close both closed the same channel,internal/data/candels.go,NO,Safe-close pattern with select+default applied
+29,Stability,Goroutines,Medium,DONE,Fix startDBFlusher Fatal on invalid config,Fatal on zero flush interval killed process from goroutine,internal/data/ingest.go,NO,Now logs Error and defaults to 500ms
+30,Stability,Tick,Medium,DONE,Fix tick depth array access,tick.Depth.Buy/Sell are fixed [5]DepthItem arrays — always 5 elements. Previous guard silently dropped valid ticks.,internal/data/ingest.go,NO,Direct array assignment used safely
+31,Stability,Test,Low,DONE,Fix flaky TestRequestID_UniquePerRequest,UnixNano collisions under rapid sequential requests caused non-deterministic test failure,internal/middleware/requestid.go,NO,Atomic counter suffix added — all 100 requests produce unique IDs
+32,API,Health,High,DONE,GET /api/v1/health,Pings DB and Redis. Returns uptime + mode + dependency status.,internal/server/api_v1.go,NO,
+33,API,Broker,High,DONE,GET /api/v1/brokers/zerodha/status,Calls GetUserProfile if client is set. Returns connected/disconnected state.,internal/server/api_v1.go,NO,
+34,API,Market,High,DONE,GET /api/v1/quotes,Fetches from Zerodha or falls back to heatmap snapshot. Accepts comma-separated symbols.,internal/server/api_v1.go,NO,
+35,API,Market,High,DONE,GET /api/v1/market/overview,Uses heatmap snapshot. Returns indices + top gainers + losers + market breadth.,internal/server/api_v1.go,NO,
+36,API,Settings,High,TODO,GET /api/v1/settings,Query user_settings by userID. Decrypt secret fields before returning.,internal/api/handlers/settings/settings.go,NO,Migration 000012 exists. Handler not yet created.
+37,API,Settings,High,TODO,PUT /api/v1/settings,Decode body. Encrypt secret fields. Upsert into user_settings.,internal/api/handlers/settings/settings.go,NO,Depends on GET /api/v1/settings
+38,API,Settings,Low,TODO,PATCH /api/v1/settings/{section},Save a single settings section only,internal/api/handlers/settings/settings.go,NO,
+39,API,Settings,Low,TODO,POST /api/v1/settings/test,Send test notification or validate config section,internal/api/handlers/settings/settings.go,NO,Needed by Settings.tsx Test Tab
+40,API,Broker,High,TODO,POST /api/v1/brokers/zerodha/connect,Store encrypted API key+secret. Return OAuth login URL.,internal/api/handlers/broker/broker.go,NO,AES-GCM utility exists in security package
+41,API,Broker,High,TODO,GET /api/v1/brokers/zerodha/callback,Exchange request_token for access_token. Encrypt and store in UserBrokerAccount.,internal/api/handlers/broker/broker.go,NO,
+42,API,Broker,High,TODO,POST /api/v1/brokers/zerodha/disconnect,Set IsActive=false on UserBrokerAccount. Stop ticker operations.,internal/api/handlers/broker/broker.go,NO,
+43,API,Market,High,TODO,GET /api/v1/instruments/search,SELECT from instruments WHERE tradingsymbol ILIKE '%q%' LIMIT 20,internal/api/handlers/market/instruments.go,NO,
+44,API,Market,High,TODO,GET /api/v1/candles,Query ohlcv_candles table. Accept token + interval + from + to params.,internal/api/handlers/market/candles.go,NO,Needed to seed charts before WS connects
+45,API,Market,Medium,TODO,GET /api/v1/indicators (REST),Query indicator tables. Accept token + interval + indicator + period params.,internal/api/handlers/market/indicators.go,NO,Needed to seed indicator panels
+46,API,Market,Low,TODO,GET /api/v1/market/heatmap (REST),Call data.GetMarketHeatmap().Snapshot(). Return as JSON.,internal/api/handlers/market/heatmap.go,NO,WS /ws/heatmap exists
+47,API,Market,Low,TODO,GET /api/v1/instruments/{token},Query instruments WHERE instrument_token = token,internal/api/handlers/market/instruments.go,NO,
+48,API,Watchlist,High,TODO,GET /api/v1/watchlists/default,Query watchlists + watchlist_items for current user. Return symbols with last price.,internal/api/handlers/watchlist/watchlist.go,NO,Migration 000013 exists
+49,API,Watchlist,High,TODO,POST /api/v1/watchlists/default/items,Validate instrument token exists. Insert into watchlist_items.,internal/api/handlers/watchlist/watchlist.go,NO,
+50,API,Orders,High,TODO,GET /api/v1/orders,Query orders WHERE user_id = currentUser. Support status filter. Return paginated list.,internal/api/handlers/orders/orders.go,NO,DB model exists
+51,API,Orders,High,TODO,POST /api/v1/orders,Validate body. Check simulate flag. Paper: insert PENDING. Live: call Zerodha PlaceOrder. Idempotency key required.,internal/api/handlers/orders/orders.go,YES,Kill switch + daily loss check required before live
+52,API,Orders,Medium,TODO,DELETE /api/v1/orders/{id},Set status CANCELLED. If live call Zerodha CancelOrder.,internal/api/handlers/orders/orders.go,NO,
+53,API,Orders,Medium,TODO,PUT /api/v1/orders/{id},Modify price/qty for OPEN orders.,internal/api/handlers/orders/orders.go,NO,
+54,API,Orders,Medium,TODO,GET /api/v1/trades,Query trades WHERE user_id = currentUser. Support date range filter.,internal/api/handlers/orders/trades.go,NO,
+55,API,Orders,Medium,TODO,POST /api/v1/gtt and GET /api/v1/gtt,GTT order creation and listing,internal/api/handlers/orders/gtt.go,NO,
+56,API,Positions,High,TODO,GET /api/v1/positions,Query positions WHERE user_id = currentUser AND quantity != 0. Return with unrealized PnL.,internal/api/handlers/positions/positions.go,NO,DB model exists
+57,API,Strategies,High,TODO,GET /api/v1/strategies,Return list of strategy names with enabled status from user_strategies table.,internal/api/handlers/strategies/strategies.go,NO,Strategy files are empty skeletons
+58,API,Strategies,High,TODO,PUT /api/v1/user/strategies/{name},Upsert into user_strategies with IsEnabled and Parameters JSON.,internal/api/handlers/strategies/strategies.go,NO,
+59,API,Strategies,High,TODO,POST /api/v1/strategies/{name}/start and /stop,start: set IsEnabled=true. stop: set IsEnabled=false and signal goroutine.,internal/api/handlers/strategies/strategies.go,NO,
+60,API,Strategies,Medium,TODO,GET /api/v1/signals,Query signals table or Redis cache. Return latest N signals per strategy.,internal/api/handlers/strategies/signals.go,NO,
+61,API,Backtest,High,TODO,POST /api/v1/backtests,Insert into backtest_jobs with status PENDING. Launch goroutine. Return job ID.,internal/api/handlers/backtest/backtest.go,NO,Migration 000014 exists
+62,API,Backtest,High,TODO,GET /api/v1/backtests/{id},Query backtest_jobs by id and user_id. Return status + result JSON.,internal/api/handlers/backtest/backtest.go,NO,
+63,API,Backtest,Low,TODO,GET /api/v1/backtests,List all backtest jobs for current user,internal/api/handlers/backtest/backtest.go,NO,
+64,API,Models,High,TODO,GET /api/v1/models,Scan models/ directory for .onnx files. Return list with version + active status.,internal/api/handlers/models/models.go,NO,ONNX files exist in models/
+65,API,Models,Medium,TODO,POST /api/v1/models/{id}/activate,Validate model file exists. Store active model name in Redis.,internal/api/handlers/models/models.go,NO,
+66,API,Models,Medium,TODO,GET /api/v1/models/jobs,Query model_jobs table or Redis. Return list of job status.,internal/api/handlers/models/jobs.go,NO,
+67,API,Sentiment,High,TODO,GET /api/v1/news,Query news_articles ordered by published_at DESC. Support limit and page.,internal/api/handlers/sentiment/sentiment.go,NO,news_pipeline.go is fully commented out
+68,API,Sentiment,Medium,TODO,GET /api/v1/sentiment/summary,Aggregate avg sentiment_score from news_articles in last 24h grouped by label.,internal/api/handlers/sentiment/sentiment.go,NO,
+69,API,Sentiment,Medium,TODO,POST /api/v1/sentiment/analyze,On-demand sentiment analysis for text/article,internal/api/handlers/sentiment/sentiment.go,NO,
+70,API,Notifications,High,TODO,POST /api/v1/notifications/test,Read channel config from user_settings. Call Telegram Bot API or WhatsApp API.,internal/api/handlers/notifications/notifications.go,NO,Migration 000015 exists
+71,API,Notifications,Low,TODO,GET /api/v1/notifications/history,List delivered and failed alerts,internal/api/handlers/notifications/notifications.go,NO,
+72,API,Runtime,Low,TODO,GET /api/v1/runtime/config,Return simulate mode + server time + JWT expiry + configured intervals. No secrets.,internal/api/handlers/runtime/runtime.go,NO,
+73,API,Runtime,Low,TODO,GET /api/v1/runtime/metrics,Return connected WS clients + DB ping latency + Redis ping latency + memory stats.,internal/api/handlers/runtime/runtime.go,NO,
+74,WebSocket,Realtime,High,TODO,Unified WebSocket hub with topic subscriptions,Hub struct with topic to connection map. SUBSCRIBE/UNSUBSCRIBE protocol. Typed envelopes.,internal/realtime/hub.go,NO,Prerequisite for all WS topics below
+75,WebSocket,Realtime,High,TODO,WS /ws/v1/dashboard route,Wire hub.ServeWS to new route. Keep old routes temporarily for backward compat.,internal/server/routes.go,NO,Depends on hub
+76,WebSocket,Realtime,High,TODO,WS topic: orders and positions,hub.Broadcast(topicOrders) and hub.Broadcast(topicPositions) when DB writes happen,internal/realtime/topics.go,NO,Depends on hub + orders handler
+77,WebSocket,Realtime,Medium,TODO,WS topic: signals,hub.Broadcast(topicSignals) when strategy runner emits signal,internal/realtime/topics.go,NO,Depends on hub + strategy runner
+78,WebSocket,Realtime,Medium,TODO,WS topic: alerts,hub.Broadcast(topicAlerts) from order monitor and strategy runner on risk limit hit,internal/realtime/topics.go,NO,Depends on hub
+79,WebSocket,Realtime,Medium,TODO,WS topic: sentiment,hub.Broadcast(topicSentiment) after inserting article in news pipeline,internal/realtime/topics.go,NO,Depends on hub + news pipeline
+80,WebSocket,Realtime,Medium,TODO,WS topic: backtests/{id},hub.Broadcast(topicBacktest+id) periodically from backtest goroutine,internal/realtime/topics.go,NO,Depends on hub + backtest handler
+81,WebSocket,Realtime,Medium,TODO,WS topic: models,hub.Broadcast(topicModels) from retrain goroutine at each step,internal/realtime/topics.go,NO,Depends on hub
+82,WebSocket,Security,High,TODO,WebSocket authentication handshake,Require Bearer JWT or short-lived WS token on all WebSocket upgrades,internal/server/routes.go + internal/middleware/,YES,Currently all WS endpoints are unauthenticated
+83,WebSocket,Security,High,TODO,Topic-level WebSocket authorization,Validate user is allowed to subscribe to requested topics,internal/realtime/,YES,Required for multi-user safety
+84,Security,Trading,Critical,TODO,Trading safety kill switch,Kill switch to halt all trading immediately,internal/execution/,YES,Required before any live trading
+85,Security,Trading,Critical,TODO,Daily loss circuit breaker,Enforce daily loss limit before order placement,internal/execution/,YES,Required before any live trading
+86,Security,Trading,Critical,TODO,Order idempotency key enforcement,Reject duplicate orders using Idempotency-Key header + Redis/DB dedup,internal/execution/order.go,YES,Required for safe order placement
+87,Security,Broker,Critical,TODO,Broker secret encryption wiring,Wire AES-GCM utility to broker account storage for API secret + access token,internal/security/ + internal/broker/,YES,AES-GCM utility exists; needs wiring
+88,Security,Broker,Critical,OPEN,Access token loaded from .access_token file globally,Single global token is not multi-user safe and risks credential commit,cmd/server/main.go,YES,Must be per-user encrypted in DB before multi-user launch
+89,Security,API,Critical,OPEN,Remove /api/cache/test debug route,Publicly writable to Redis in production,internal/server/routes.go,YES,Must remove before production deploy
+90,Security,API,High,OPEN,Remove /api/data/users inline lambda,Inline lambda still present in routes.go even though route is removed from versioned router,internal/server/routes.go,NO,Clean up dead code
+91,Security,Middleware,Medium,TODO,Request size limits middleware,Add http.MaxBytesReader wrapper to prevent abuse,internal/middleware/,NO,
+92,Security,Middleware,Medium,TODO,Security headers middleware,X-Content-Type-Options + X-Frame-Options + Strict-Transport-Security,internal/middleware/,NO,Required for production hardening
+93,Security,Audit,Medium,TODO,Audit event logging in handlers,Write to audit_events table from login + logout + broker-connect + order-place handlers,internal/db/ + handlers,NO,Migration 000016 exists. No handlers write to it yet.
+94,Feature,Strategy,High,TODO,Strategy runner engine,Execute enabled strategies against live tick/candle data and emit signals,internal/strategy/,NO,All strategy files are empty package-only skeletons
+95,Feature,Backtest,High,TODO,Backtest engine implementation,Run strategy against historical candle data with fee simulation and equity curve,internal/backtest/ + cmd/backtest/,NO,cmd/backtest/backtest.go is empty placeholder
+96,Feature,News,High,TODO,News pipeline activation,Uncomment news_pipeline.go + wire to ONNX sentiment model + persist to NewsArticle table,internal/data/news_pipeline.go,NO,Pipeline code exists but fully commented out
+97,Feature,Notifications,High,TODO,Notification delivery system,Send Telegram/WhatsApp alerts for trade execution + PnL threshold + error events,internal/notifications/,NO,Placeholder package exists; no implementation
+98,Feature,Broker,High,TODO,Broker reconciliation worker,Background worker to sync positions/orders/trades from broker to DB,internal/broker/,NO,Needed for accurate position display
+99,Feature,Market,Medium,TODO,Per-market trading calendar support,Respect NSE/BSE market holidays and session times,internal/market/,NO,Required for correct candle generation and order validation
+100,Feature,Auth,Low,TODO,Device/session list endpoint,Allow users to view and revoke active sessions,internal/auth/,NO,
+101,Feature,Auth,Low,TODO,MFA support,Add TOTP-based MFA before public launch,internal/auth/,NO,
+102,Feature,Billing,Low,TODO,Subscription/billing module design,Design usage limits by plan for future paid multi-user launch,internal/,NO,Not started
+103,Refactoring,Routes,High,OPEN,Remove old /api/data/users and /api/cache/test inline lambdas,Inline lambdas expose raw DB data and Redis publicly,internal/server/routes.go,YES,Must be removed before production
+104,Refactoring,Routes,High,OPEN,Move hardcoded symbol lists to DB/config,Symbol lists duplicated in main.go and frontend components,cmd/server/main.go,NO,Store in DB watchlist; expose via /api/v1/watchlists
+105,Refactoring,WebSocket,High,OPEN,Normalize WS message field casing,Tick uses PascalCase; candle uses snake_case; indicator uses camelCase,Multiple files,NO,Normalize to camelCase when hub is built
+106,Refactoring,WebSocket,Medium,OPEN,Normalize symbol format across codebase,Tick symbol is 'RELIANCE (NSE)'; REST uses 'NSE:RELIANCE'; DB uses separate fields,Multiple files,NO,normalizeToAPISymbol helper exists in api_v1.go
+107,Refactoring,DB,Medium,OPEN,Normalize InstrumentToken type,DB model uses uint; tick/candle/indicator flows use uint32; migrations use BIGINT vs INTEGER,internal/db/models.go + migrations,NO,Normalize to uint32 or int64 consistently
+108,Refactoring,Config,Medium,OPEN,Move outputWorkerCount and channel buffer sizes to config,Hardcoded 30 workers and 5000 buffer in IndicatorManager,internal/data/indicators_manager.go,NO,Add to AppConfig.Ingestion
+109,Refactoring,Files,Low,OPEN,Rename candels.go to candles.go,Typo in filename,internal/data/candels.go,NO,
+110,Refactoring,Docs,Low,OPEN,Update README to match actual code structure,README references files that do not exist,README.md,NO,Update after all APIs are implemented
+111,Refactoring,Security,Medium,OPEN,Remove APISecret from ZerodhaClient struct,Plain string field could be logged or serialized accidentally,internal/api/zerodha.go,NO,Pass only when needed for token exchange
+112,Frontend,Integration,High,TODO,Add VITE_API_BASE_URL and VITE_WS_BASE_URL env vars,Frontend hardcodes localhost:8000,signal-execution-desk/.env,NO,
+113,Frontend,Integration,High,TODO,Create src/lib/api.ts REST client,No common apiClient exists in frontend,signal-execution-desk/src/lib/,NO,
+114,Frontend,Integration,High,TODO,Create src/lib/ws.ts WebSocket client,No common wsClient with reconnect + heartbeat + typed dispatch,signal-execution-desk/src/lib/,NO,
+115,Frontend,Integration,High,TODO,Wire DashboardHeader.tsx to /api/v1/quotes and /ws,Replace hardcoded localhost URLs with env vars. Fix Stop Bot reconnect.,signal-execution-desk/src/components/DashboardHeader.tsx,NO,
+116,Frontend,Integration,High,TODO,Wire BrokerIntegration.tsx to broker APIs,Replace hardcoded isConnected=true with GET /api/v1/brokers/zerodha/status,signal-execution-desk/src/components/BrokerIntegration.tsx,NO,
+117,Frontend,Integration,High,TODO,Wire Settings.tsx to GET/PUT /api/v1/settings,Currently saves to localStorage only,signal-execution-desk/src/components/Settings.tsx,NO,
+118,Frontend,Integration,High,TODO,Wire MarketData.tsx to market APIs and WS,Replace mock arrays with GET /api/v1/market/overview + /api/v1/quotes + /ws/heatmap,signal-execution-desk/src/components/MarketData.tsx,NO,
+119,Frontend,Integration,High,TODO,Wire PositionsPanel.tsx to orders/positions APIs,Replace all mock positions/orders/GTT with real API calls,signal-execution-desk/src/components/PositionsPanel.tsx,NO,
+120,Frontend,Integration,Medium,TODO,Wire StrategyPanel.tsx to strategy APIs and WS,Replace mock strategies and metrics with real API calls,signal-execution-desk/src/components/StrategyPanel.tsx,NO,
+121,Frontend,Integration,Medium,TODO,Wire MLModelsPanel.tsx to model APIs,Replace mock model registry with GET /api/v1/models,signal-execution-desk/src/components/MLModelsPanel.tsx,NO,
+122,Frontend,Integration,Medium,TODO,Wire SentimentPanel.tsx to news/sentiment APIs,Replace mock sentiment rows with GET /api/v1/news,signal-execution-desk/src/components/SentimentPanel.tsx,NO,
+123,Frontend,Integration,Low,TODO,Add React Query hooks for all backend endpoints,No data fetching hooks defined,signal-execution-desk/src/hooks/,NO,
+124,Frontend,Integration,Low,TODO,Add TypeScript types matching backend response shapes,No frontend type definitions match backend payloads,signal-execution-desk/src/types/,NO,
+125,Production,Deployment,High,TODO,Environment variable validation at boot,Validate all required env vars on startup and fail fast with clear error messages,cmd/server/main.go,YES,Prevents silent misconfiguration
+126,Production,Deployment,High,TODO,Docker image without secrets baked in,Ensure .env and .access_token are not copied into Docker image,Dockerfile + .dockerignore,YES,
+127,Production,Deployment,Medium,TODO,DB migrations in deployment pipeline,Run migrate up as part of deploy not manually,scripts/db_migrate.sh + CI,NO,
+128,Production,Deployment,Medium,TODO,TLS termination,HTTPS only in production,Dockerfile + reverse proxy config,YES,
+129,Production,Observability,Medium,TODO,Structured metrics and alerts,Prometheus metrics or equivalent for DB errors + WS drops + broadcast rate,internal/telemetry/,NO,
+130,Production,Observability,Low,TODO,OpenAPI contract tests,Automated tests that validate handler responses against openapi.yaml schema,docs/ + tests/,NO,Inline spec stub started in handleV1OpenAPISpec
+131,Production,Observability,Low,TODO,OpenAPI/Swagger full contract,Generate or write complete openapi.yaml for all v1 endpoints,docs/openapi.yaml,NO,Stub file exists
+132,Production,Security,Medium,TODO,KMS integration for master encryption key,AES-GCM master key currently from env; should support AWS KMS,internal/security/encryption.go,NO,Noted as production enhancement
+133,Production,Security,Medium,TODO,Feature flags for country/broker rollout,Control feature availability per country or broker type,internal/,NO,Required for international product readiness
+134,Production,Security,Low,TODO,Multi-broker adapter interface,Abstract broker operations behind interface so non-Zerodha brokers can be added,internal/broker/,NO,Required for international product readiness
+135,Production,Security,Low,TODO,Per-market trading calendar,Respect NSE/BSE market holidays and session times per market,internal/market/,NO,

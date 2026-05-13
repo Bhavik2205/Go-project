@@ -106,17 +106,25 @@ func (cg *CandleGenerator) StartCandleGeneration(ctx context.Context) {
 		if r := recover(); r != nil {
 			zap.L().Error("Panic recovered in StartCandleGeneration", zap.Any("recover", r))
 		}
-		close(cg.monitorStopCh)
+		// Safe close: monitorStopCh may already be closed if ctx was cancelled inside the loop.
+		select {
+		case <-cg.monitorStopCh:
+			// already closed
+		default:
+			close(cg.monitorStopCh)
+		}
 	}()
 
 	pubsub := cg.redisClient.Subscribe(ctx, api.RedisMarketDataChannel)
 	if pubsub == nil {
-		zap.L().Fatal("Failed to subscribe to Redis PubSub for candle generation. Exiting.")
+		zap.L().Error("Failed to subscribe to Redis PubSub for candle generation, stopping.")
 		return
 	}
 	defer func() {
 		if err := pubsub.Close(); err != nil {
-			zap.L().Error("Failed to close Redis PubSub connection for candle generator", zap.Error(err))
+			if !isClosedNetworkError(err) {
+				zap.L().Error("Failed to close Redis PubSub connection for candle generator", zap.Error(err))
+			}
 		}
 		zap.L().Info("Redis PubSub subscriber for candle generator closed.")
 	}()
@@ -131,11 +139,16 @@ func (cg *CandleGenerator) StartCandleGeneration(ctx context.Context) {
 				zap.L().Warn("Redis PubSub channel for candle generator closed. Attempting reconnect in 5 seconds...")
 				if pubsub != nil {
 					_ = pubsub.Close()
+					pubsub = nil
 				}
-				time.Sleep(5 * time.Second)
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(5 * time.Second):
+				}
 				pubsub = cg.redisClient.Subscribe(ctx, api.RedisMarketDataChannel)
 				if pubsub == nil {
-					zap.L().Fatal("Failed to resubscribe to Redis PubSub for candle generation. Exiting.")
+					zap.L().Error("Failed to resubscribe to Redis PubSub for candle generation, stopping.")
 					return
 				}
 				ch = pubsub.Channel()
@@ -172,7 +185,6 @@ func (cg *CandleGenerator) StartCandleGeneration(ctx context.Context) {
 		case <-ctx.Done():
 			zap.L().Info("Context cancelled, stopping candle generator Redis subscriber.")
 			cg.flushAllOpenCandles()
-			close(cg.monitorStopCh)
 			return
 		}
 	}
@@ -237,18 +249,34 @@ func (cg *CandleGenerator) UnregisterWebSocketClient(conn *websocket.Conn) {
 	}
 }
 
-// writePump writes messages from the channel to the WebSocket.
+// writePump writes messages from the channel to the WebSocket with deadlines and periodic pings.
 func (cg *CandleGenerator) writePump(client *wsClient) {
 	defer func() {
 		if r := recover(); r != nil {
-			zap.L().Error("Panic recovered in writePump", zap.Any("recover", r))
+			zap.L().Error("Panic recovered in candle writePump", zap.Any("recover", r))
 		}
 		client.conn.Close()
 		cg.candleWsClients.Delete(client.conn)
 	}()
-	for msg := range client.send {
-		if err := client.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-			break
+	pingTicker := time.NewTicker(wsPingPeriod)
+	defer pingTicker.Stop()
+	for {
+		select {
+		case msg, ok := <-client.send:
+			if !ok {
+				_ = client.conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
+				_ = client.conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+				return
+			}
+			_ = client.conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
+			if err := client.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+				return
+			}
+		case <-pingTicker.C:
+			_ = client.conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
+			if err := client.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
 		}
 	}
 }

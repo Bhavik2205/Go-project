@@ -4,11 +4,9 @@ import (
 	"context"
 	"net/http"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/Bhavik2205/ML-Bot/internal/api"
@@ -20,6 +18,13 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
+)
+
+const (
+	wsPongWait   = 60 * time.Second
+	wsPingPeriod = 45 * time.Second // must be < pongWait
+	wsWriteWait  = 10 * time.Second
+	wsMaxMsgSize = 512 * 1024 // 512 KB
 )
 
 // ZerodhaAPI interface to abstract Zerodha client methods used by handlers.
@@ -36,7 +41,8 @@ var (
 	candleWsClients    *sync.Map                // Separate map for candle WebSocket clients
 	indicatorWsClients *sync.Map                // Shared sync.Map for indicator/candle WebSocket clients
 
-	candleGenerator *data.CandleGenerator // <-- ADDED: CandleGenerator for candle WebSocket streaming
+	candleGenerator    *data.CandleGenerator  // CandleGenerator for candle WebSocket streaming
+	indicatorManager   *data.IndicatorManager // IndicatorManager for indicator WebSocket streaming
 
 	upgrader = websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool { return true }, // Allow all origins for simplicity, tighten in prod
@@ -73,20 +79,25 @@ func SetIndicatorClients(clients *sync.Map) {
 	indicatorWsClients = clients
 }
 
+// SetIndicatorManager injects the IndicatorManager for WebSocket client registration.
+func SetIndicatorManager(im *data.IndicatorManager) {
+	indicatorManager = im
+}
+
 // ADDED: Setter for CandleGenerator
 func SetCandleGenerator(gen *data.CandleGenerator) {
 	candleGenerator = gen
 }
 
-// StartHTTPServer starts the HTTP and WebSocket server
-func StartHTTPServer(port int) {
+// StartHTTPServer starts the HTTP and WebSocket server. It blocks until ctx is
+// cancelled or a fatal bind error occurs, then shuts down gracefully.
+func StartHTTPServer(ctx context.Context, port int) {
 	router := mux.NewRouter()
 
 	router.Use(enableCORS)
 	router.Use(recoverMiddleware)
 	router.Use(middleware.RequestID)
 	router.Use(middleware.Logger)
-	// Handle OPTIONS preflight for all routes so CORS middleware fires correctly.
 	router.Methods(http.MethodOptions).HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -96,17 +107,9 @@ func StartHTTPServer(port int) {
 		router.HandleFunc("/api/instrument", stockHandler.HandleInstrumentLookup(zc)).Methods("GET")
 	}
 
-
-
-	// Existing WebSocket endpoint for tick data
 	router.HandleFunc("/ws", handleConnections)
-	// NEW: WebSocket endpoint for candle data
 	router.HandleFunc("/ws/candles", handleCandleConnections)
-
-	// NEW: WebSocket endpoint for real-time indicator updates
 	router.HandleFunc("/ws/indicators", handleIndicatorConnections)
-
-	//NEW: Heatmap websocket endpoint
 	router.HandleFunc("/ws/heatmap", HeatmapWebSocketHandler(data.GetMarketHeatmap()))
 
 	srv := &http.Server{
@@ -117,18 +120,22 @@ func StartHTTPServer(port int) {
 		IdleTimeout:  120 * time.Second,
 	}
 
-	zap.L().Info("🌐 Unified HTTP + WebSocket server starting...", zap.Int("port", port))
+	zap.L().Info("🌐 HTTP + WebSocket server starting...", zap.Int("port", port))
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-
+	serveErr := make(chan error, 1)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			zap.L().Fatal("HTTP server error", zap.Error(err))
+			serveErr <- err
 		}
 	}()
 
-	<-quit
+	select {
+	case err := <-serveErr:
+		zap.L().Error("Failed to start HTTP server", zap.Error(err))
+		return
+	case <-ctx.Done():
+	}
+
 	zap.L().Info("HTTP server shutting down gracefully...")
 	shutCtx, shutCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer shutCancel()
@@ -140,8 +147,8 @@ func StartHTTPServer(port int) {
 // handleConnections upgrades HTTP connection to WebSocket and registers the client with the ingestor (for ticks).
 func handleConnections(w http.ResponseWriter, r *http.Request) {
 	defer func() {
-		if r := recover(); r != nil {
-			zap.L().Error("Panic in WebSocket handler (ticks)", zap.Any("recover", r))
+		if rec := recover(); rec != nil {
+			zap.L().Error("Panic in WebSocket handler (ticks)", zap.Any("recover", rec))
 		}
 	}()
 
@@ -150,28 +157,31 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		zap.L().Error("WebSocket upgrade error for ticks", zap.Error(err))
 		return
 	}
-	// Important: Defer Unregister for proper cleanup when connection closes
 	defer ingestor.UnregisterWebSocketClient(conn)
 
-	ingestor.RegisterWebSocketClient(conn) // Register the new client for ticks
+	conn.SetReadLimit(wsMaxMsgSize)
+	_ = conn.SetReadDeadline(time.Now().Add(wsPongWait))
+	conn.SetPongHandler(func(string) error {
+		_ = conn.SetReadDeadline(time.Now().Add(wsPongWait))
+		return nil
+	})
 
-	// Keep the connection alive, listen for close messages from the client.
+	ingestor.RegisterWebSocketClient(conn)
+
 	for {
 		_, _, err := conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				zap.L().Debug("WebSocket unexpected close detected for tick client", zap.Error(err), zap.String("remote_addr", conn.RemoteAddr().String()))
-			} else {
-				zap.L().Info("WebSocket tick client disconnected", zap.String("remote_addr", conn.RemoteAddr().String()))
+				zap.L().Debug("WebSocket unexpected close (ticks)", zap.Error(err))
 			}
-			break // Exit the loop, triggering the defer
+			break
 		}
 	}
 }
 func handleIndicatorConnections(w http.ResponseWriter, r *http.Request) {
 	defer func() {
-		if r := recover(); r != nil {
-			zap.L().Error("Panic in WebSocket handler (indicators)", zap.Any("recover", r))
+		if rec := recover(); rec != nil {
+			zap.L().Error("Panic in WebSocket handler (indicators)", zap.Any("recover", rec))
 		}
 	}()
 
@@ -180,33 +190,34 @@ func handleIndicatorConnections(w http.ResponseWriter, r *http.Request) {
 		zap.L().Error("WebSocket upgrade error for indicators", zap.Error(err))
 		return
 	}
-	// Use a unique key for the sync.Map (e.g., connection remote address)
-	clientKey := conn.RemoteAddr().String()
-	indicatorWsClients.Store(clientKey, conn) // Register the new client for indicators
+	defer indicatorManager.UnregisterWebSocketClient(conn)
 
-	zap.L().Info("New WebSocket client connected for indicator data", zap.String("remote_addr", clientKey))
+	conn.SetReadLimit(wsMaxMsgSize)
+	_ = conn.SetReadDeadline(time.Now().Add(wsPongWait))
+	conn.SetPongHandler(func(string) error {
+		_ = conn.SetReadDeadline(time.Now().Add(wsPongWait))
+		return nil
+	})
 
-	// Keep the connection alive, listen for close messages from the client.
+	indicatorManager.RegisterWebSocketClient(conn)
+	zap.L().Info("New WebSocket client connected for indicator data", zap.String("remote_addr", conn.RemoteAddr().String()))
+
 	for {
-		// Read message to detect client disconnects or pings/pongs
 		_, _, err := conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				zap.L().Debug("WebSocket unexpected close for indicator client", zap.Error(err), zap.String("remote_addr", clientKey))
-			} else {
-				zap.L().Info("WebSocket indicator client disconnected", zap.String("remote_addr", clientKey))
+				zap.L().Debug("WebSocket unexpected close (indicators)", zap.Error(err))
 			}
-			indicatorWsClients.Delete(clientKey) // Unregister the client on disconnect
-			break                                // Exit the loop
+			break
 		}
 	}
 }
 
-// UPDATED: handleCandleConnections now uses CandleGenerator for registration and streaming
+// handleCandleConnections uses CandleGenerator for registration and streaming.
 func handleCandleConnections(w http.ResponseWriter, r *http.Request) {
 	defer func() {
-		if r := recover(); r != nil {
-			zap.L().Error("Panic in WebSocket handler (candles)", zap.Any("recover", r))
+		if rec := recover(); rec != nil {
+			zap.L().Error("Panic in WebSocket handler (candles)", zap.Any("recover", rec))
 		}
 	}()
 
@@ -221,20 +232,24 @@ func handleCandleConnections(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer candleGenerator.UnregisterWebSocketClient(conn)
-	candleGenerator.RegisterWebSocketClient(conn)
 
+	conn.SetReadLimit(wsMaxMsgSize)
+	_ = conn.SetReadDeadline(time.Now().Add(wsPongWait))
+	conn.SetPongHandler(func(string) error {
+		_ = conn.SetReadDeadline(time.Now().Add(wsPongWait))
+		return nil
+	})
+
+	candleGenerator.RegisterWebSocketClient(conn)
 	zap.L().Info("New WebSocket client connected for candle data", zap.String("remote_addr", conn.RemoteAddr().String()))
 
-	// Keep the connection alive, listen for close messages from the client.
 	for {
 		_, _, err := conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				zap.L().Debug("WebSocket unexpected close for candle client", zap.Error(err), zap.String("remote_addr", conn.RemoteAddr().String()))
-			} else {
-				zap.L().Info("WebSocket candle client disconnected", zap.String("remote_addr", conn.RemoteAddr().String()))
+				zap.L().Debug("WebSocket unexpected close (candles)", zap.Error(err))
 			}
-			break // Exit the loop, triggering the defer
+			break
 		}
 	}
 }

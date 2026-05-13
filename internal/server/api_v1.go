@@ -96,7 +96,7 @@ func registerVersionedRoutes(router *mux.Router) {
 	apiV1.HandleFunc("/openapi.json", handleV1OpenAPISpec).Methods("GET")
 	apiV1.HandleFunc("/auth/signup", authhandler.HandleSignup(dbClient)).Methods("POST")
 	apiV1.HandleFunc("/auth/login", authhandler.HandleLogin(dbClient)).Methods("POST")
-	apiV1.HandleFunc("/auth/refresh", authhandler.HandleRefresh()).Methods("POST")
+	apiV1.HandleFunc("/auth/refresh", authhandler.HandleRefresh(redisClient)).Methods("POST")
 	apiV1.HandleFunc("/auth/logout", authhandler.HandleLogout(redisClient)).Methods("POST")
 
 	// ── Protected routes (Bearer JWT required) ───────────────────────────────────
