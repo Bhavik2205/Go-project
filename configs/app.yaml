@@ -1,12 +1,13 @@
 # configs/app.yaml
 server:
-  http_port: 8000
+  http_port: 8080
+  max_request_body_bytes: 1048576  # 1 MB
   websocket_path: "/ws"
   # If WebSocket runs on a separate port:
   # websocket_port: 8081
 
 log:
-  level: warn # debug, info, warn, error
+  level: debug # debug, info, warn, error
   output: logs/app.log # stdout, file (for production, typically stdout for Docker)
   # If output is 'file':
   # file_path: logs/app.log

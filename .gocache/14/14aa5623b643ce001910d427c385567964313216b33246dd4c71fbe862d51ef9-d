@@ -1,5 +1,0 @@
-./auth.go
-./doc.go
-./logger.go
-./ratelimit.go
-./requestid.go

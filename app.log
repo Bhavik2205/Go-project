@@ -59,3 +59,41 @@
 {"level":"INFO","timestamp":"2026-05-13T15:44:53.535+0530","caller":"server/main.go:61","msg":"✅ JWT secret validated"}
 {"level":"INFO","timestamp":"2026-05-13T17:06:39.295+0530","caller":"server/main.go:52","msg":"✅ .env file loaded successfully"}
 {"level":"INFO","timestamp":"2026-05-13T17:06:39.297+0530","caller":"server/main.go:61","msg":"✅ JWT secret validated"}
+{"level":"INFO","timestamp":"2026-05-16T19:39:04.670+0530","caller":"server/main.go:52","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2026-05-16T19:39:04.670+0530","caller":"server/main.go:61","msg":"✅ JWT secret validated"}
+{"level":"INFO","timestamp":"2026-05-16T19:45:30.883+0530","caller":"server/main.go:52","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2026-05-16T19:45:30.888+0530","caller":"server/main.go:61","msg":"✅ JWT secret validated"}
+{"level":"INFO","timestamp":"2026-05-16T22:40:06.751+0530","caller":"server/main.go:52","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2026-05-16T22:40:06.751+0530","caller":"server/main.go:61","msg":"✅ JWT secret validated"}
+{"level":"INFO","timestamp":"2026-05-17T11:55:06.406+0530","caller":"server/main.go:52","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2026-05-17T11:55:06.406+0530","caller":"server/main.go:66","msg":"✅ JWT secret validated"}
+{"level":"INFO","timestamp":"2026-05-17T12:05:09.501+0530","caller":"server/main.go:52","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2026-05-17T12:05:09.501+0530","caller":"server/main.go:66","msg":"✅ JWT secret validated"}
+{"level":"INFO","timestamp":"2026-05-17T12:11:13.872+0530","caller":"server/main.go:52","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2026-05-17T12:11:13.872+0530","caller":"server/main.go:66","msg":"✅ JWT secret validated"}
+{"level":"INFO","timestamp":"2026-05-17T12:11:53.791+0530","caller":"server/main.go:52","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2026-05-17T12:11:53.796+0530","caller":"server/main.go:66","msg":"✅ JWT secret validated"}
+{"level":"INFO","timestamp":"2026-05-17T12:34:04.843+0530","caller":"server/main.go:52","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2026-05-17T12:34:04.846+0530","caller":"server/main.go:66","msg":"✅ JWT secret validated"}
+{"level":"INFO","timestamp":"2026-05-17T13:09:15.857+0530","caller":"server/main.go:52","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2026-05-17T13:09:15.858+0530","caller":"server/main.go:66","msg":"✅ JWT secret validated"}
+{"level":"INFO","timestamp":"2026-05-17T13:13:49.839+0530","caller":"server/main.go:52","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2026-05-17T13:13:49.840+0530","caller":"server/main.go:66","msg":"✅ JWT secret validated"}
+{"level":"INFO","timestamp":"2026-05-17T13:20:32.319+0530","caller":"server/main.go:52","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2026-05-17T13:20:32.319+0530","caller":"server/main.go:66","msg":"✅ JWT secret validated"}
+{"level":"INFO","timestamp":"2026-05-17T13:42:55.234+0530","caller":"server/main.go:52","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2026-05-17T13:42:55.234+0530","caller":"server/main.go:66","msg":"✅ JWT secret validated"}
+{"level":"INFO","timestamp":"2026-05-17T13:46:37.423+0530","caller":"server/main.go:52","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2026-05-17T13:46:37.423+0530","caller":"server/main.go:66","msg":"✅ JWT secret validated"}
+{"level":"INFO","timestamp":"2026-05-17T13:49:43.986+0530","caller":"server/main.go:52","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2026-05-17T13:49:43.987+0530","caller":"server/main.go:66","msg":"✅ JWT secret validated"}
+{"level":"INFO","timestamp":"2026-05-17T14:10:17.122+0530","caller":"server/main.go:52","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2026-05-17T14:10:17.122+0530","caller":"server/main.go:66","msg":"✅ JWT secret validated"}
+{"level":"INFO","timestamp":"2026-05-17T14:11:04.194+0530","caller":"server/main.go:52","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2026-05-17T14:11:04.195+0530","caller":"server/main.go:66","msg":"✅ JWT secret validated"}
+{"level":"INFO","timestamp":"2026-05-17T14:12:32.904+0530","caller":"server/main.go:52","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2026-05-17T14:12:32.904+0530","caller":"server/main.go:66","msg":"✅ JWT secret validated"}
+{"level":"INFO","timestamp":"2026-05-17T14:25:17.682+0530","caller":"server/main.go:52","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2026-05-17T14:25:17.685+0530","caller":"server/main.go:66","msg":"✅ JWT secret validated"}
+{"level":"INFO","timestamp":"2026-05-17T14:36:58.190+0530","caller":"server/main.go:52","msg":"✅ .env file loaded successfully"}
+{"level":"INFO","timestamp":"2026-05-17T14:36:58.193+0530","caller":"server/main.go:66","msg":"✅ JWT secret validated"}

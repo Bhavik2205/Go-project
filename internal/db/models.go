@@ -37,7 +37,7 @@ type UserBrokerAccount struct {
 // This is periodically refreshed from the broker.
 type Instrument struct {
 	gorm.Model
-	InstrumentToken uint   `gorm:"uniqueIndex;not null"`                                // Unique ID for the instrument (broker specific)
+	InstrumentToken uint32 `gorm:"uniqueIndex;not null"`                                // Unique ID for the instrument (broker specific)
 	Exchange        string `gorm:"not null"`                                            // e.g., "NSE", "BSE"
 	Tradingsymbol   string `gorm:"uniqueIndex:idx_instrument_symbol_exchange;not null"` // Unique trading symbol (e.g., "RELIANCE")
 	InstrumentType  string // e.g., "EQ" for equity, "IND" for index

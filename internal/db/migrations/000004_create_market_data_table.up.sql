@@ -1,13 +1,8 @@
 -- Note: The TimescaleDB extension 'timescaledb' must be enabled BEFORE running this migration.
 -- Use the pre_migration_enable_timescaledb.sql script for that.
 
--- Drop table if it exists to ensure a clean slate for the new schema
--- IMPORTANT: This will DELETE ALL EXISTING DATA in the market_data table!
--- Only use this if you are starting fresh or in a development environment.
--- For production, you would typically use ALTER TABLE statements to add/remove columns.
-DROP TABLE IF EXISTS market_data;
-
-CREATE TABLE market_data (
+-- Create table if it doesn't exist (idempotent - safe for production)
+CREATE TABLE IF NOT EXISTS market_data (
     -- Composite Primary Keys (aligned with Go's uint32 / int)
     instrument_token INTEGER NOT NULL, -- Go's uint32 maps to INTEGER in PostgreSQL
     timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -82,16 +77,22 @@ CREATE TABLE market_data (
     PRIMARY KEY (instrument_token, timestamp, tick_sequence_id)
 );
 
--- Convert to TimescaleDB hypertable
+-- Convert to TimescaleDB hypertable (idempotent with if_not_exists)
 -- 'timestamp' is the time column, 'instrument_token' is the partitioning key
 -- Consider adjusting chunk_time_interval and number_partitions based on your data rate and query patterns.
-SELECT create_hypertable('market_data', 'timestamp', chunk_time_interval => INTERVAL '1 day', migrate_data => TRUE, partitioning_column => 'instrument_token', number_partitions => 8);
+SELECT create_hypertable('market_data', 'timestamp', 
+    chunk_time_interval => INTERVAL '1 day', 
+    migrate_data => TRUE, 
+    partitioning_column => 'instrument_token', 
+    number_partitions => 8,
+    if_not_exists => TRUE
+);
 
 -- Add foreign key constraint to instruments table
--- This assumes an 'instruments' table exists with 'instrument_token' as its primary key.
+-- This assumes an 'instruments' table exists with 'instrument_token' as a unique column.
 ALTER TABLE market_data ADD CONSTRAINT fk_market_data_instrument_token
 FOREIGN KEY (instrument_token) REFERENCES instruments(instrument_token) ON DELETE RESTRICT;
 
 -- Index for efficient time-range and instrument-specific queries
 -- This index is crucial for performance when querying historical data.
-CREATE INDEX idx_market_data_instrument_token_timestamp ON market_data (instrument_token, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_market_data_instrument_token_timestamp ON market_data (instrument_token, timestamp DESC);

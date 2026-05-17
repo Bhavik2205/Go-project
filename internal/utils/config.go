@@ -14,8 +14,9 @@ import (
 // AppConfig holds the application-wide settings
 type AppConfig struct {
 	Server struct {
-		HTTPPort      int    `yaml:"http_port"`
-		WebSocketPath string `yaml:"websocket_path"`
+		HTTPPort            int    `yaml:"http_port"`
+		MaxRequestBodyBytes int    `yaml:"max_request_body_bytes"` // New field for max request body size
+		WebSocketPath       string `yaml:"websocket_path"`
 	} `yaml:"server"`
 	Log struct {
 		Level  string `yaml:"level"`

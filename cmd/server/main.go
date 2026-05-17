@@ -52,6 +52,11 @@ func main() {
 		zap.L().Info("✅ .env file loaded successfully")
 	}
 
+	// after godotenv.Load() and before auth.MustLoadJWTSecret()
+	if err := utils.ValidateRequiredEnv(); err != nil {
+		zap.L().Fatal("Environment validation failed", zap.Error(err))
+	}
+
 	// ─── SECURITY: Validate JWT secret immediately after env is loaded ──────────
 	// This call panics if JWT_SECRET is missing or too short.
 	// We want the server to refuse to start in that case — not discover the
@@ -227,7 +232,10 @@ func main() {
 
 	go func() {
 		defer recoverGoroutine("HTTPServer")
-		server.StartHTTPServer(ctx, appCfg.Server.HTTPPort)
+		if err := server.StartHTTPServer(ctx, appCfg.Server.HTTPPort); err != nil {
+			zap.L().Error("HTTP server failed, stopping bot", zap.Error(err))
+			cancel() // triggers graceful shutdown of all components
+		}
 	}()
 
 	go func() {
@@ -284,7 +292,7 @@ func main() {
 			res := dbClient.DB.Where("instrument_token = ?", info.Token).First(&existingInstrument)
 			if res.Error != nil && res.Error.Error() == "record not found" {
 				newInstrument := db.Instrument{
-					InstrumentToken: uint(info.Token),
+					InstrumentToken: uint32(info.Token),
 					Exchange:        info.Exchange,
 					Tradingsymbol:   info.Symbol,
 					InstrumentType:  info.InstrumentType,
@@ -439,7 +447,7 @@ func main() {
 					zap.String("symbol", info.Symbol), zap.Error(delErr))
 			}
 			newInstrument := db.Instrument{
-				InstrumentToken: uint(info.Token),
+				InstrumentToken: uint32(info.Token),
 				Exchange:        info.Exchange,
 				Tradingsymbol:   info.Symbol,
 				InstrumentType:  info.InstrumentType,

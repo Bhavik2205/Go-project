@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -41,8 +42,8 @@ var (
 	candleWsClients    *sync.Map                // Separate map for candle WebSocket clients
 	indicatorWsClients *sync.Map                // Shared sync.Map for indicator/candle WebSocket clients
 
-	candleGenerator    *data.CandleGenerator  // CandleGenerator for candle WebSocket streaming
-	indicatorManager   *data.IndicatorManager // IndicatorManager for indicator WebSocket streaming
+	candleGenerator  *data.CandleGenerator  // CandleGenerator for candle WebSocket streaming
+	indicatorManager *data.IndicatorManager // IndicatorManager for indicator WebSocket streaming
 
 	upgrader = websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool { return true }, // Allow all origins for simplicity, tighten in prod
@@ -91,9 +92,15 @@ func SetCandleGenerator(gen *data.CandleGenerator) {
 
 // StartHTTPServer starts the HTTP and WebSocket server. It blocks until ctx is
 // cancelled or a fatal bind error occurs, then shuts down gracefully.
-func StartHTTPServer(ctx context.Context, port int) {
+func StartHTTPServer(ctx context.Context, port int) error {
 	router := mux.NewRouter()
+	maxBytes := int64(1 << 20) // default
 
+	if appConfig != nil && appConfig.Server.MaxRequestBodyBytes > 0 {
+		maxBytes = int64(appConfig.Server.MaxRequestBodyBytes)
+	}
+	router.Use(middleware.MaxBytesMiddleware(maxBytes))
+	router.Use(middleware.SecurityHeaders())
 	router.Use(enableCORS)
 	router.Use(recoverMiddleware)
 	router.Use(middleware.RequestID)
@@ -127,20 +134,24 @@ func StartHTTPServer(ctx context.Context, port int) {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			serveErr <- err
 		}
+		close(serveErr)
 	}()
 
 	select {
 	case err := <-serveErr:
-		zap.L().Error("Failed to start HTTP server", zap.Error(err))
-		return
+		if err != nil {
+			return fmt.Errorf("HTTP server failed: %w", err)
+		}
+		return nil
 	case <-ctx.Done():
-	}
-
-	zap.L().Info("HTTP server shutting down gracefully...")
-	shutCtx, shutCancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer shutCancel()
-	if err := srv.Shutdown(shutCtx); err != nil {
-		zap.L().Error("HTTP server forced shutdown", zap.Error(err))
+		zap.L().Info("HTTP server shutting down gracefully...")
+		shutCtx, shutCancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer shutCancel()
+		if err := srv.Shutdown(shutCtx); err != nil {
+			zap.L().Error("HTTP server forced shutdown", zap.Error(err))
+			return err
+		}
+		return nil
 	}
 }
 

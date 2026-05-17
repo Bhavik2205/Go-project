@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"strings"
@@ -98,6 +99,12 @@ func registerVersionedRoutes(router *mux.Router) {
 	apiV1.HandleFunc("/auth/login", authhandler.HandleLogin(dbClient)).Methods("POST")
 	apiV1.HandleFunc("/auth/refresh", authhandler.HandleRefresh(redisClient)).Methods("POST")
 	apiV1.HandleFunc("/auth/logout", authhandler.HandleLogout(redisClient)).Methods("POST")
+
+	// test endpoint that does not parse the body
+	apiV1.HandleFunc("/test/echo", func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusOK)
+	}).Methods("POST")
 
 	// ── Protected routes (Bearer JWT required) ───────────────────────────────────
 	protected := apiV1.NewRoute().Subrouter()

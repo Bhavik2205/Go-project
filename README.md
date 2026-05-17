@@ -793,3 +793,7 @@ Navigate to your project's root directory (`equity-trading-bot/`).
 * **Backup**: Always back up your database before running migrations in production.
 
 * **Environment**: Ensure `.env` is correctly configured for the script's execution environment.
+
+### This is the command for latest project structure
+
+tree -I '.git|logs|data' --dirsfirst;
