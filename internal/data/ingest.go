@@ -725,3 +725,13 @@ func (m *MarketDataIngestor) loadInitialTickSequenceCounters() {
 	}
 	zap.L().Info("✅ Loaded initial tick sequence counters from DB", zap.Int("count", len(results)), zap.String("from_timestamp", todayStart.String()))
 }
+
+// GetWebSocketClientCount returns the number of currently connected WebSocket clients for ticks.
+func (m *MarketDataIngestor) GetWebSocketClientCount() int {
+	count := 0
+	m.wsClients.Range(func(key, value interface{}) bool {
+		count++
+		return true
+	})
+	return count
+}

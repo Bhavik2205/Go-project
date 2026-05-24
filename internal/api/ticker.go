@@ -28,7 +28,7 @@ func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, redisClient *c
 
 	for _, info := range infos {
 		tokens = append(tokens, info.Token)
-		tokenToLabel[info.Token] = fmt.Sprintf("%s (%s)", info.Symbol, info.Exchange)
+		tokenToLabel[info.Token] = fmt.Sprintf("%s:%s", info.Exchange, info.Symbol)
 	}
 
 	z.Ticker = kiteticker.New(z.APIKey, z.AccessToken)

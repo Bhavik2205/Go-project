@@ -58,6 +58,12 @@ func NewIndicatorManager(
 	inputCandleCh <-chan indicators.Candle,
 	wsClients *sync.Map,
 ) *IndicatorManager {
+	// Use configurable buffer size (default 5000 if not set)
+	bufferSize := indicatorsCfg.OutputChannelBufferSize
+	if bufferSize <= 0 {
+		bufferSize = 5000
+	}
+
 	im := &IndicatorManager{
 		dbClient:             dbC,
 		appCfg:               appCfg,
@@ -66,8 +72,12 @@ func NewIndicatorManager(
 		indicatorWsClients:   wsClients,
 		candleHistory:        make(map[uint32]map[string]*CandleHistory),
 		maxHistoryPeriods:    make(map[string]int),
-		processedIndicatorCh: make(chan indicators.IndicatorResult, 5000),
-		outputWorkerCount:    30,
+		processedIndicatorCh: make(chan indicators.IndicatorResult, bufferSize),
+		outputWorkerCount:    indicatorsCfg.OutputWorkerCount,
+	}
+	// Ensure a sane default if config value is missing or zero
+	if im.outputWorkerCount <= 0 {
+		im.outputWorkerCount = 30
 	}
 
 	for _, interval := range appCfg.Candles.Intervals {
@@ -631,4 +641,14 @@ func (im *IndicatorManager) loadHistoricalCandles() {
 			zap.Int("instruments", loaded),
 			zap.Int("total_rows", len(rows)))
 	}
+}
+
+// GetWebSocketClientCount returns the number of currently connected indicator WebSocket clients.
+func (im *IndicatorManager) GetWebSocketClientCount() int {
+	count := 0
+	im.indicatorWsClients.Range(func(key, value interface{}) bool {
+		count++
+		return true
+	})
+	return count
 }

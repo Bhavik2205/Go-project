@@ -28,6 +28,6 @@ venv/
 bash.exe.stackdump
 
 # Logs
-logs/app.log
+*.log
 stdout
 app.log

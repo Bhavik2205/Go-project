@@ -145,16 +145,18 @@ type VWAPConfig struct {
 
 // IndicatorsConfig now embeds these new individual config structs.
 type IndicatorsConfig struct {
-	SMA            SMAConfig            `yaml:"sma"`
-	EMA            EMAConfig            `yaml:"ema"`
-	RSI            RSIConfig            `yaml:"rsi"`
-	MACD           MACDConfig           `yaml:"macd"`
-	ATR            ATRConfig            `yaml:"atr"`
-	Stochastic     StochasticConfig     `yaml:"stochastic"`
-	BollingerBands BollingerBandsConfig `yaml:"bollinger_bands"`
-	ADX            ADXConfig            `yaml:"adx"`
-	OBV            OBVConfig            `yaml:"obv"`  // New
-	VWAP           VWAPConfig           `yaml:"vwap"` // New
+	OutputWorkerCount       int                  `yaml:"output_worker_count"`        // Number of workers for indicator output processing
+	OutputChannelBufferSize int                  `yaml:"output_channel_buffer_size"` // Buffer size for indicator output channel
+	SMA                     SMAConfig            `yaml:"sma"`
+	EMA                     EMAConfig            `yaml:"ema"`
+	RSI                     RSIConfig            `yaml:"rsi"`
+	MACD                    MACDConfig           `yaml:"macd"`
+	ATR                     ATRConfig            `yaml:"atr"`
+	Stochastic              StochasticConfig     `yaml:"stochastic"`
+	BollingerBands          BollingerBandsConfig `yaml:"bollinger_bands"`
+	ADX                     ADXConfig            `yaml:"adx"`
+	OBV                     OBVConfig            `yaml:"obv"`  // New
+	VWAP                    VWAPConfig           `yaml:"vwap"` // New
 }
 
 // ZerodhaConfig holds Zerodha API connection settings
@@ -297,6 +299,13 @@ func LoadIndicatorsConfig(path string) (*IndicatorsConfig, error) {
 	var cfg IndicatorsConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal indicators config %s: %w", path, err)
+	}
+	// Set defaults if not provided
+	if cfg.OutputWorkerCount == 0 {
+		cfg.OutputWorkerCount = 30
+	}
+	if cfg.OutputChannelBufferSize == 0 {
+		cfg.OutputChannelBufferSize = 5000
 	}
 	return &cfg, nil
 }

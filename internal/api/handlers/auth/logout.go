@@ -5,9 +5,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Bhavik2205/ML-Bot/internal/audit"
 	"github.com/Bhavik2205/ML-Bot/internal/auth"
 	"github.com/Bhavik2205/ML-Bot/internal/cache"
+	"github.com/Bhavik2205/ML-Bot/internal/middleware"
 	"github.com/Bhavik2205/ML-Bot/internal/validation"
+	"go.uber.org/zap"
 )
 
 type logoutRequest struct {
@@ -18,6 +21,10 @@ func HandleLogout(redisClient *cache.RedisClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req logoutRequest
 		if !validation.BindAndValidate(w, r, &req) {
+			// Even on validation failure, we still need to log? User might be logged out anyway?
+			audit.LogEvent(r.Context(), "logout", "user", "failure",
+				zap.String("reason", "validation failed"),
+			)
 			return
 		}
 
@@ -42,6 +49,11 @@ func HandleLogout(redisClient *cache.RedisClient) http.HandlerFunc {
 			}
 		}
 
+		// Get user ID from context (set by Authenticate middleware)
+		userID := middleware.UserIDFromContext(r.Context())
+		audit.LogEvent(r.Context(), "logout", "user", "success",
+			zap.Uint("user_id", userID),
+		)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

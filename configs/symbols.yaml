@@ -1,0 +1,910 @@
+# configs/symbols.yaml
+simulation_instruments:
+  - token: 10001
+    symbol: ADANIENT
+    exchange: NSE
+    instrument_type: EQ
+    name: Adani Enterprises
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10002
+    symbol: ADANIPORTS
+    exchange: NSE
+    instrument_type: EQ
+    name: Adani Ports
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10003
+    symbol: APOLLOHOSP
+    exchange: NSE
+    instrument_type: EQ
+    name: Apollo Hospitals
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10004
+    symbol: ASIANPAINT
+    exchange: NSE
+    instrument_type: EQ
+    name: Asian Paints
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10005
+    symbol: AXISBANK
+    exchange: NSE
+    instrument_type: EQ
+    name: Axis Bank
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10006
+    symbol: BAJAJ-AUTO
+    exchange: NSE
+    instrument_type: EQ
+    name: Bajaj Auto
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10007
+    symbol: BAJFINANCE
+    exchange: NSE
+    instrument_type: EQ
+    name: Bajaj Finance
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10008
+    symbol: BAJAJFINSV
+    exchange: NSE
+    instrument_type: EQ
+    name: Bajaj Finserv
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10009
+    symbol: BPCL
+    exchange: NSE
+    instrument_type: EQ
+    name: BPCL
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10010
+    symbol: BHARTIARTL
+    exchange: NSE
+    instrument_type: EQ
+    name: Bharti Airtel
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10011
+    symbol: BRITANNIA
+    exchange: NSE
+    instrument_type: EQ
+    name: Britannia
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10012
+    symbol: CIPLA
+    exchange: NSE
+    instrument_type: EQ
+    name: Cipla
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10013
+    symbol: COALINDIA
+    exchange: NSE
+    instrument_type: EQ
+    name: Coal India
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10014
+    symbol: DIVISLAB
+    exchange: NSE
+    instrument_type: EQ
+    name: Divi's Lab
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10015
+    symbol: DRREDDY
+    exchange: NSE
+    instrument_type: EQ
+    name: Dr Reddy's
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10016
+    symbol: EICHERMOT
+    exchange: NSE
+    instrument_type: EQ
+    name: Eicher Motors
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10017
+    symbol: GRASIM
+    exchange: NSE
+    instrument_type: EQ
+    name: Grasim
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10018
+    symbol: HCLTECH
+    exchange: NSE
+    instrument_type: EQ
+    name: HCL Tech
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10019
+    symbol: HDFCBANK
+    exchange: NSE
+    instrument_type: EQ
+    name: HDFC Bank
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10020
+    symbol: HDFCLIFE
+    exchange: NSE
+    instrument_type: EQ
+    name: HDFC Life
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10021
+    symbol: HEROMOTOCO
+    exchange: NSE
+    instrument_type: EQ
+    name: Hero MotoCorp
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10022
+    symbol: HINDALCO
+    exchange: NSE
+    instrument_type: EQ
+    name: Hindalco
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10023
+    symbol: HINDUNILVR
+    exchange: NSE
+    instrument_type: EQ
+    name: Hindustan Unilever
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10024
+    symbol: ICICIBANK
+    exchange: NSE
+    instrument_type: EQ
+    name: ICICI Bank
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10025
+    symbol: ITC
+    exchange: NSE
+    instrument_type: EQ
+    name: ITC
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10026
+    symbol: INDUSINDBK
+    exchange: NSE
+    instrument_type: EQ
+    name: IndusInd Bank
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10027
+    symbol: INFY
+    exchange: NSE
+    instrument_type: EQ
+    name: Infosys
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10028
+    symbol: JSWSTEEL
+    exchange: NSE
+    instrument_type: EQ
+    name: JSW Steel
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10029
+    symbol: KOTAKBANK
+    exchange: NSE
+    instrument_type: EQ
+    name: Kotak Bank
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10030
+    symbol: LT
+    exchange: NSE
+    instrument_type: EQ
+    name: Larsen & Toubro
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10031
+    symbol: LTIM
+    exchange: NSE
+    instrument_type: EQ
+    name: LTIMindtree
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10032
+    symbol: "M&M"
+    exchange: NSE
+    instrument_type: EQ
+    name: Mahindra & Mahindra
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10033
+    symbol: MARUTI
+    exchange: NSE
+    instrument_type: EQ
+    name: Maruti Suzuki
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10034
+    symbol: NESTLEIND
+    exchange: NSE
+    instrument_type: EQ
+    name: Nestle India
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10035
+    symbol: NTPC
+    exchange: NSE
+    instrument_type: EQ
+    name: NTPC
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10036
+    symbol: ONGC
+    exchange: NSE
+    instrument_type: EQ
+    name: ONGC
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10037
+    symbol: POWERGRID
+    exchange: NSE
+    instrument_type: EQ
+    name: Power Grid
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10038
+    symbol: RELIANCE
+    exchange: NSE
+    instrument_type: EQ
+    name: Reliance Industries
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10039
+    symbol: SBILIFE
+    exchange: NSE
+    instrument_type: EQ
+    name: SBI Life
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10040
+    symbol: SBIN
+    exchange: NSE
+    instrument_type: EQ
+    name: State Bank of India
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10041
+    symbol: SUNPHARMA
+    exchange: NSE
+    instrument_type: EQ
+    name: Sun Pharma
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10042
+    symbol: TATACONSUM
+    exchange: NSE
+    instrument_type: EQ
+    name: Tata Consumer
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10043
+    symbol: TATAMOTORS
+    exchange: NSE
+    instrument_type: EQ
+    name: Tata Motors
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10044
+    symbol: TATASTEEL
+    exchange: NSE
+    instrument_type: EQ
+    name: Tata Steel
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10045
+    symbol: TCS
+    exchange: NSE
+    instrument_type: EQ
+    name: TCS
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10046
+    symbol: TECHM
+    exchange: NSE
+    instrument_type: EQ
+    name: Tech Mahindra
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10047
+    symbol: TITAN
+    exchange: NSE
+    instrument_type: EQ
+    name: Titan Company
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10048
+    symbol: ULTRACEMCO
+    exchange: NSE
+    instrument_type: EQ
+    name: UltraTech Cement
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10049
+    symbol: UPL
+    exchange: NSE
+    instrument_type: EQ
+    name: UPL
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10050
+    symbol: WIPRO
+    exchange: NSE
+    instrument_type: EQ
+    name: Wipro
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10051
+    symbol: DMART
+    exchange: NSE
+    instrument_type: EQ
+    name: Avenue Supermarts
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10052
+    symbol: IRCTC
+    exchange: NSE
+    instrument_type: EQ
+    name: IRCTC
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10053
+    symbol: PIDILITIND
+    exchange: NSE
+    instrument_type: EQ
+    name: Pidilite Industries
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10054
+    symbol: PAGEIND
+    exchange: NSE
+    instrument_type: EQ
+    name: Page Industries
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10055
+    symbol: MUTHOOTFIN
+    exchange: NSE
+    instrument_type: EQ
+    name: Muthoot Finance
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10056
+    symbol: JUBLFOOD
+    exchange: NSE
+    instrument_type: EQ
+    name: Jubilant FoodWorks
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10057
+    symbol: ETERNAL
+    exchange: NSE
+    instrument_type: EQ
+    name: Zomato
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10058
+    symbol: NYKAA
+    exchange: NSE
+    instrument_type: EQ
+    name: Nykaa
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10059
+    symbol: POLYCAB
+    exchange: NSE
+    instrument_type: EQ
+    name: Polycab India
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10060
+    symbol: BOSCHLTD
+    exchange: NSE
+    instrument_type: EQ
+    name: Bosch
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10061
+    symbol: GUJGASLTD
+    exchange: NSE
+    instrument_type: EQ
+    name: Gujarat Gas
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10062
+    symbol: DEEPAKNTR
+    exchange: NSE
+    instrument_type: EQ
+    name: Deepak Nitrite
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10063
+    symbol: TATAELXSI
+    exchange: NSE
+    instrument_type: EQ
+    name: Tata Elxsi
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10064
+    symbol: AARTIIND
+    exchange: NSE
+    instrument_type: EQ
+    name: Aarti Industries
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10065
+    symbol: LTTS
+    exchange: NSE
+    instrument_type: EQ
+    name: L&T Tech Services
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10066
+    symbol: SRF
+    exchange: NSE
+    instrument_type: EQ
+    name: SRF
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10067
+    symbol: ABB
+    exchange: NSE
+    instrument_type: EQ
+    name: ABB India
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10068
+    symbol: ADANIGREEN
+    exchange: NSE
+    instrument_type: EQ
+    name: Adani Green
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10069
+    symbol: ADANITRANS
+    exchange: NSE
+    instrument_type: EQ
+    name: Adani Transmission
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10070
+    symbol: ALKEM
+    exchange: NSE
+    instrument_type: EQ
+    name: Alkem Labs
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10071
+    symbol: AMBUJACEM
+    exchange: NSE
+    instrument_type: EQ
+    name: Ambuja Cements
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10072
+    symbol: AUROPHARMA
+    exchange: NSE
+    instrument_type: EQ
+    name: Aurobindo Pharma
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10073
+    symbol: BALKRISIND
+    exchange: NSE
+    instrument_type: EQ
+    name: Balkrishna Ind
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10074
+    symbol: BANDHANBNK
+    exchange: NSE
+    instrument_type: EQ
+    name: Bandhan Bank
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10075
+    symbol: BANKBARODA
+    exchange: NSE
+    instrument_type: EQ
+    name: Bank of Baroda
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10076
+    symbol: BERGEPAINT
+    exchange: NSE
+    instrument_type: EQ
+    name: Berger Paints
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10077
+    symbol: BIOCON
+    exchange: NSE
+    instrument_type: EQ
+    name: Biocon
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10078
+    symbol: CANBK
+    exchange: NSE
+    instrument_type: EQ
+    name: Canara Bank
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10079
+    symbol: CHOLAFIN
+    exchange: NSE
+    instrument_type: EQ
+    name: Cholamandalam
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10080
+    symbol: COLPAL
+    exchange: NSE
+    instrument_type: EQ
+    name: Colgate Palmolive
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10081
+    symbol: CONCOR
+    exchange: NSE
+    instrument_type: EQ
+    name: Container Corp
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10082
+    symbol: CROMPTON
+    exchange: NSE
+    instrument_type: EQ
+    name: Crompton Greaves
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10083
+    symbol: DABUR
+    exchange: NSE
+    instrument_type: EQ
+    name: Dabur India
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10084
+    symbol: DALBHARAT
+    exchange: NSE
+    instrument_type: EQ
+    name: Dalmia Bharat
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10085
+    symbol: DIXON
+    exchange: NSE
+    instrument_type: EQ
+    name: Dixon Tech
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10086
+    symbol: ESCORTS
+    exchange: NSE
+    instrument_type: EQ
+    name: Escorts Kubota
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10087
+    symbol: EXIDEIND
+    exchange: NSE
+    instrument_type: EQ
+    name: Exide Industries
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10088
+    symbol: FEDERALBNK
+    exchange: NSE
+    instrument_type: EQ
+    name: Federal Bank
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10089
+    symbol: GAIL
+    exchange: NSE
+    instrument_type: EQ
+    name: GAIL India
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10090
+    symbol: GLENMARK
+    exchange: NSE
+    instrument_type: EQ
+    name: Glenmark Pharma
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10091
+    symbol: GODREJCP
+    exchange: NSE
+    instrument_type: EQ
+    name: Godrej Consumer
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10092
+    symbol: GODREJPROP
+    exchange: NSE
+    instrument_type: EQ
+    name: Godrej Properties
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10093
+    symbol: HAVELLS
+    exchange: NSE
+    instrument_type: EQ
+    name: Havells India
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10094
+    symbol: HDFCAMC
+    exchange: NSE
+    instrument_type: EQ
+    name: HDFC AMC
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10095
+    symbol: HINDPETRO
+    exchange: NSE
+    instrument_type: EQ
+    name: HPCL
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10096
+    symbol: ICICIGI
+    exchange: NSE
+    instrument_type: EQ
+    name: ICICI Lombard
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10097
+    symbol: ICICIPRULI
+    exchange: NSE
+    instrument_type: EQ
+    name: ICICI Prudential
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10098
+    symbol: IDFCFIRSTB
+    exchange: NSE
+    instrument_type: EQ
+    name: IDFC First Bank
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10099
+    symbol: IGL
+    exchange: NSE
+    instrument_type: EQ
+    name: Indraprastha Gas
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+  - token: 10100
+    symbol: INDIGO
+    exchange: NSE
+    instrument_type: EQ
+    name: InterGlobe Aviation
+    segment: EQ
+    tick_size: 0.05
+    lot_size: 1
+
+live_symbols:
+  - ADANIENT
+  - ADANIPORTS
+  - APOLLOHOSP
+  - ASIANPAINT
+  - AXISBANK
+  - BAJAJ-AUTO
+  - BAJFINANCE
+  - BAJAJFINSV
+  - BPCL
+  - BHARTIARTL
+  - BRITANNIA
+  - CIPLA
+  - COALINDIA
+  - DIVISLAB
+  - DRREDDY
+  - EICHERMOT
+  - GRASIM
+  - HCLTECH
+  - HDFCBANK
+  - HDFCLIFE
+  - HEROMOTOCO
+  - HINDALCO
+  - HINDUNILVR
+  - ICICIBANK
+  - ITC
+  - INDUSINDBK
+  - INFY
+  - JSWSTEEL
+  - KOTAKBANK
+  - LT
+  - LTIM
+  - M&M
+  - MARUTI
+  - NESTLEIND
+  - NTPC
+  - ONGC
+  - POWERGRID
+  - RELIANCE
+  - SBILIFE
+  - SBIN
+  - SUNPHARMA
+  - TATACONSUM
+  - TATAMOTORS
+  - TATASTEEL
+  - TCS
+  - TECHM
+  - TITAN
+  - ULTRACEMCO
+  - UPL
+  - WIPRO
+  - DMART
+  - IRCTC
+  - PIDILITIND
+  - PAGEIND
+  - MUTHOOTFIN
+  - JUBLFOOD
+  - ETERNAL
+  - NYKAA
+  - POLYCAB
+  - BOSCHLTD
+  - GUJGASLTD
+  - DEEPAKNTR
+  - TATAELXSI
+  - AARTIIND
+  - LTTS
+  - SRF
+  - ABB
+  - ADANIGREEN
+  - ADANIENSOL
+  - ALKEM
+  - AMBUJACEM
+  - AUROPHARMA
+  - BALKRISIND
+  - BANDHANBNK
+  - BANKBARODA
+  - BERGEPAINT
+  - BIOCON
+  - CANBK
+  - CHOLAFIN
+  - COLPAL
+  - CONCOR
+  - CROMPTON
+  - DABUR
+  - DALBHARAT
+  - DIXON
+  - ESCORTS
+  - EXIDEIND
+  - FEDERALBNK
+  - GAIL
+  - GLENMARK
+  - GODREJCP
+  - GODREJPROP
+  - HAVELLS
+  - HDFCAMC
+  - HINDPETRO
+  - ICICIGI
+  - ICICIPRULI
+  - IDFCFIRSTB
+  - IGL
+  - INDIGO
+  - INDUSTOWER
+  - IOC
+  - IPCALAB
+  - LTF
+  - LALPATHLAB
+  - LICHSGFIN

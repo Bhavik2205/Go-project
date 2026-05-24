@@ -81,7 +81,7 @@ func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*Ins
 
 	// Initialize simulation data for each instrument
 	for _, info := range infos {
-		tokenToLabel[info.Token] = fmt.Sprintf("%s (%s)", info.Symbol, info.Exchange)
+		tokenToLabel[info.Token] = fmt.Sprintf("%s:%s", info.Exchange, info.Symbol)
 
 		// Set a reasonable random initial price for the simulation
 		basePrice := 100.0 + rand.Float64()*1000 // Initial price for the *current* simulated day
@@ -282,13 +282,13 @@ func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*Ins
 						)
 					} else {
 						// Optional: Log important fields to verify
-						// zap.L().Debug("Published simulated tick",
-						// 	zap.String("symbol", label),
-						// 	zap.Float64("ltp", tick.LastPrice),
-						// 	zap.Float64("prev_close", tick.PrevClose),
-						// 	zap.Float64("net_change", tick.NetChange),
-						// 	zap.Float64("percent_change", tick.PercentChange),
-						// )
+						zap.L().Debug("Published simulated tick",
+							zap.String("symbol", label),
+							zap.Float64("ltp", tick.LastPrice),
+							zap.Float64("prev_close", tick.PrevClose),
+							zap.Float64("net_change", tick.NetChange),
+							zap.Float64("percent_change", tick.PercentChange),
+						)
 					}
 				} else {
 					zap.L().Error("❌ Failed to marshal enriched simulated tick data for Redis",
@@ -297,6 +297,7 @@ func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*Ins
 					)
 				}
 			}
+
 			// Pause for the calculated real-time delay before the next set of ticks
 			time.Sleep(realTimeDelay)
 		}

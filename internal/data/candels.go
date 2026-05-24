@@ -608,3 +608,13 @@ func (cg *CandleGenerator) startMonitoring() {
 		}
 	}
 }
+
+// GetWebSocketClientCount returns the number of currently connected WebSocket clients for candles.
+func (cg *CandleGenerator) GetWebSocketClientCount() int {
+	count := 0
+	cg.candleWsClients.Range(func(key, value interface{}) bool {
+		count++
+		return true
+	})
+	return count
+}

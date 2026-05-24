@@ -797,3 +797,18 @@ Navigate to your project's root directory (`equity-trading-bot/`).
 ### This is the command for latest project structure
 
 tree -I '.git|logs|data' --dirsfirst;
+
+### SMOKE TEST
+* **sudo permission allow**
+1) chmod +x scripts/smoke_test.sh
+2)./scripts/smoke_test.sh
+
+
+// TICKET STATUS
+
+TODO - 340
+DONE - 68
+IN PROGRESS - 6
+DEPENDENT - 2
+DEFERRED - 35
+PARTIALLY DONE - 2
