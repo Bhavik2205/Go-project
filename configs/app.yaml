@@ -1,12 +1,13 @@
 # configs/app.yaml
 server:
   http_port: 8080
+  max_request_body_bytes: 1048576  # 1 MB
   websocket_path: "/ws"
   # If WebSocket runs on a separate port:
   # websocket_port: 8081
 
 log:
-  level: warn # debug, info, warn, error
+  level: debug # debug, info, warn, error
   output: logs/app.log # stdout, file (for production, typically stdout for Docker)
   # If output is 'file':
   # file_path: logs/app.log
@@ -39,4 +40,4 @@ graceful_shutdown_timeout_seconds: 15
 
 market:
   simulate: true
-  simulation_speed_multiplier: 3.0 # This can be set to any float value >= 0.1
+  simulation_speed_multiplier: 8.0 # This can be set to any float value >= 0.1

@@ -1,116 +1,252 @@
-D:\troject\go-project\.access_token
-D:\troject\go-project\.docker
-D:\troject\go-project\.env
-D:\troject\go-project\app.log
-D:\troject\go-project\cmd
-D:\troject\go-project\configs
-D:\troject\go-project\data
-D:\troject\go-project\Dockerfile
-D:\troject\go-project\instruments.csv
-D:\troject\go-project\internal
-D:\troject\go-project\LICENSE
-D:\troject\go-project\logs
-D:\troject\go-project\Makefile
-D:\troject\go-project\models
-D:\troject\go-project\notebooks
-D:\troject\go-project\notes
-D:\troject\go-project\README.md
-D:\troject\go-project\requirement.txt
-D:\troject\go-project\requirements.txt
-D:\troject\go-project\scripts
-D:\troject\go-project\structure.txt
-D:\troject\go-project\.docker\contexts
-D:\troject\go-project\.docker\contexts\meta
-D:\troject\go-project\cmd\backtest.go
-D:\troject\go-project\cmd\get_token.go
-D:\troject\go-project\cmd\main.go
-D:\troject\go-project\configs\app.yaml
-D:\troject\go-project\configs\database.yaml
-D:\troject\go-project\configs\docker-compose.yaml
-D:\troject\go-project\configs\model.yaml
-D:\troject\go-project\configs\strategy.yaml
-D:\troject\go-project\configs\zerodha.yaml
-D:\troject\go-project\data\news
-D:\troject\go-project\data\nse
-D:\troject\go-project\internal\api
-D:\troject\go-project\internal\cache
-D:\troject\go-project\internal\data
-D:\troject\go-project\internal\db
-D:\troject\go-project\internal\execution
-D:\troject\go-project\internal\model
-D:\troject\go-project\internal\server
-D:\troject\go-project\internal\strategy
-D:\troject\go-project\internal\utils
-D:\troject\go-project\internal\api\handlers
-D:\troject\go-project\internal\api\instruments.go
-D:\troject\go-project\internal\api\marketwatch.go
-D:\troject\go-project\internal\api\newsapi.go
-D:\troject\go-project\internal\api\ticker.go
-D:\troject\go-project\internal\api\zerodha.go
-D:\troject\go-project\internal\api\handlers\stockHandler
-D:\troject\go-project\internal\api\handlers\stockHandler\instrumentData.go
-D:\troject\go-project\internal\cache\redis.go
-D:\troject\go-project\internal\data\ingest.go
-D:\troject\go-project\internal\data\news_pipeline.go
-D:\troject\go-project\internal\data\preprocess.go
-D:\troject\go-project\internal\db\migrations
-D:\troject\go-project\internal\db\models.go
-D:\troject\go-project\internal\db\postgres.go
-D:\troject\go-project\internal\db\migrations\000001_create_users_table.down.sql
-D:\troject\go-project\internal\db\migrations\000001_create_users_table.up.sql
-D:\troject\go-project\internal\db\migrations\000002_create_user_broker_accounts_table.down.sql
-D:\troject\go-project\internal\db\migrations\000002_create_user_broker_accounts_table.up.sql
-D:\troject\go-project\internal\db\migrations\000003_create_instruments_table.down.sql
-D:\troject\go-project\internal\db\migrations\000003_create_instruments_table.up.sql
-D:\troject\go-project\internal\db\migrations\000004_create_market_data_table.down.sql
-D:\troject\go-project\internal\db\migrations\000004_create_market_data_table.up.sql
-D:\troject\go-project\internal\db\migrations\000005_create_orders_table.down.sql
-D:\troject\go-project\internal\db\migrations\000005_create_orders_table.up.sql
-D:\troject\go-project\internal\db\migrations\000006_create_trades_table.down.sql
-D:\troject\go-project\internal\db\migrations\000006_create_trades_table.up.sql
-D:\troject\go-project\internal\db\migrations\000007_create_positions_table.down.sql
-D:\troject\go-project\internal\db\migrations\000007_create_positions_table.up.sql
-D:\troject\go-project\internal\db\migrations\000008_create_news_articles_table.down.sql
-D:\troject\go-project\internal\db\migrations\000008_create_news_articles_table.up.sql
-D:\troject\go-project\internal\db\migrations\000009_create_user_strategies_table.down.sql
-D:\troject\go-project\internal\db\migrations\000009_create_user_strategies_table.up.sql
-D:\troject\go-project\internal\db\migrations\000010_create_metrics_table.down.sql
-D:\troject\go-project\internal\db\migrations\000010_create_metrics_table.up.sql
-D:\troject\go-project\internal\db\migrations\pre_migration_enable_timescaledb.sql
-D:\troject\go-project\internal\execution\monitor.go
-D:\troject\go-project\internal\execution\order.go
-D:\troject\go-project\internal\model\inference.go
-D:\troject\go-project\internal\model\sentiment.go
-D:\troject\go-project\internal\model\trainer.go
-D:\troject\go-project\internal\server\broadcast.go
-D:\troject\go-project\internal\server\routes.go
-D:\troject\go-project\internal\strategy\intraday.go
-D:\troject\go-project\internal\strategy\scalping.go
-D:\troject\go-project\internal\strategy\selector.go
-D:\troject\go-project\internal\strategy\swing.go
-D:\troject\go-project\internal\utils\config.go
-D:\troject\go-project\internal\utils\errors.go
-D:\troject\go-project\internal\utils\logger.go
-D:\troject\go-project\logs\app.log
-D:\troject\go-project\models\README.txt
-D:\troject\go-project\models\runtime
-D:\troject\go-project\models\sentiment.onnx
-D:\troject\go-project\models\sentiment_optimized.onnx
-D:\troject\go-project\models\runtime\linux
-D:\troject\go-project\models\runtime\mac
-D:\troject\go-project\models\runtime\windows
-D:\troject\go-project\models\runtime\windows\onnxruntime.dll
-D:\troject\go-project\notebooks\EDA_intraday.ipynb
-D:\troject\go-project\notes\Flow.txt
-D:\troject\go-project\notes\gpt-recommendation.txt
-D:\troject\go-project\notes\news_recommendation.txt
-D:\troject\go-project\notes\sample_main.go.txt
-D:\troject\go-project\notes\structure.txt
-D:\troject\go-project\notes\TASK_04-06-2025
-D:\troject\go-project\scripts\convert_to_onnx.py
-D:\troject\go-project\scripts\db_migrate.sh
-D:\troject\go-project\scripts\download_data.py
-D:\troject\go-project\scripts\performance_report.py
-D:\troject\go-project\scripts\retrain_sentiment.py
-D:\troject\go-project\scripts\test.py
-D:\troject\go-project\scripts\tokenize_text.py
+tree -I '.git|logs|data' --dirsfirst;
+
+.
+├── cmd
+│   ├── backtest
+│   │   └── backtest.go
+│   ├── get-token
+│   │   └── get_token.go
+│   ├── heatmap-cli
+│   │   └── heatmap_cli.go
+│   └── server
+│       └── main.go
+├── configs
+│   ├── app.yaml
+│   ├── database.yaml
+│   ├── docker-compose.yaml
+│   ├── indicators.yaml
+│   ├── model.yaml
+│   ├── strategy.yaml
+│   ├── symbols.yaml
+│   └── zerodha.yaml
+├── docs
+│   ├── API_WEBSOCKET_STATUS_REPORT.md
+│   ├── GO_FRONTEND_INTEGRATION_AUDIT.md
+│   ├── openapi.yaml
+│   ├── README.md
+│   ├── REPOSITORY_AUDIT_EXECUTION_ROADMAP_2026-05-13.md
+│   ├── REPOSITORY_AUDIT_MASTER_REPORT_2026-05-12.md
+│   ├── trading_bot_api_overview.csv
+│   ├── TRADING_BOT_ARCHITECTURE.md
+│   ├── trading_bot_master_plan_FIXED (2).csv
+│   ├── trading_bot_master_plan_UPDATED.csv
+│   └── TradingBot_Base_Build_Tickets.docx
+├── internal
+│   ├── api
+│   │   ├── dto
+│   │   │   └── doc.go
+│   │   ├── handlers
+│   │   │   ├── auth
+│   │   │   │   ├── helpers.go
+│   │   │   │   ├── login.go
+│   │   │   │   ├── logout.go
+│   │   │   │   ├── refresh.go
+│   │   │   │   └── signup.go
+│   │   │   ├── backtest
+│   │   │   │   └── doc.go
+│   │   │   ├── broker
+│   │   │   │   └── doc.go
+│   │   │   ├── health
+│   │   │   │   └── doc.go
+│   │   │   ├── market
+│   │   │   │   └── doc.go
+│   │   │   ├── models
+│   │   │   │   └── doc.go
+│   │   │   ├── notifications
+│   │   │   │   └── doc.go
+│   │   │   ├── orders
+│   │   │   │   └── doc.go
+│   │   │   ├── positions
+│   │   │   │   └── doc.go
+│   │   │   ├── profile
+│   │   │   │   └── me.go
+│   │   │   ├── runtime
+│   │   │   │   ├── doc.go
+│   │   │   │   └── runtime.go
+│   │   │   ├── sentiment
+│   │   │   │   └── doc.go
+│   │   │   ├── settings
+│   │   │   │   ├── doc.go
+│   │   │   │   └── settings.go
+│   │   │   ├── stockHandler
+│   │   │   │   └── instrumentData.go
+│   │   │   ├── strategies
+│   │   │   │   └── doc.go
+│   │   │   ├── watchlist
+│   │   │   │   └── doc.go
+│   │   │   └── README.md
+│   │   ├── instruments.go
+│   │   ├── marketwatch.go
+│   │   ├── newsapi.go
+│   │   ├── simulated_ticker.go
+│   │   ├── ticker.go
+│   │   └── zerodha.go
+│   ├── app
+│   │   └── app.go
+│   ├── audit
+│   │   └── audit.go
+│   ├── auth
+│   │   ├── doc.go
+│   │   ├── jwt_test.go
+│   │   └── jwt.go
+│   ├── backtest
+│   │   └── doc.go
+│   ├── broker
+│   │   └── doc.go
+│   ├── cache
+│   │   └── redis.go
+│   ├── contracts
+│   │   ├── contracts_test.go
+│   │   ├── doc.go
+│   │   ├── envelope.go
+│   │   ├── README.md
+│   │   └── websocket.go
+│   ├── db
+│   │   ├── migrations
+│   │   │   ├── 000001_create_users_table.down.sql
+│   │   │   ├── 000001_create_users_table.up.sql
+│   │   │   ├── 000002_create_user_broker_accounts_table.down.sql
+│   │   │   ├── 000002_create_user_broker_accounts_table.up.sql
+│   │   │   ├── 000003_create_instruments_table.down.sql
+│   │   │   ├── 000003_create_instruments_table.up.sql
+│   │   │   ├── 000004_create_market_data_table.down.sql
+│   │   │   ├── 000004_create_market_data_table.up.sql
+│   │   │   ├── 000005_create_orders_table.down.sql
+│   │   │   ├── 000005_create_orders_table.up.sql
+│   │   │   ├── 000006_create_trades_table.down.sql
+│   │   │   ├── 000006_create_trades_table.up.sql
+│   │   │   ├── 000007_create_positions_table.down.sql
+│   │   │   ├── 000007_create_positions_table.up.sql
+│   │   │   ├── 000008_create_news_articles_table.down.sql
+│   │   │   ├── 000008_create_news_articles_table.up.sql
+│   │   │   ├── 000009_create_user_strategies_table.down.sql
+│   │   │   ├── 000009_create_user_strategies_table.up.sql
+│   │   │   ├── 000010_create_metrics_table.down.sql
+│   │   │   ├── 000010_create_metrics_table.up.sql
+│   │   │   ├── 000011_create_indicators.down.sql
+│   │   │   ├── 000011_create_indicators.up.sql
+│   │   │   ├── 000012_create_user_settings_table.down.sql
+│   │   │   ├── 000012_create_user_settings_table.up.sql
+│   │   │   ├── 000013_create_watchlists_table.down.sql
+│   │   │   ├── 000013_create_watchlists_table.up.sql
+│   │   │   ├── 000014_create_backtest_jobs_table.down.sql
+│   │   │   ├── 000014_create_backtest_jobs_table.up.sql
+│   │   │   ├── 000015_create_notification_tables.down.sql
+│   │   │   ├── 000015_create_notification_tables.up.sql
+│   │   │   ├── 000016_create_audit_events_table.down.sql
+│   │   │   ├── 000016_create_audit_events_table.up.sql
+│   │   │   ├── 000017_create_option_snapshots_table.down.sql
+│   │   │   ├── 000017_create_option_snapshots_table.up.sql
+│   │   │   └── pre_migration_enable_timescaledb.sql
+│   │   ├── extended_models.go
+│   │   ├── models.go
+│   │   ├── postgres.go
+│   │   └── utils.go
+│   ├── events
+│   │   └── doc.go
+│   ├── execution
+│   │   ├── monitor.go
+│   │   └── order.go
+│   ├── httpapi
+│   │   ├── deps.go
+│   │   ├── handlers.go
+│   │   ├── routes.go
+│   │   └── server.go
+│   ├── indicators
+│   │   ├── indicators.go
+│   │   ├── interface.go
+│   │   └── types.go
+│   ├── jobs
+│   │   └── doc.go
+│   ├── market
+│   │   └── doc.go
+│   ├── middleware
+│   │   ├── audit.go
+│   │   ├── auth.go
+│   │   ├── doc.go
+│   │   ├── logger.go
+│   │   ├── middleware_test.go
+│   │   ├── ratelimit.go
+│   │   ├── requestid.go
+│   │   ├── security.go
+│   │   └── sizelimit.go
+│   ├── model
+│   │   ├── inference.go
+│   │   ├── sentiment.go
+│   │   └── trainer.go
+│   ├── notifications
+│   │   └── doc.go
+│   ├── realtime
+│   │   ├── doc.go
+│   │   ├── hub.go
+│   │   ├── README.md
+│   │   └── upgrader.go
+│   ├── runtime
+│   │   ├── manager.go
+│   │   └── service.go
+│   ├── security
+│   │   ├── doc.go
+│   │   ├── encryption_test.go
+│   │   ├── encryption.go
+│   │   ├── README.md
+│   │   ├── redaction_test.go
+│   │   └── redaction.go
+│   ├── services
+│   │   └── doc.go
+│   ├── settings
+│   │   └── doc.go
+│   ├── strategy
+│   │   ├── intraday.go
+│   │   ├── scalping.go
+│   │   ├── selector.go
+│   │   └── swing.go
+│   ├── telemetry
+│   │   └── doc.go
+│   ├── utils
+│   │   ├── config.go
+│   │   ├── errors.go
+│   │   ├── logger.go
+│   │   ├── symbols.go
+│   │   └── validate.go
+│   └── validation
+│       ├── doc.go
+│       ├── validate.go
+│       └── validation_test.go
+├── models
+│   ├── README.txt
+│   ├── sentiment_optimized.onnx
+│   └── sentiment.onnx
+├── notebooks
+│   └── EDA_intraday.ipynb
+├── notes
+│   ├── Flow.txt
+│   ├── gpt-recommendation.txt
+│   ├── news_recommendation.txt
+│   ├── sample_main.go.txt
+│   ├── structure.txt
+│   └── TASK_04-06-2025
+├── scripts
+│   ├── convert_to_onnx.py
+│   ├── db_migrate.sh
+│   ├── download_data.py
+│   ├── e2e_test.sh
+│   ├── performance_report.py
+│   ├── retrain_sentiment.py
+│   ├── smoke_test.sh
+│   ├── test.py
+│   └── tokenize_text.py
+├── app.log
+├── CHANGELOG.md
+├── Dockerfile
+├── go.mod
+├── go.sum
+├── instruments.csv
+├── LICENSE
+├── Makefile
+├── README.md
+├── requirement.txt
+├── requirements.txt
+├── server
+└── structure.txt
+
+59 directories, 189 files

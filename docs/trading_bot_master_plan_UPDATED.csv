@@ -1,0 +1,452 @@
+TaskID,Week,WeekLabel,Phase,Priority,Status,Category,Title,Description,Files,DependsOn,EstimatedHours,Notes
+AUD-003,1,Security & DB Migrations,P0,Critical,DONE,Security,Remove global plaintext broker token flow,Delete .access_token file read from main.go. Remove hardcoded requestToken. Make NewKiteClient accept token param.,cmd/server/main.go | cmd/get-token/get_token.go | internal/api/zerodha.go,None,8,Source: TradingBot_Base_Build_Tickets.docx
+AUD-004,1,Security & DB Migrations,P0,Critical,PARTIALLY DONE,Security,Move server test helpers out of production build,Rename test_helpers.go to test_helpers_test.go or move to internal/testutil/.,internal/server/test_helpers.go | internal/testutil/helpers.go,None,4,Source: TradingBot_Base_Build_Tickets.docx
+AUD-005,1,Security & DB Migrations,P0,Critical,PARTIALLY DONE,Database,Remove destructive DROP TABLE from migration 000004,Replace DROP TABLE IF EXISTS with CREATE TABLE IF NOT EXISTS in migration 000004.,internal/db/migrations/000004_create_market_data_table.up.sql,None,2,Source: TradingBot_Base_Build_Tickets.docx
+INF-001,1,Security & DB Migrations,P0,Critical,DONE,Database,Create initial migration users table,Create users table with bcrypt password hash and soft delete.,internal/db/migrations/000001_create_users_table.up.sql,None,1,
+INF-002,1,Security & DB Migrations,P0,Critical,DONE,Database,Create user_broker_accounts table,Store encrypted broker tokens per user.,internal/db/migrations/000002_create_user_broker_accounts_table.up.sql,INF-001,1,
+INF-003,1,Security & DB Migrations,P0,Critical,DONE,Database,Create instruments table,Store tradable instruments master data.,internal/db/migrations/000003_create_instruments_table.up.sql,INF-001,1,
+INF-004,1,Security & DB Migrations,P0,Critical,PARTIALLY DONE,Database,Create market_data hypertable,Tick data storage with TimescaleDB.,internal/db/migrations/000004_create_market_data_table.up.sql,INF-003,2,
+INF-005,1,Security & DB Migrations,P0,Critical,PARTIALLY DONE,Database,Create orders table,Track user orders.,internal/db/migrations/000005_create_orders_table.up.sql,"INF-001,INF-003",1,
+INF-006,1,Security & DB Migrations,P0,Critical,PARTIALLY DONE,Database,Create trades table,Record completed trades.,internal/db/migrations/000006_create_trades_table.up.sql,INF-005,1,
+INF-007,1,Security & DB Migrations,P0,Critical,PARTIALLY DONE,Database,Create positions table,Track open positions per user.,internal/db/migrations/000007_create_positions_table.up.sql,"INF-001,INF-003",1,
+INF-011,1,Security & DB Migrations,P0,Critical,PARTIALLY DONE,Database,Create indicators tables,11 tables for SMA EMA RSI MACD ATR etc.,internal/db/migrations/000011_create_indicators.up.sql,INF-003,3,
+INF-017,1,Security & DB Migrations,P0,Critical,DONE,Security,Implement JWT generation,HS256 access/refresh tokens.,internal/auth/jwt.go,None,2,
+INF-018,1,Security & DB Migrations,P0,Critical,DONE,Security,Implement JWT validation middleware,Parse and validate Bearer tokens.,internal/middleware/auth.go,INF-017,2,
+INF-019,1,Security & DB Migrations,P0,Critical,DONE,Security,Implement POST /api/v1/auth/signup,User registration with bcrypt.,internal/api/handlers/auth/signup.go,INF-017,2,
+INF-020,1,Security & DB Migrations,P0,Critical,DONE,Security,Implement POST /api/v1/auth/login,User login with token response.,internal/api/handlers/auth/login.go,INF-017,2,
+INF-021,1,Security & DB Migrations,P0,Critical,DONE,Security,Implement POST /api/v1/auth/refresh,Rotate refresh token.,internal/api/handlers/auth/refresh.go,INF-017,2,
+INF-022,1,Security & DB Migrations,P0,Critical,DONE,Security,Implement POST /api/v1/auth/logout,Blacklist tokens in Redis.,internal/api/handlers/auth/logout.go,INF-017,1,
+INF-027,1,Security & DB Migrations,P0,Critical,DONE,Security,Add graceful shutdown,SIGTERM handling with timeout.,cmd/server/main.go,None,2,
+UNI-536,1,Security & DB Migrations,P0,Critical,DONE,API,Remove /api/cache/test debug route,Publicly writable to Redis in production,internal/server/routes.go,,4,Source: unified_master_tracker
+INF-008,1,Security & DB Migrations,P0,High,TODO,Database,Create news_articles table,Store news for sentiment analysis.,internal/db/migrations/000008_create_news_articles_table.up.sql,INF-001,1,
+INF-009,1,Security & DB Migrations,P0,High,TODO,Database,Create user_strategies table,Store per-user strategy config.,internal/db/migrations/000009_create_user_strategies_table.up.sql,INF-001,1,
+INF-012,1,Security & DB Migrations,P0,High,DONE,Database,Create user_settings table,JSONB settings per section.,internal/db/migrations/000012_create_user_settings_table.up.sql,INF-001,1,
+INF-013,1,Security & DB Migrations,P0,High,DONE,Database,Create watchlists tables,watchlists + watchlist_items.,internal/db/migrations/000013_create_watchlists_table.up.sql,"INF-001,INF-003",1,
+INF-014,1,Security & DB Migrations,P0,High,DONE,Database,Create backtest_jobs tables,jobs + trades + equity_curve.,internal/db/migrations/000014_create_backtest_jobs_table.up.sql,INF-001,1,
+INF-016,1,Security & DB Migrations,P0,High,DONE,Database,Create audit_events table,Append-only audit log.,internal/db/migrations/000016_create_audit_events_table.up.sql,INF-001,1,
+INF-023,1,Security & DB Migrations,P0,High,DONE,Security,Add rate limiting middleware,Per-IP token bucket.,internal/middleware/ratelimit.go,INF-018,2,
+INF-024,1,Security & DB Migrations,P0,High,DONE,Security,Add request ID middleware,Generate UUID for each request.,internal/middleware/requestid.go,None,1,
+INF-025,1,Security & DB Migrations,P0,High,DONE,Security,Add logging middleware,Structured zap logging.,internal/middleware/logger.go,None,1,
+INF-026,1,Security & DB Migrations,P0,High,DONE,Security,Restrict CORS to allowlist,Read ALLOWED_ORIGINS env.,internal/server/routes.go,INF-018,1,
+INF-028,1,Security & DB Migrations,P0,High,TODO,Security,Add env validation at startup,Validate required env vars.,internal/config/validate.go,None,2,
+INF-029,1,Security & DB Migrations,P0,High,DONE,Security,Create AES-GCM encryption utility,Encrypt/decrypt secrets.,internal/security/encryption.go,None,2,
+UNI-537,1,Security & DB Migrations,P0,High,DONE,API,Remove /api/data/users inline lambda,Inline lambda still present in routes.go even though route is removed from versioned router,internal/server/routes.go,,4,Source: unified_master_tracker
+INF-010,1,Security & DB Migrations,P0,Medium,TODO,Database,Create metrics table,Store performance metrics.,internal/db/migrations/000010_create_metrics_table.up.sql,INF-001,1,
+INF-015,1,Security & DB Migrations,P0,Medium,DONE,Database,Create notification tables,channels + history.,internal/db/migrations/000015_create_notification_tables.up.sql,INF-001,1,
+UNI-538,1,Security & DB Migrations,P0,Medium,TODO,Middleware,Request size limits middleware,Add http.MaxBytesReader wrapper to prevent abuse,internal/middleware/,,4,Source: unified_master_tracker
+UNI-539,1,Security & DB Migrations,P0,Medium,TODO,Middleware,Security headers middleware,X-Content-Type-Options + X-Frame-Options + Strict-Transport-Security,internal/middleware/,,4,Source: unified_master_tracker
+INF-030,2,Runtime Refactor & Core Infra,P1,Critical,TODO,Core,Create App struct,Central application container.,internal/app/app.go,None,3,
+INF-031,2,Runtime Refactor & Core Infra,P1,Critical,TODO,Core,Create RuntimeManager,Service lifecycle orchestration.,internal/runtime/manager.go,INF-030,3,
+ADD-012,2,Runtime Refactor & Core Infra,P1,High,DONE,Audit,Implement audit logging middleware,Log all requests.,internal/middleware/audit.go,INF-016,2,
+ADD-013,2,Runtime Refactor & Core Infra,P1,High,DONE,Audit,Add audit to auth handlers,Login logout signup.,internal/api/handlers/auth/*.go,ADD-012,2,
+ADD-014,2,Runtime Refactor & Core Infra,P1,High,TODO,Audit,Add audit to broker handlers,Connect disconnect.,internal/api/handlers/broker/*.go,ADD-012,2,
+ADD-015,2,Runtime Refactor & Core Infra,P1,High,TODO,Audit,Add audit to order handlers,Place cancel modify.,internal/api/handlers/orders/*.go,ADD-012,2,
+AUD-006,2,Runtime Refactor & Core Infra,P1,High,DONE,Runtime,Introduce App struct and RuntimeManager,Extract main() into App struct + Service interface + RuntimeManager. Main should be <40 lines.,internal/app/app.go | internal/runtime/manager.go | internal/runtime/service.go | cmd/server/main.go,None,24,Source: TradingBot_Base_Build_Tickets.docx
+AUD-007,2,Runtime Refactor & Core Infra,P1,High,DONE,Runtime,Eliminate server package globals (Set* functions),Replace SetDBClient/SetIngestor globals with Server struct and constructor injection.,internal/server/server.go | internal/server/routes.go | internal/server/runtime_state.go,AUD-006,24,Source: TradingBot_Base_Build_Tickets.docx
+AUD-008,2,Runtime Refactor & Core Infra,P1,High,TODO,Runtime,Split overloaded server package into httpapi + realtime,Move REST routing to internal/httpapi/. Move WS hub to internal/realtime/.,internal/httpapi/server.go | internal/httpapi/routes.go | internal/realtime/hub.go,AUD-007,16,Source: TradingBot_Base_Build_Tickets.docx
+INF-032,2,Runtime Refactor & Core Infra,P1,High,TODO,Core,Create Service interface,Name/Start/Stop/Status.,internal/runtime/service.go,INF-030,1,
+INF-033,2,Runtime Refactor & Core Infra,P1,High,DONE,Core,Refactor main.go to use App,Reduce main.go complexity.,cmd/server/main.go,INF-030,3,
+INF-034,2,Runtime Refactor & Core Infra,P1,High,DONE,Core,Create HTTP server with routes,Register all API v1 routes.,internal/server/routes.go,INF-018,3,
+INF-035,2,Runtime Refactor & Core Infra,P1,High,DONE,Core,Create response envelope,Standard JSON response format.,internal/contracts/envelope.go,None,1,
+INF-036,2,Runtime Refactor & Core Infra,P1,High,DONE,Core,Create input validation helper,BindAndValidate with go-playground.,internal/validation/validate.go,None,2,
+UNI-550,2,Runtime Refactor & Core Infra,P1,High,DONE,Routes,Remove old /api/data/users and /api/cache/test inline lambdas,Inline lambdas expose raw DB data and Redis publicly,internal/server/routes.go,,4,Source: unified_master_tracker
+UNI-551,2,Runtime Refactor & Core Infra,P1,High,DONE,Routes,Move hardcoded symbol lists to DB/config,Symbol lists duplicated in main.go and frontend components,cmd/server/main.go,,4,Source: unified_master_tracker
+ADD-016,2,Runtime Refactor & Core Infra,P1,Medium,TODO,Audit,Add audit to settings,Settings changes.,internal/api/handlers/settings/*.go,ADD-012,1,
+UNI-553,2,Runtime Refactor & Core Infra,P1,Medium,TODO,WebSocket,Normalize symbol format across codebase,Tick symbol is 'RELIANCE (NSE)'; REST uses 'NSE:RELIANCE'; DB uses separate fields,Multiple files,,4,Source: unified_master_tracker
+UNI-555,2,Runtime Refactor & Core Infra,P1,Medium,TODO,Config,Move outputWorkerCount and channel buffer sizes to config,Hardcoded 30 workers and 5000 buffer in IndicatorManager,internal/data/indicators_manager.go,,4,Source: unified_master_tracker
+UNI-556,2,Runtime Refactor & Core Infra,P1,Medium,TODO,Security,Remove APISecret from ZerodhaClient struct,Plain string field could be logged or serialized accidentally,internal/api/zerodha.go,,4,Source: unified_master_tracker
+ADD-010,2,Runtime Refactor & Core Infra,P1,Low,TODO,Runtime,Implement GET /api/v1/runtime/config,Non-secret config.,internal/api/handlers/runtime/runtime.go,None,1,
+ADD-011,2,Runtime Refactor & Core Infra,P1,Low,TODO,Runtime,Implement GET /api/v1/runtime/metrics,WS count DB latency.,internal/api/handlers/runtime/runtime.go,None,2,
+AUD-010,3,Market Data Pipeline,P2,Critical,DONE,MarketData,Fix ingest channel ownership and silent tick drops,Remove silent drop patterns. Make authoritative path blocking with timeout. Add droppedTicks counter.,internal/data/ingest.go,AUD-009,16,Source: TradingBot_Base_Build_Tickets.docx
+AUD-011,3,Market Data Pipeline,P2,Critical,DONE,MarketData,Redesign candle bucket alignment and finalization,Session-aware bucketing. Separate open vs finalized candle state. Finalize by watermark not next tick.,internal/data/candels.go | internal/marketdata/candles/candle_engine.go,AUD-010,24,Source: TradingBot_Base_Build_Tickets.docx
+INF-041,3,Market Data Pipeline,P2,Critical,TODO,MarketData,Create NormalizedTick struct,Canonical tick event model.,internal/marketdata/tick.go,None,1,
+INF-042,3,Market Data Pipeline,P2,Critical,DONE,MarketData,Implement tick ingestion pipeline,Process ticks from Redis.,internal/data/ingest.go,INF-039,4,
+INF-043,3,Market Data Pipeline,P2,Critical,TODO,MarketData,Implement OHLCV aggregation,1m 5m 15m candles.,internal/data/candles.go,INF-042,4,
+INF-044,3,Market Data Pipeline,P2,Critical,TODO,MarketData,Implement candle persistence,Save to ohlcv_candles table.,internal/data/candles.go,INF-043,2,
+INF-045,3,Market Data Pipeline,P2,Critical,DONE,MarketData,Implement tick channel ownership,Fix silent drops on full channels.,internal/data/ingest.go,INF-042,3,
+INF-046,3,Market Data Pipeline,P2,Critical,TODO,MarketData,Implement deterministic candle finalization,Watermark-based closing.,internal/marketdata/candles/finalizer.go,INF-043,4,
+INF-047,3,Market Data Pipeline,P2,Critical,TODO,MarketData,Separate open vs finalized candles,Open in memory only.,internal/marketdata/candles/open_candle.go,INF-046,3,
+AUD-009,3,Market Data Pipeline,P2,High,TODO,MarketData,Define canonical NormalizedTick event model,"Define NormalizedTick struct with EventTime/IngestTime separation. Wire across ticker, simulated_ticker, ingest.",internal/marketdata/tick.go | internal/api/ticker.go | internal/api/simulated_ticker.go,None,16,Source: TradingBot_Base_Build_Tickets.docx
+AUD-012,3,Market Data Pipeline,P2,High,DONE,MarketData,Separate open candle from finalized candle persistence,Open candle in memory only. Write to DB only on finalization. Never write partial candles.,internal/marketdata/candles/finalized_candle.go | internal/data/candels.go,AUD-011,16,Source: TradingBot_Base_Build_Tickets.docx
+AUD-013,3,Market Data Pipeline,P2,High,TODO,MarketData,Implement ReplayManager for startup recovery,On startup: query ticks after last safe finalized candle. Rebuild open candle state. Expose replay path for backtest.,internal/marketdata/replay/replay_manager.go,AUD-012,24,Source: TradingBot_Base_Build_Tickets.docx
+INF-037,3,Market Data Pipeline,P2,High,PARTIALLY DONE,MarketData,Implement Zerodha Kite client,Initialize kiteconnect client.,internal/api/zerodha.go,None,3,
+INF-038,3,Market Data Pipeline,P2,High,PARTIALLY DONE,MarketData,Implement instrument download,Fetch master instrument list.,internal/api/instruments.go,INF-037,2,
+INF-039,3,Market Data Pipeline,P2,High,PARTIALLY DONE,MarketData,Implement WebSocket ticker,Real-time market data stream.,internal/api/ticker.go,INF-037,4,
+INF-040,3,Market Data Pipeline,P2,High,PARTIALLY DONE,MarketData,Implement simulated ticker,For paper trading mode.,internal/api/simulated_ticker.go,None,2,
+INF-048,3,Market Data Pipeline,P2,High,TODO,MarketData,Implement ReplayManager,Startup recovery from ticks.,internal/marketdata/replay/replay_manager.go,INF-045,5,
+INF-049,3,Market Data Pipeline,P2,High,TODO,MarketData,Add late tick handling policy,Handle out-of-order ticks.,internal/marketdata/candles/late_tick.go,INF-046,2,
+INF-050,3,Market Data Pipeline,P2,High,TODO,MarketData,Implement GET /api/v1/candles REST endpoint,Historical candles for charts.,internal/api/handlers/market/candles.go,INF-043,2,
+UNI-554,3,Market Data Pipeline,P2,Medium,TODO,DB,Normalize InstrumentToken type,DB model uses uint; tick/candle/indicator flows use uint32; migrations use BIGINT vs INTEGER,internal/db/models.go + migrations,,4,Source: unified_master_tracker
+AUD-015,4,Indicators Redesign,P2,High,TODO,Indicators,Replace full-history recalc with incremental indicator state,Redesign IndicatorManager to be incremental. Warm-up after restart <1s not minutes.,internal/data/indicators_manager.go | internal/marketdata/indicators/manager.go,AUD-012,24,Source: TradingBot_Base_Build_Tickets.docx
+INF-051,4,Indicators Redesign,P2,High,TODO,Indicators,Implement RSI calculator,incremental state.,internal/indicators/rsi.go,None,2,
+INF-052,4,Indicators Redesign,P2,High,TODO,Indicators,Implement MACD calculator,incremental state.,internal/indicators/macd.go,None,2,
+INF-053,4,Indicators Redesign,P2,High,TODO,Indicators,Implement SMA calculator,Ring buffer.,internal/indicators/sma.go,None,1,
+INF-054,4,Indicators Redesign,P2,High,TODO,Indicators,Implement EMA calculator,Exponential smoothing.,internal/indicators/ema.go,None,1,
+INF-055,4,Indicators Redesign,P2,High,TODO,Indicators,Implement ATR calculator,True range.,internal/indicators/atr.go,None,2,
+INF-056,4,Indicators Redesign,P2,High,TODO,Indicators,Implement Bollinger Bands,Upper/lower from SMA.,internal/indicators/bollinger.go,INF-053,2,
+INF-061,4,Indicators Redesign,P2,High,PARTIALLY DONE,Indicators,Create IndicatorManager with incremental updates,Replace full recalc.,internal/marketdata/indicators/manager.go,INF-051 to INF-060,4,
+INF-062,4,Indicators Redesign,P2,High,TODO,Indicators,Implement bounded hydration queries,Load only recent candles.,internal/marketdata/indicators/hydration.go,INF-061,2,
+INF-063,4,Indicators Redesign,P2,High,TODO,Indicators,Separate compute from persistence and broadcast,Clear boundaries.,internal/marketdata/indicators/publisher.go,INF-061,2,
+INF-064,4,Indicators Redesign,P2,High,TODO,Indicators,Implement GET /api/v1/indicators REST endpoint,Historical indicator values.,internal/api/handlers/market/indicators.go,INF-061,2,
+AUD-014,4,Indicators Redesign,P2,Medium,DONE,MarketData,Add late and out-of-order tick handling policy,Define policy: accept up to N seconds late. Log and count late ticks. Never silently reorder.,internal/data/ingest.go | internal/marketdata/tick.go,AUD-010,8,Source: TradingBot_Base_Build_Tickets.docx
+AUD-016,4,Indicators Redesign,P2,Medium,TODO,Indicators,Optimize indicator warm-start hydration with bounded query,Cap historical candles fetched for warm-up. Prevent unbounded DB scan on startup.,internal/marketdata/indicators/hydration.go,AUD-015,16,Source: TradingBot_Base_Build_Tickets.docx
+AUD-017,4,Indicators Redesign,P2,Medium,TODO,Indicators,Separate indicator engine from persistence and broadcast,Writing to DB and broadcasting to WS are mixed. Separate into store.go and publisher.go.,internal/marketdata/indicators/store.go | internal/marketdata/indicators/publisher.go,AUD-016,16,Source: TradingBot_Base_Build_Tickets.docx
+INF-057,4,Indicators Redesign,P2,Medium,TODO,Indicators,Implement Stochastic Oscillator,K and D lines.,internal/indicators/stochastic.go,None,2,
+INF-058,4,Indicators Redesign,P2,Medium,TODO,Indicators,Implement OBV,On-balance volume.,internal/indicators/obv.go,None,1,
+INF-059,4,Indicators Redesign,P2,Medium,TODO,Indicators,Implement VWAP,Volume weighted average.,internal/indicators/vwap.go,None,2,
+INF-060,4,Indicators Redesign,P2,Medium,TODO,Indicators,Implement ADX,Directional index.,internal/indicators/adx.go,None,3,
+AUD-018,5,WebSocket Hub + Auth,P3,Critical,DONE,WebSocket,Build authenticated unified WebSocket hub with topic subscriptions,Single /ws/v1/dashboard. JWT auth on connect. SUBSCRIBE/UNSUBSCRIBE messages. Per-client topic fanout.,internal/realtime/hub.go | internal/realtime/client.go | internal/realtime/topics.go | internal/realtime/auth.go,AUD-007,24,Source: TradingBot_Base_Build_Tickets.docx
+FE-001,5,WebSocket Hub + Auth,P3,Critical,DONE,Auth UI,Create Login page,Email password form.,signal-execution-desk/src/pages/LoginPage.tsx,None,3,
+FE-002,5,WebSocket Hub + Auth,P3,Critical,DONE,Auth UI,Create Signup page,Registration form.,signal-execution-desk/src/pages/SignupPage.tsx,None,2,
+FE-003,5,WebSocket Hub + Auth,P3,Critical,PARTIALLY DONE,Auth UI,Create token storage utility,LocalStorage management.,signal-execution-desk/src/lib/auth.ts,None,1,
+FE-004,5,WebSocket Hub + Auth,P3,Critical,PARTIALLY DONE,API Client,Create axios instance with interceptor,Automatic token refresh.,signal-execution-desk/src/lib/api.ts,FE-003,3,
+FE-005,5,WebSocket Hub + Auth,P3,Critical,TODO,WS Client,Create WebSocket client with auth,Reconnect and heartbeat.,signal-execution-desk/src/lib/ws.ts,FE-003,3,
+FE-006,5,WebSocket Hub + Auth,P3,Critical,DONE,App Routing,Add protected routes,Login redirect.,signal-execution-desk/src/App.tsx,FE-001,2,
+FE-021,5,WebSocket Hub + Auth,P3,Critical,TODO,Environment,Add API base URL env,localhost:8000.,signal-execution-desk/.env,None,1,
+FE-022,5,WebSocket Hub + Auth,P3,Critical,TODO,Types,Create TypeScript types,Match backend responses.,signal-execution-desk/src/types/api.ts,FE-004,2,
+INF-069,5,WebSocket Hub + Auth,P3,Critical,DONE,WebSocket,Add JWT auth on WebSocket upgrade,Validate before connection.,internal/realtime/auth.go,INF-065,2,
+AUD-019,5,WebSocket Hub + Auth,P3,High,DONE,WebSocket,Retire ad-hoc WS endpoints after hub is stable,"Remove /ws, /ws/candles, /ws/indicators, /ws/heatmap from routes once unified hub covers all topics.",internal/server/routes.go | internal/server/broadcast.go,AUD-018,8,Source: TradingBot_Base_Build_Tickets.docx
+AUD-020,5,WebSocket Hub + Auth,P3,High,TODO,WebSocket,Adopt shared WS event envelope everywhere,Wire all broadcasts to contracts.WSEvent typed envelope. Remove ad-hoc map[string]interface{} broadcasts.,internal/contracts/websocket.go | internal/realtime/events.go,AUD-019,8,Source: TradingBot_Base_Build_Tickets.docx
+INF-065,5,WebSocket Hub + Auth,P3,High,TODO,WebSocket,Create RealtimeHub with topic management,Unified WebSocket server.,internal/realtime/hub.go,None,4,
+INF-066,5,WebSocket Hub + Auth,P3,High,TODO,WebSocket,Implement client connection management,Register/unregister.,internal/realtime/client.go,INF-065,2,
+INF-067,5,WebSocket Hub + Auth,P3,High,TODO,WebSocket,Implement topic subscription system,Subscribe/unsubscribe/broadcast.,internal/realtime/topics.go,INF-065,3,
+INF-068,5,WebSocket Hub + Auth,P3,High,TODO,WebSocket,Implement per-client send queue with backpressure,Prevent blocking.,internal/realtime/client.go,INF-066,2,
+INF-070,5,WebSocket Hub + Auth,P3,High,TODO,WebSocket,Create typed WSEvent envelope,Consistent message format.,internal/contracts/websocket.go,INF-065,1,
+INF-071,5,WebSocket Hub + Auth,P3,High,TODO,WebSocket,Implement SUBSCRIBE/UNSUBSCRIBE protocol,Client control.,internal/realtime/protocol.go,INF-070,2,
+INF-072,5,WebSocket Hub + Auth,P3,High,DONE,WebSocket,Migrate tick broadcast to hub,Publish to market.ticks.,internal/data/ingest.go,INF-065,2,
+INF-073,5,WebSocket Hub + Auth,P3,High,TODO,WebSocket,Migrate candle broadcast to hub,Publish to market.candles.,internal/data/candles.go,INF-065,2,
+INF-074,5,WebSocket Hub + Auth,P3,High,TODO,WebSocket,Migrate indicator broadcast to hub,Publish to market.indicators.,internal/marketdata/indicators/publisher.go,INF-065,2,
+INF-075,5,WebSocket Hub + Auth,P3,High,DONE,WebSocket,Migrate heatmap broadcast to hub,Publish to market.heatmap.,internal/server/broadcast.go,INF-065,1,
+UNI-521,5,WebSocket Hub + Auth,P3,High,TODO,Realtime,Unified WebSocket hub with topic subscriptions,Hub struct with topic to connection map. SUBSCRIBE/UNSUBSCRIBE protocol. Typed envelopes.,internal/realtime/hub.go,,4,Source: unified_master_tracker
+UNI-522,5,WebSocket Hub + Auth,P3,High,DONE,Realtime,WS /ws/v1/dashboard route,Wire hub.ServeWS to new route. Keep old routes temporarily for backward compat.,internal/server/routes.go,,4,Source: unified_master_tracker
+UNI-523,5,WebSocket Hub + Auth,P3,High,TODO,Realtime,WS topic: orders and positions,hub.Broadcast(topicOrders) and hub.Broadcast(topicPositions) when DB writes happen,internal/realtime/topics.go,,4,Source: unified_master_tracker
+UNI-529,5,WebSocket Hub + Auth,P3,High,DONE,Security,WebSocket authentication handshake,Require Bearer JWT or short-lived WS token on all WebSocket upgrades,internal/server/routes.go + internal/middleware/,,4,Source: unified_master_tracker
+UNI-530,5,WebSocket Hub + Auth,P3,High,TODO,Security,Topic-level WebSocket authorization,Validate user is allowed to subscribe to requested topics,internal/realtime/,,4,Source: unified_master_tracker
+UNI-552,5,WebSocket Hub + Auth,P3,High,TODO,WebSocket,Normalize WS message field casing,Tick uses PascalCase; candle uses snake_case; indicator uses camelCase,Multiple files,,4,Source: unified_master_tracker
+UNI-524,5,WebSocket Hub + Auth,P3,Medium,TODO,Realtime,WS topic: signals,hub.Broadcast(topicSignals) when strategy runner emits signal,internal/realtime/topics.go,,4,Source: unified_master_tracker
+UNI-525,5,WebSocket Hub + Auth,P3,Medium,TODO,Realtime,WS topic: alerts,hub.Broadcast(topicAlerts) from order monitor and strategy runner on risk limit hit,internal/realtime/topics.go,,4,Source: unified_master_tracker
+UNI-526,5,WebSocket Hub + Auth,P3,Medium,TODO,Realtime,WS topic: sentiment,hub.Broadcast(topicSentiment) after inserting article in news pipeline,internal/realtime/topics.go,,4,Source: unified_master_tracker
+UNI-527,5,WebSocket Hub + Auth,P3,Medium,TODO,Realtime,WS topic: backtests/{id},hub.Broadcast(topicBacktest+id) periodically from backtest goroutine,internal/realtime/topics.go,,4,Source: unified_master_tracker
+UNI-528,5,WebSocket Hub + Auth,P3,Medium,TODO,Realtime,WS topic: models,hub.Broadcast(topicModels) from retrain goroutine at each step,internal/realtime/topics.go,,4,Source: unified_master_tracker
+UNI-505,5,WebSocket Hub + Auth,P3,Low,TODO,Market,GET /api/v1/market/heatmap (REST),Call data.GetMarketHeatmap().Snapshot(). Return as JSON.,internal/api/handlers/market/heatmap.go,,4,Source: unified_master_tracker
+AUD-022,6,Broker Abstraction & REST API,P4,Critical,DONE,Broker,Implement per-user encrypted broker sessions,OAuth connect/callback/disconnect. Encrypt API key+secret with AES-GCM. Store in user_broker_accounts. No plaintext.,internal/api/handlers/broker/broker.go | internal/broker/zerodha_adapter.go,AUD-021,24,Source: TradingBot_Base_Build_Tickets.docx
+EX-026,6,Broker Abstraction & REST API,P4,Critical,TODO,Orders API,Implement POST /api/v1/orders,Place order.,internal/api/handlers/orders/orders.go,EX-009,2,
+INF-076,6,Broker Abstraction & REST API,P4,Critical,TODO,Broker,Create Broker interface,Broker-agnostic operations.,internal/broker/interface.go,None,2,
+INF-077,6,Broker Abstraction & REST API,P4,Critical,TODO,Broker,Implement ZerodhaBroker,Wrap kiteconnect.,internal/broker/zerodha/zerodha.go,INF-076,3,
+INF-078,6,Broker Abstraction & REST API,P4,Critical,TODO,Broker,Implement PaperBroker,Simulated fills.,internal/broker/paper/paper.go,INF-076,3,
+INF-080,6,Broker Abstraction & REST API,P4,Critical,TODO,Broker,Implement POST /api/v1/brokers/zerodha/connect,OAuth initiate.,internal/api/handlers/broker/broker.go,INF-079,2,
+UNI-534,6,Broker Abstraction & REST API,P4,Critical,DONE,Broker,Broker secret encryption wiring,Wire AES-GCM utility to broker account storage for API secret + access token,internal/security/ + internal/broker/,,4,Source: unified_master_tracker
+UNI-535,6,Broker Abstraction & REST API,P4,Critical,DONE,Broker,Access token loaded from .access_token file globally,Single global token is not multi-user safe and risks credential commit,cmd/server/main.go,,4,Source: unified_master_tracker
+ADD-001,6,Broker Abstraction & REST API,P4,High,TODO,Settings,Implement GET /api/v1/settings,Load user settings.,internal/api/handlers/settings/settings.go,INF-012,2,
+ADD-002,6,Broker Abstraction & REST API,P4,High,TODO,Settings,Implement PUT /api/v1/settings,Save all settings.,internal/api/handlers/settings/settings.go,ADD-001,2,
+ADD-003,6,Broker Abstraction & REST API,P4,High,TODO,Watchlist,Implement GET /api/v1/watchlists/default,User watchlist.,internal/api/handlers/watchlist/watchlist.go,INF-013,2,
+ADD-004,6,Broker Abstraction & REST API,P4,High,TODO,Watchlist,Implement POST /api/v1/watchlists/items,Add symbol.,internal/api/handlers/watchlist/watchlist.go,ADD-003,1,
+ADD-005,6,Broker Abstraction & REST API,P4,High,TODO,Watchlist,Implement DELETE /api/v1/watchlists/items/id,Remove symbol.,internal/api/handlers/watchlist/watchlist.go,ADD-003,1,
+ADD-006,6,Broker Abstraction & REST API,P4,High,TODO,Instruments,Implement GET /api/v1/instruments/search,Search by symbol.,internal/api/handlers/market/instruments.go,INF-003,2,
+ADD-007,6,Broker Abstraction & REST API,P4,High,TODO,Instruments,Implement GET /api/v1/instruments/token,Get by token.,internal/api/handlers/market/instruments.go,ADD-006,1,
+AUD-021,6,Broker Abstraction & REST API,P4,High,TODO,Broker,Create broker adapter interface,Define broker-agnostic interface. Isolate Zerodha-specific session logic behind it.,internal/broker/interface.go | internal/broker/zerodha_adapter.go,AUD-007,16,Source: TradingBot_Base_Build_Tickets.docx
+EX-024,6,Broker Abstraction & REST API,P4,High,TODO,Positions API,Implement GET /api/v1/positions,Current open positions.,internal/api/handlers/positions/positions.go,EX-009,2,
+EX-025,6,Broker Abstraction & REST API,P4,High,TODO,Orders API,Implement GET /api/v1/orders,Order history.,internal/api/handlers/orders/orders.go,EX-009,2,
+EX-027,6,Broker Abstraction & REST API,P4,High,TODO,Orders API,Implement DELETE /api/v1/orders/id,Cancel order.,internal/api/handlers/orders/orders.go,EX-009,1,
+EX-028,6,Broker Abstraction & REST API,P4,High,TODO,Orders API,Implement PUT /api/v1/orders/id,Modify order.,internal/api/handlers/orders/orders.go,EX-009,1,
+FE-007,6,Broker Abstraction & REST API,P4,High,TODO,Dashboard Header,Connect to WS hub,Real-time ticker.,signal-execution-desk/src/components/DashboardHeader.tsx,FE-005,3,
+FE-008,6,Broker Abstraction & REST API,P4,High,TODO,Settings,Wire to GET/PUT /api/v1/settings,Load and save.,signal-execution-desk/src/components/Settings.tsx,FE-004,3,
+FE-009,6,Broker Abstraction & REST API,P4,High,TODO,Broker Integration,Wire to broker APIs,Status connect.,signal-execution-desk/src/components/BrokerIntegration.tsx,FE-004,3,
+FE-010,6,Broker Abstraction & REST API,P4,High,TODO,Market Data,Wire to quotes and watchlist,Real-time prices.,signal-execution-desk/src/components/MarketData.tsx,FE-004,4,
+FE-011,6,Broker Abstraction & REST API,P4,High,TODO,Positions Panel,Wire to positions and orders API,Show open positions.,signal-execution-desk/src/components/PositionsPanel.tsx,FE-004,4,
+FE-012,6,Broker Abstraction & REST API,P4,High,TODO,Positions Panel,Add WS order updates,Real-time status.,signal-execution-desk/src/components/PositionsPanel.tsx,FE-005,2,
+INF-079,6,Broker Abstraction & REST API,P4,High,TODO,Broker,Create BrokerSessionManager,Per-user broker sessions.,internal/broker/session_manager.go,INF-077,3,
+UNI-502,6,Broker Abstraction & REST API,P4,High,TODO,Broker,GET /api/v1/brokers/zerodha/callback,Exchange request_token for access_token. Encrypt and store in UserBrokerAccount.,internal/api/handlers/broker/broker.go,,4,Source: unified_master_tracker
+UNI-503,6,Broker Abstraction & REST API,P4,High,TODO,Broker,POST /api/v1/brokers/zerodha/disconnect,Set IsActive=false on UserBrokerAccount. Stop ticker operations.,internal/api/handlers/broker/broker.go,,4,Source: unified_master_tracker
+UNI-507,6,Broker Abstraction & REST API,P4,High,TODO,Watchlist,POST /api/v1/watchlists/default/items,Validate instrument token exists. Insert into watchlist_items.,internal/api/handlers/watchlist/watchlist.go,,4,Source: unified_master_tracker
+UNI-511,6,Broker Abstraction & REST API,P4,High,TODO,Strategies,PUT /api/v1/user/strategies/{name},Upsert into user_strategies with IsEnabled and Parameters JSON.,internal/api/handlers/strategies/strategies.go,,4,Source: unified_master_tracker
+UNI-512,6,Broker Abstraction & REST API,P4,High,TODO,Strategies,POST /api/v1/strategies/{name}/start and /stop,start: set IsEnabled=true. stop: set IsEnabled=false and signal goroutine.,internal/api/handlers/strategies/strategies.go,,4,Source: unified_master_tracker
+UNI-514,6,Broker Abstraction & REST API,P4,High,TODO,Backtest,GET /api/v1/backtests/{id},Query backtest_jobs by id and user_id. Return status + result JSON.,internal/api/handlers/backtest/backtest.go,,4,Source: unified_master_tracker
+UNI-544,6,Broker Abstraction & REST API,P4,High,TODO,Notifications,Notification delivery system,Send Telegram/WhatsApp alerts for trade execution + PnL threshold + error events,internal/notifications/,,4,Source: unified_master_tracker
+ADD-008,6,Broker Abstraction & REST API,P4,Medium,TODO,Notifications,Implement POST /api/v1/notifications/test,Test channel.,internal/api/handlers/notifications/notifications.go,INF-015,2,
+ADD-009,6,Broker Abstraction & REST API,P4,Medium,TODO,Notifications,Implement GET /api/v1/notifications/history,Delivery log.,internal/api/handlers/notifications/notifications.go,INF-015,2,
+EX-018,6,Broker Abstraction & REST API,P4,Medium,TODO,Broker Reconciliation,Implement sync worker,Poll broker for positions.,internal/broker/reconciliation.go,INF-079,3,
+EX-019,6,Broker Abstraction & REST API,P4,Medium,TODO,Broker Reconciliation,Add drift detection,Alert on mismatches.,internal/broker/reconciliation.go,EX-018,2,
+EX-029,6,Broker Abstraction & REST API,P4,Medium,TODO,Orders API,Implement GET /api/v1/trades,Trade history.,internal/api/handlers/orders/trades.go,EX-009,2,
+EX-030,6,Broker Abstraction & REST API,P4,Medium,TODO,Orders API,Implement POST /api/v1/gtt,Good till triggered.,internal/api/handlers/orders/gtt.go,EX-009,2,
+UNI-504,6,Broker Abstraction & REST API,P4,Medium,TODO,Market,GET /api/v1/indicators (REST),Query indicator tables. Accept token + interval + indicator + period params.,internal/api/handlers/market/indicators.go,,4,Source: unified_master_tracker
+UNI-508,6,Broker Abstraction & REST API,P4,Medium,TODO,Orders,DELETE /api/v1/orders/{id},Set status CANCELLED. If live call Zerodha CancelOrder.,internal/api/handlers/orders/orders.go,,4,Source: unified_master_tracker
+UNI-509,6,Broker Abstraction & REST API,P4,Medium,TODO,Orders,PUT /api/v1/orders/{id},Modify price/qty for OPEN orders.,internal/api/handlers/orders/orders.go,,4,Source: unified_master_tracker
+UNI-510,6,Broker Abstraction & REST API,P4,Medium,TODO,Orders,POST /api/v1/gtt and GET /api/v1/gtt,GTT order creation and listing,internal/api/handlers/orders/gtt.go,,4,Source: unified_master_tracker
+UNI-540,6,Broker Abstraction & REST API,P4,Medium,DONE,Audit,Audit event logging in handlers,Write to audit_events table from login + logout + broker-connect + order-place handlers,internal/db/ + handlers,,4,Source: unified_master_tracker
+UNI-500,6,Broker Abstraction & REST API,P4,Low,TODO,Settings,PATCH /api/v1/settings/{section},Save a single settings section only,internal/api/handlers/settings/settings.go,,4,Source: unified_master_tracker
+UNI-501,6,Broker Abstraction & REST API,P4,Low,TODO,Settings,POST /api/v1/settings/test,Send test notification or validate config section,internal/api/handlers/settings/settings.go,,4,Source: unified_master_tracker
+UNI-506,6,Broker Abstraction & REST API,P4,Low,TODO,Market,GET /api/v1/instruments/{token},Query instruments WHERE instrument_token = token,internal/api/handlers/market/instruments.go,,4,Source: unified_master_tracker
+AUD-024,7,"Strategy Runtime, Risk & Execution",P5,Critical,TODO,Strategy,Create strategy runtime core — registry + runner + types,Define Strategy interface. Registry loads user config. Runner binds strategies to finalized candle events.,internal/strategy/registry.go | internal/strategy/runner.go | internal/strategy/types.go,AUD-013 | AUD-015 | AUD-021,40,Source: TradingBot_Base_Build_Tickets.docx
+AUD-025,7,"Strategy Runtime, Risk & Execution",P5,Critical,TODO,Risk,Create risk service and kill switch,2% daily loss limit. Portfolio heat 15%. Drawdown circuit breaker >5%. Kill switch. Live trade acknowledgement guard.,internal/risk/service.go | internal/risk/limits.go | internal/risk/circuit_breaker.go | internal/risk/kill_switch.go,AUD-024,32,Source: TradingBot_Base_Build_Tickets.docx
+AUD-026,7,"Strategy Runtime, Risk & Execution",P5,Critical,TODO,Execution,Create execution service with idempotency,Accept TradeIntent. Require risk approval. Enforce Idempotency-Key. Persist full order lifecycle.,internal/execution/service.go | internal/execution/intent.go | internal/execution/order.go,AUD-021 | AUD-025,40,Source: TradingBot_Base_Build_Tickets.docx
+EX-001,7,"Strategy Runtime, Risk & Execution",P5,Critical,TODO,Risk Service,Create risk validation gate,Max loss quantity market-open.,internal/risk/service.go,None,4,
+EX-002,7,"Strategy Runtime, Risk & Execution",P5,Critical,TODO,Risk Service,Implement daily loss limit,2% max daily loss.,internal/risk/limits.go,EX-001,2,
+EX-003,7,"Strategy Runtime, Risk & Execution",P5,Critical,TODO,Risk Service,Implement position size limit,5% max per trade.,internal/risk/limits.go,EX-001,2,
+EX-004,7,"Strategy Runtime, Risk & Execution",P5,Critical,TODO,Risk Service,Implement circuit breaker,>5% drawdown halts.,internal/risk/circuit_breaker.go,EX-001,2,
+EX-005,7,"Strategy Runtime, Risk & Execution",P5,Critical,TODO,Risk Service,Implement kill switch,Manual emergency stop.,internal/risk/kill_switch.go,EX-001,2,
+EX-008,7,"Strategy Runtime, Risk & Execution",P5,Critical,TODO,Execution Service,Create TradeIntent struct,Standard trade request.,internal/execution/intent.go,None,1,
+EX-009,7,"Strategy Runtime, Risk & Execution",P5,Critical,TODO,Execution Service,Implement order placement,Require risk approval.,internal/execution/service.go,EX-008 | EX-001,5,
+EX-010,7,"Strategy Runtime, Risk & Execution",P5,Critical,TODO,Execution Service,Add idempotency key,Prevent duplicates.,internal/execution/idempotency.go,EX-009,2,
+SB-001,7,"Strategy Runtime, Risk & Execution",P5,Critical,TODO,Strategy Schema,Define JSON schema for strategy,Complete with conditions groups risk.,internal/strategy/schema.go,None,3,
+SB-002,7,"Strategy Runtime, Risk & Execution",P5,Critical,TODO,Strategy Schema,Implement JSON validation,Validate against schema.,internal/strategy/validator.go,SB-001,2,
+SB-003,7,"Strategy Runtime, Risk & Execution",P5,Critical,TODO,Strategy Evaluator,Parse and evaluate JSON conditions,Convert JSON to evaluatable conditions.,internal/strategy/evaluator.go,SB-001,4,
+SB-004,7,"Strategy Runtime, Risk & Execution",P5,Critical,TODO,Strategy Evaluator,Support ALL and ANY condition groups,AND/OR logic.,internal/strategy/group_evaluator.go,SB-003,2,
+SB-017,7,"Strategy Runtime, Risk & Execution",P5,Critical,TODO,Strategy UI,Create strategy builder component,Drag-drop condition builder.,signal-execution-desk/src/components/StrategyBuilder/index.tsx,None,6,
+SB-018,7,"Strategy Runtime, Risk & Execution",P5,Critical,TODO,Strategy UI,Implement condition type selector,RSI MACD Price dropdown.,signal-execution-desk/src/components/StrategyBuilder/ConditionRow.tsx,SB-017,3,
+SB-019,7,"Strategy Runtime, Risk & Execution",P5,Critical,TODO,Strategy UI,Implement operator selector,< > = cross_above.,signal-execution-desk/src/components/StrategyBuilder/OperatorSelect.tsx,SB-017,2,
+SB-020,7,"Strategy Runtime, Risk & Execution",P5,Critical,TODO,Strategy UI,Implement parameter inputs,Period threshold multiplier.,signal-execution-desk/src/components/StrategyBuilder/ParameterInput.tsx,SB-017,2,
+UNI-531,7,"Strategy Runtime, Risk & Execution",P5,Critical,TODO,Trading,Trading safety kill switch,Kill switch to halt all trading immediately,internal/execution/,,4,Source: unified_master_tracker
+UNI-532,7,"Strategy Runtime, Risk & Execution",P5,Critical,TODO,Trading,Daily loss circuit breaker,Enforce daily loss limit before order placement,internal/execution/,,4,Source: unified_master_tracker
+UNI-533,7,"Strategy Runtime, Risk & Execution",P5,Critical,TODO,Trading,Order idempotency key enforcement,Reject duplicate orders using Idempotency-Key header + Redis/DB dedup,internal/execution/order.go,,4,Source: unified_master_tracker
+EX-006,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,Risk Service,Add AI confidence sizing,Reduce size on low confidence.,internal/risk/confidence_sizing.go,EX-001 | AI-018,2,
+EX-007,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,Risk Service,Add volatility stop loss,ATR-based dynamic SL.,internal/risk/volatility_stop.go,EX-001 | INF-055,2,
+EX-011,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,Execution Service,Add AI signal routing,Pass through to order.,internal/execution/ai_signal_handler.go,EX-009 | AI-018,2,
+EX-012,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,Execution Service,Implement order persistence,Save to orders table.,internal/execution/repository.go,EX-009,2,
+EX-013,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,Execution Service,Implement order status webhook,Notify on change.,internal/execution/webhook.go,EX-009,2,
+FE-013,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,Strategy Panel,Wire to strategies API,List activate.,signal-execution-desk/src/components/StrategyPanel.tsx,FE-004 | SB-008,3,
+FE-014,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,Strategy Panel,Add WS signal updates,Real-time signals.,signal-execution-desk/src/components/StrategyPanel.tsx,FE-005 | SB-015,2,
+FE-015,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,Strategy Builder,Integrate with API,Save load strategies.,signal-execution-desk/src/components/StrategyBuilder/index.tsx,FE-004 | SB-008,3,
+SB-005,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,Strategy Evaluator,Support technical indicators,RSI MACD SMA EMA.,internal/strategy/indicator_conditions.go,SB-003,3,
+SB-006,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,Strategy Evaluator,Support price/volume conditions,Price > SMA Volume > avg.,internal/strategy/market_conditions.go,SB-003,2,
+SB-007,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,Strategy Storage,Store strategy JSON in DB,user_strategies table.,internal/db/strategy_repository.go,SB-001,2,
+SB-008,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,Strategy API,Implement POST /api/v1/strategies,Save user strategy.,internal/api/handlers/strategies/strategies.go,SB-007,2,
+SB-009,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,Strategy API,Implement GET /api/v1/strategies,List user strategies.,internal/api/handlers/strategies/strategies.go,SB-008,1,
+SB-010,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,Strategy API,Implement GET /api/v1/strategies/id,Get specific strategy.,internal/api/handlers/strategies/strategies.go,SB-008,1,
+SB-011,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,Strategy API,Implement PUT /api/v1/strategies/id,Update strategy.,internal/api/handlers/strategies/strategies.go,SB-008,1,
+SB-012,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,Strategy API,Implement DELETE /api/v1/strategies/id,Delete strategy.,internal/api/handlers/strategies/strategies.go,SB-008,1,
+SB-013,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,Strategy API,Implement GET /api/v1/strategies/schema,Return JSON schema for UI.,internal/api/handlers/strategies/schema.go,SB-001,1,
+SB-014,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,Strategy API,Implement POST /api/v1/strategies/id/activate,Activate for live trading.,internal/api/handlers/strategies/activate.go,SB-008,1,
+SB-015,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,Strategy Runner,Create dynamic strategy runner,Load from DB evaluate on candles.,internal/strategy/dynamic_runner.go,SB-003,5,
+SB-016,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,Strategy Runner,Integrate with indicator cache,Get current values from Redis.,internal/strategy/runner_cache.go,SB-015,2,
+SB-021,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,Strategy UI,Implement AND/OR group nesting,Nested conditions.,signal-execution-desk/src/components/StrategyBuilder/ConditionGroup.tsx,SB-017,4,
+SB-022,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,Strategy UI,Add strategy preview,Test on recent data.,signal-execution-desk/src/components/StrategyBuilder/StrategyPreview.tsx,SB-017,3,
+SB-023,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,Strategy UI,Add template library,Pre-built strategies.,signal-execution-desk/src/components/StrategyBuilder/TemplateLibrary.tsx,SB-017,2,
+UNI-541,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,Strategy,Strategy runner engine,Execute enabled strategies against live tick/candle data and emit signals,internal/strategy/,,4,Source: unified_master_tracker
+UNI-543,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,News,News pipeline activation,Uncomment news_pipeline.go + wire to ONNX sentiment model + persist to NewsArticle table,internal/data/news_pipeline.go,,4,Source: unified_master_tracker
+UNI-545,7,"Strategy Runtime, Risk & Execution",P5,High,TODO,Broker,Broker reconciliation worker,Background worker to sync positions/orders/trades from broker to DB,internal/broker/,,4,Source: unified_master_tracker
+SB-024,7,"Strategy Runtime, Risk & Execution",P5,Medium,TODO,Strategy UI,Add version history,Save and rollback.,signal-execution-desk/src/components/StrategyBuilder/VersionHistory.tsx,SB-017,2,
+SB-025,7,"Strategy Runtime, Risk & Execution",P5,Medium,TODO,Strategy UI,Add backtest button,Quick backtest from builder.,signal-execution-desk/src/components/StrategyBuilder/BacktestButton.tsx,SB-017,2,
+UNI-513,7,"Strategy Runtime, Risk & Execution",P5,Medium,TODO,Strategies,GET /api/v1/signals,Query signals table or Redis cache. Return latest N signals per strategy.,internal/api/handlers/strategies/signals.go,,4,Source: unified_master_tracker
+SB-026,7,"Strategy Runtime, Risk & Execution",P5,Low,TODO,Strategy UI,Add export/import,Share as JSON.,signal-execution-desk/src/components/StrategyBuilder/ExportImport.tsx,SB-017,2,
+UNI-547,7,"Strategy Runtime, Risk & Execution",P5,Low,TODO,Auth,Device/session list endpoint,Allow users to view and revoke active sessions,internal/auth/,,4,Source: unified_master_tracker
+UNI-548,7,"Strategy Runtime, Risk & Execution",P5,Low,TODO,Auth,MFA support,Add TOTP-based MFA before public launch,internal/auth/,,4,Source: unified_master_tracker
+UNI-549,7,"Strategy Runtime, Risk & Execution",P5,Low,TODO,Billing,Subscription/billing module design,Design usage limits by plan for future paid multi-user launch,internal/,,4,Source: unified_master_tracker
+AI-001,8,"PnL, Paper Broker & AI Sentiment",P5,Critical,TODO,Direction Model,Load ONNX model for direction prediction,Predict BUY/SELL with confidence.,internal/ai/direction/model.go,None,4,
+AI-002,8,"PnL, Paper Broker & AI Sentiment",P5,Critical,TODO,Direction Model,Implement feature extraction,Extract from candles + indicators.,internal/ai/direction/features.go,INF-043 | INF-061,4,
+AI-003,8,"PnL, Paper Broker & AI Sentiment",P5,Critical,TODO,Direction Model,Implement inference service,ONNX runtime prediction.,internal/ai/direction/inference.go,AI-001,3,
+AI-018,8,"PnL, Paper Broker & AI Sentiment",P5,Critical,TODO,Signal Aggregator,Create AISignalAggregator,Combine direction/sentiment/regime.,internal/ai/aggregator.go,"AI-001,AI-010,AI-014",4,
+AI-029,8,"PnL, Paper Broker & AI Sentiment",P5,Critical,TODO,AI Testing,Write unit tests for direction model,Accuracy and latency.,internal/ai/direction/*_test.go,AI-003,3,
+AI-030,8,"PnL, Paper Broker & AI Sentiment",P5,Critical,TODO,AI Testing,Write unit tests for sentiment model,Sentiment scoring.,internal/sentiment/*_test.go,AI-010,2,
+SB-029,8,"PnL, Paper Broker & AI Sentiment",P5,Critical,TODO,Strategy Testing,Write unit tests for evaluator,Test all condition types.,internal/strategy/*_test.go,SB-003,3,
+SB-030,8,"PnL, Paper Broker & AI Sentiment",P5,Critical,TODO,Strategy Testing,Write integration tests for API,CRUD activate deactivate.,tests/integration/strategy_test.go,SB-008,3,
+AI-004,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,Direction Model,Add model versioning,Hot-swap without restart.,internal/ai/registry.go,AI-001,2,
+AI-005,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,Direction Model,Implement batch prediction,Multiple instruments at once.,internal/ai/direction/batch_predict.go,AI-003,2,
+AI-006,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,Direction Model,Add confidence calibration,Platt scaling.,internal/ai/direction/calibration.go,AI-001,3,
+AI-009,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,Sentiment Model,Implement news fetching pipeline,NewsAPI integration.,internal/sentiment/news_fetcher.go,None,3,
+AI-010,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,Sentiment Model,Load FinBERT ONNX model,Sentiment scoring.,internal/sentiment/model.go,AI-009,4,
+AI-011,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,Sentiment Model,Implement symbol mapping,Map news to instruments.,internal/sentiment/entity_mapper.go,AI-010,3,
+AI-014,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,Regime Model,Implement regime classifier,Trending/ranging/volatile.,internal/regime/detector.go,INF-061,3,
+AI-015,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,Regime Model,Add regime persistence,Prevent flipping.,internal/regime/smoother.go,AI-014,2,
+AI-019,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,Signal Aggregator,Implement weighted voting,Weight by recent performance.,internal/ai/weighted_voter.go,AI-018,2,
+AI-020,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,Signal Aggregator,Add confidence threshold,Minimum confidence to emit.,internal/ai/threshold_filter.go,AI-018,1,
+AI-022,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,AI API,Implement GET /api/v1/ai/signals/live,Current AI signals.,internal/api/handlers/ai/signals.go,AI-018,2,
+AI-026,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,AI Integration,Add AI conditions to strategy runner,use_ai_direction condition.,internal/strategy/ai_conditions.go,SB-003 | AI-018,2,
+AI-027,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,AI Integration,Add sentiment condition to runner,require_sentiment_align.,internal/strategy/sentiment_condition.go,SB-003 | AI-012,2,
+AI-028,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,AI Integration,Add regime filter to runner,regime trending reject_range.,internal/strategy/regime_condition.go,SB-003 | AI-014,2,
+AI-031,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,AI Testing,Write integration tests for signal aggregator,End-to-end signal flow.,tests/integration/ai_flow_test.go,AI-018,3,
+AUD-027,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,PnL,Create PnL service — realized + unrealized per user/strategy,Realized/unrealized PnL. Per-user and per-strategy attribution. Paper and live parity.,internal/pnl/service.go | internal/pnl/calculator.go,AUD-026,32,Source: TradingBot_Base_Build_Tickets.docx
+AUD-028,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,Execution,Implement paper broker with simulated fills and slippage,Simulate fills using live prices. Configurable fees and slippage. Orders/positions flow through WS hub.,internal/broker/paper_broker.go | internal/broker/interface.go,AUD-026 | AUD-027,32,Source: TradingBot_Base_Build_Tickets.docx
+EX-014,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,Paper Trading,Complete PaperBroker fills,Simulate with real prices.,internal/broker/paper/fills.go,INF-078,3,
+EX-015,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,Paper Trading,Add configurable fees,Flat or percentage.,internal/broker/paper/fees.go,INF-078,2,
+EX-016,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,Paper Trading,Add slippage simulation,0.1% default.,internal/broker/paper/slippage.go,INF-078,2,
+EX-017,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,Paper Trading,Add state persistence,Restart recovery.,internal/broker/paper/state.go,INF-078,2,
+EX-020,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,PnL Service,Create PnL calculator,Realized/unrealized.,internal/pnl/service.go,EX-009,3,
+EX-021,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,PnL Service,Add per-strategy attribution,Track strategy performance.,internal/pnl/attribution.go,EX-020,2,
+EX-022,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,PnL Service,Add per-AI-model attribution,Track AI performance.,internal/pnl/ai_performance.go,EX-020 | AI-018,2,
+EX-023,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,PnL Service,Implement daily snapshots,Historical PnL.,internal/pnl/snapshot.go,EX-020,2,
+SB-027,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,Strategy Integration,Wire StrategyPanel to API,List activate deactivate.,signal-execution-desk/src/components/StrategyPanel.tsx,SB-008,3,
+SB-028,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,Strategy Integration,Add WS signal updates,Real-time signals to UI.,signal-execution-desk/src/components/StrategyPanel.tsx,SB-015,2,
+UNI-515,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,Models,GET /api/v1/models,Scan models/ directory for .onnx files. Return list with version + active status.,internal/api/handlers/models/models.go,,4,Source: unified_master_tracker
+UNI-518,8,"PnL, Paper Broker & AI Sentiment",P5,High,TODO,Sentiment,GET /api/v1/news,Query news_articles ordered by published_at DESC. Support limit and page.,internal/api/handlers/sentiment/sentiment.go,,4,Source: unified_master_tracker
+AI-007,8,"PnL, Paper Broker & AI Sentiment",P5,Medium,TODO,Direction Model,Create training pipeline,Retrain on historical data.,scripts/train_direction.py,AI-002,5,
+AI-008,8,"PnL, Paper Broker & AI Sentiment",P5,Medium,TODO,Direction Model,Add backtest validation,Test on out-of-sample.,internal/ai/direction/validator.go,AI-007,2,
+AI-012,8,"PnL, Paper Broker & AI Sentiment",P5,Medium,TODO,Sentiment Model,Add aggregate sentiment,1h 4h 1d scores.,internal/sentiment/aggregator.go,AI-011,2,
+AI-013,8,"PnL, Paper Broker & AI Sentiment",P5,Medium,TODO,Sentiment Model,Add sentiment change detection,Signal on rapid shifts.,internal/sentiment/signal_detector.go,AI-012,2,
+AI-016,8,"PnL, Paper Broker & AI Sentiment",P5,Medium,TODO,Regime Model,Add volatility regime,High/low volatility.,internal/regime/volatility.go,INF-055,2,
+AI-021,8,"PnL, Paper Broker & AI Sentiment",P5,Medium,TODO,Signal Aggregator,Implement signal decay,Expire after N minutes.,internal/ai/signal_expiry.go,AI-018,2,
+AI-023,8,"PnL, Paper Broker & AI Sentiment",P5,Medium,TODO,AI API,Implement GET /api/v1/ai/models,List all models.,internal/api/handlers/ai/models.go,"AI-001,AI-010,AI-014",2,
+AI-024,8,"PnL, Paper Broker & AI Sentiment",P5,Medium,TODO,AI API,Implement POST /api/v1/ai/models/id/activate,Switch active model.,internal/api/handlers/ai/activate.go,AI-023,1,
+AI-025,8,"PnL, Paper Broker & AI Sentiment",P5,Medium,TODO,AI API,Implement POST /api/v1/ai/models/id/retrain,Trigger retraining.,internal/api/handlers/ai/retrain.go,AI-007,2,
+UNI-516,8,"PnL, Paper Broker & AI Sentiment",P5,Medium,TODO,Models,POST /api/v1/models/{id}/activate,Validate model file exists. Store active model name in Redis.,internal/api/handlers/models/models.go,,4,Source: unified_master_tracker
+UNI-517,8,"PnL, Paper Broker & AI Sentiment",P5,Medium,TODO,Models,GET /api/v1/models/jobs,Query model_jobs table or Redis. Return list of job status.,internal/api/handlers/models/jobs.go,,4,Source: unified_master_tracker
+UNI-519,8,"PnL, Paper Broker & AI Sentiment",P5,Medium,TODO,Sentiment,GET /api/v1/sentiment/summary,Aggregate avg sentiment_score from news_articles in last 24h grouped by label.,internal/api/handlers/sentiment/sentiment.go,,4,Source: unified_master_tracker
+UNI-520,8,"PnL, Paper Broker & AI Sentiment",P5,Medium,TODO,Sentiment,POST /api/v1/sentiment/analyze,On-demand sentiment analysis for text/article,internal/api/handlers/sentiment/sentiment.go,,4,Source: unified_master_tracker
+AI-017,8,"PnL, Paper Broker & AI Sentiment",P5,Low,TODO,Regime Model,Add session-based regime,Time-of-day patterns.,internal/regime/session.go,AI-014,2,
+BT-001,9,Backtest Engine,P6,Critical,TODO,Backtest Service,Create BacktestService,Async job execution.,internal/backtest/service.go,None,4,
+BT-002,9,Backtest Engine,P6,Critical,TODO,Backtest Service,Implement historical replay,Replay from ohlcv_candles.,internal/backtest/replay.go,INF-043 | BT-001,4,
+BT-003,9,Backtest Engine,P6,Critical,TODO,Backtest Service,Reuse strategy runner,No code duplication.,internal/backtest/runner.go,SB-015 | BT-001,3,
+BT-004,9,Backtest Engine,P6,Critical,TODO,Backtest Service,Reuse paper broker,Simulated fills.,internal/backtest/paper_broker.go,EX-014 | BT-001,2,
+BT-005,9,Backtest Engine,P6,Critical,TODO,Backtest Service,Reuse AI models,Test with AI signals.,internal/backtest/ai_replay.go,AI-018 | BT-001,3,
+BT-017,9,Backtest Engine,P6,Critical,TODO,Backtest Testing,Unit tests for replay engine,Deterministic replay.,internal/backtest/*_test.go,BT-002,3,
+BT-018,9,Backtest Engine,P6,Critical,TODO,Backtest Testing,Integration tests for backtest flow,Submit and get results.,tests/integration/backtest_test.go,BT-008,3,
+EX-031,9,Backtest Engine,P6,Critical,TODO,Testing,Unit tests for risk service,All limit checks.,internal/risk/*_test.go,EX-001,3,
+EX-032,9,Backtest Engine,P6,Critical,TODO,Testing,Unit tests for execution service,Idempotency flow.,internal/execution/*_test.go,EX-009,3,
+EX-033,9,Backtest Engine,P6,Critical,TODO,Testing,Integration tests for order flow,Place to fill.,tests/integration/order_test.go,EX-009,3,
+EX-034,9,Backtest Engine,P6,Critical,TODO,Testing,E2E paper trading test,Full trade lifecycle.,tests/e2e/smoke_test.go,EX-014 | SB-015 | AI-018,4,
+AUD-029,9,Backtest Engine,P6,High,TODO,Backtest,Implement backtest service and command,Async job submission. Same strategy engine + paper broker. Per-trade results in backtest_jobs.,internal/backtest/service.go | internal/backtest/runner.go | cmd/backtest/backtest.go,AUD-024 | AUD-028,40,Source: TradingBot_Base_Build_Tickets.docx
+BT-006,9,Backtest Engine,P6,High,TODO,Backtest Service,Add equity curve tracking,Store per-timestamp equity.,internal/backtest/equity.go,BT-001,2,
+BT-007,9,Backtest Engine,P6,High,TODO,Backtest Service,Add metrics calculation,Sharpe drawdown win rate.,internal/backtest/metrics.go,BT-001,3,
+BT-008,9,Backtest Engine,P6,High,TODO,Backtest Service,Implement job persistence,Save to backtest_jobs.,internal/backtest/repository.go,BT-001,2,
+BT-009,9,Backtest Engine,P6,High,TODO,Backtest API,Implement POST /api/v1/backtests,Submit job.,internal/api/handlers/backtest/backtest.go,BT-001,2,
+BT-010,9,Backtest Engine,P6,High,TODO,Backtest API,Implement GET /api/v1/backtests/id,Get results.,internal/api/handlers/backtest/backtest.go,BT-008,1,
+BT-011,9,Backtest Engine,P6,High,TODO,Backtest API,Implement GET /api/v1/backtests,List jobs.,internal/api/handlers/backtest/backtest.go,BT-008,1,
+BT-013,9,Backtest Engine,P6,High,TODO,Backtest Optimization,Implement parameter optimizer,Bayesian search.,internal/backtest/optimizer.go,BT-001,4,
+BT-014,9,Backtest Engine,P6,High,TODO,Backtest Optimization,Add walk-forward validation,Test on out-of-sample.,internal/backtest/walk_forward.go,BT-001,3,
+UNI-542,9,Backtest Engine,P6,High,TODO,Backtest,Backtest engine implementation,Run strategy against historical candle data with fee simulation and equity curve,internal/backtest/ + cmd/backtest/,,4,Source: unified_master_tracker
+BT-012,9,Backtest Engine,P6,Medium,TODO,Backtest API,Add WS progress streaming,Real-time updates.,internal/realtime/topics.go,BT-001 | WS-001,2,
+BT-015,9,Backtest Engine,P6,Medium,TODO,Backtest UI,Create backtest panel,Job submission form.,signal-execution-desk/src/components/BacktestPanel.tsx,BT-009,3,
+BT-016,9,Backtest Engine,P6,Medium,TODO,Backtest UI,Add results visualization,Equity curve chart.,signal-execution-desk/src/components/BacktestResults.tsx,BT-015,3,
+FE-016,9,Backtest Engine,P6,Medium,TODO,ML Models Panel,Wire to models API,List activate retrain.,signal-execution-desk/src/components/MLModelsPanel.tsx,FE-004 | AI-023,3,
+FE-017,9,Backtest Engine,P6,Medium,TODO,Sentiment Panel,Wire to news API,Show sentiment.,signal-execution-desk/src/components/SentimentPanel.tsx,FE-004 | AI-009,2,
+FE-018,9,Backtest Engine,P6,Medium,TODO,Backtest Panel,Wire to backtest API,Submit and view.,signal-execution-desk/src/components/BacktestPanel.tsx,FE-004 | BT-009,3,
+FE-019,9,Backtest Engine,P6,Medium,TODO,Backtest Panel,Add WS progress,Real-time status.,signal-execution-desk/src/components/BacktestPanel.tsx,FE-005 | BT-012,2,
+FE-020,9,Backtest Engine,P6,Low,TODO,Alerts,Add notification bell,WS alerts.,signal-execution-desk/src/components/DashboardHeader.tsx,FE-005,2,
+ADD-017,10,Production Hardening — Monitoring & Docker,P6,High,TODO,Testing,Unit tests for settings API,CRUD operations.,internal/api/handlers/settings/*_test.go,ADD-002,2,
+ADD-018,10,Production Hardening — Monitoring & Docker,P6,High,TODO,Testing,Unit tests for watchlist API,Add remove list.,internal/api/handlers/watchlist/*_test.go,ADD-003,2,
+ADD-019,10,Production Hardening — Monitoring & Docker,P6,High,TODO,Testing,Unit tests for instruments API,Search and get.,internal/api/handlers/market/*_test.go,ADD-006,2,
+ADD-021,10,Production Hardening — Monitoring & Docker,P6,High,TODO,Testing,Integration tests for settings,Full flow.,tests/integration/settings_test.go,ADD-002,2,
+ADD-022,10,Production Hardening — Monitoring & Docker,P6,High,TODO,Testing,Integration tests for watchlist,Full CRUD.,tests/integration/watchlist_test.go,ADD-003,2,
+ADD-023,10,Production Hardening — Monitoring & Docker,P6,High,DONE,Performance,Optimize tick ingestion,Reduce latency.,internal/data/ingest.go,INF-042,4,
+ADD-024,10,Production Hardening — Monitoring & Docker,P6,High,TODO,Performance,Optimize candle generation,Parallel processing.,internal/data/candles.go,INF-043,3,
+ADD-025,10,Production Hardening — Monitoring & Docker,P6,High,TODO,Performance,Optimize indicator calculation,Use incremental state.,internal/marketdata/indicators/manager.go,INF-061,3,
+DEP-001,10,Production Hardening — Monitoring & Docker,P6,High,TODO,Docker,Create multi-stage Dockerfile,Build + runtime.,Dockerfile,None,3,
+DEP-002,10,Production Hardening — Monitoring & Docker,P6,High,TODO,Docker,Create docker-compose dev,Local stack.,docker-compose.yaml,DEP-001,2,
+DEP-003,10,Production Hardening — Monitoring & Docker,P6,High,TODO,Docker,Create docker-compose prod,Full monitoring.,docker-compose.prod.yaml,DEP-001,3,
+DEP-004,10,Production Hardening — Monitoring & Docker,P6,High,TODO,Docker,Add health checks,Container status.,Dockerfile,DEP-001,1,
+MON-001,10,Production Hardening — Monitoring & Docker,P6,High,TODO,Prometheus,Add order counter metric,Track volume.,internal/observability/metrics.go,None,1,
+MON-002,10,Production Hardening — Monitoring & Docker,P6,High,TODO,Prometheus,Add position gauge,Real-time count.,internal/observability/metrics.go,None,1,
+MON-003,10,Production Hardening — Monitoring & Docker,P6,High,TODO,Prometheus,Add API latency histogram,Performance tracking.,internal/observability/metrics.go,None,1,
+MON-004,10,Production Hardening — Monitoring & Docker,P6,High,TODO,Prometheus,Add AI inference latency,Model performance.,internal/observability/ai_metrics.go,AI-001,1,
+MON-005,10,Production Hardening — Monitoring & Docker,P6,High,TODO,Prometheus,Add WebSocket drops counter,Connection health.,internal/observability/metrics.go,WS-001,1,
+MON-006,10,Production Hardening — Monitoring & Docker,P6,High,TODO,Prometheus,Add queue depth gauge,Backpressure.,internal/observability/metrics.go,INF-045,1,
+MON-007,10,Production Hardening — Monitoring & Docker,P6,High,TODO,Prometheus,Add risk rejection counter,Safety.,internal/observability/metrics.go,EX-001,1,
+MON-008,10,Production Hardening — Monitoring & Docker,P6,High,DONE,Prometheus,Expose /metrics endpoint,Scraping.,internal/server/routes.go,MON-001,1,
+MON-013,10,Production Hardening — Monitoring & Docker,P6,High,TODO,Alerts,Define error rate alert,>1% 5xx.,infra/prometheus/alerts.yml,MON-008,2,
+MON-014,10,Production Hardening — Monitoring & Docker,P6,High,TODO,Alerts,Define WS disconnect alert,>10 per minute.,infra/prometheus/alerts.yml,MON-008,2,
+MON-015,10,Production Hardening — Monitoring & Docker,P6,High,TODO,Alerts,Define market data lag alert,>5 sec delay.,infra/prometheus/alerts.yml,MON-008,2,
+MON-016,10,Production Hardening — Monitoring & Docker,P6,High,TODO,Alerts,Define drawdown alert,>5% daily.,infra/prometheus/alerts.yml,EX-004,2,
+UNI-570,10,Production Hardening — Monitoring & Docker,P6,High,DONE,Deployment,Environment variable validation at boot,Validate all required env vars on startup and fail fast with clear error messages,cmd/server/main.go,,4,Source: unified_master_tracker
+UNI-571,10,Production Hardening — Monitoring & Docker,P6,High,TODO,Deployment,Docker image without secrets baked in,Ensure .env and .access_token are not copied into Docker image,Dockerfile + .dockerignore,,4,Source: unified_master_tracker
+ADD-020,10,Production Hardening — Monitoring & Docker,P6,Medium,TODO,Testing,Unit tests for notifications,Send and history.,internal/api/handlers/notifications/*_test.go,ADD-008,2,
+ADD-026,10,Production Hardening — Monitoring & Docker,P6,Medium,TODO,Performance,Add connection pooling,DB connection reuse.,internal/db/postgres.go,None,2,
+ADD-027,10,Production Hardening — Monitoring & Docker,P6,Medium,TODO,Performance,Add Redis caching for indicators,Reduce DB calls.,internal/cache/indicator_cache.go,INF-061,2,
+DEP-005,10,Production Hardening — Monitoring & Docker,P6,Medium,TODO,K8s,Create Deployment,Pod spec.,infra/k8s/deployment.yaml,DEP-001,3,
+DEP-006,10,Production Hardening — Monitoring & Docker,P6,Medium,TODO,K8s,Create Service,Load balancer.,infra/k8s/service.yaml,DEP-005,1,
+DEP-007,10,Production Hardening — Monitoring & Docker,P6,Medium,TODO,K8s,Create ConfigMap,Non-secret config.,infra/k8s/configmap.yaml,DEP-005,1,
+DEP-008,10,Production Hardening — Monitoring & Docker,P6,Medium,TODO,K8s,Create Secret,Sensitive config.,infra/k8s/secret.yaml,DEP-005,1,
+MON-009,10,Production Hardening — Monitoring & Docker,P6,Medium,TODO,Grafana,Create trading dashboard,PNL win rate.,infra/grafana/dashboards/trading.json,MON-008,3,
+MON-010,10,Production Hardening — Monitoring & Docker,P6,Medium,TODO,Grafana,Create system dashboard,CPU memory.,infra/grafana/dashboards/system.json,MON-008,2,
+MON-011,10,Production Hardening — Monitoring & Docker,P6,Medium,TODO,Grafana,Create AI dashboard,Model accuracy.,infra/grafana/dashboards/ai.json,MON-004,2,
+MON-012,10,Production Hardening — Monitoring & Docker,P6,Medium,TODO,Grafana,Create WebSocket dashboard,Client count.,infra/grafana/dashboards/websocket.json,MON-008,2,
+UNI-572,10,Production Hardening — Monitoring & Docker,P6,Medium,TODO,Deployment,DB migrations in deployment pipeline,Run migrate up as part of deploy not manually,scripts/db_migrate.sh + CI,,4,Source: unified_master_tracker
+UNI-573,10,Production Hardening — Monitoring & Docker,P6,Medium,TODO,Deployment,TLS termination,HTTPS only in production,Dockerfile + reverse proxy config,,4,Source: unified_master_tracker
+UNI-574,10,Production Hardening — Monitoring & Docker,P6,Medium,TODO,Observability,Structured metrics and alerts,Prometheus metrics or equivalent for DB errors + WS drops + broadcast rate,internal/telemetry/,,4,Source: unified_master_tracker
+UNI-577,10,Production Hardening — Monitoring & Docker,P6,Medium,DONE,Security,KMS integration for master encryption key,AES-GCM master key currently from env; should support AWS KMS,internal/security/encryption.go,,4,Source: unified_master_tracker
+UNI-578,10,Production Hardening — Monitoring & Docker,P6,Medium,TODO,Security,Feature flags for country/broker rollout,Control feature availability per country or broker type,internal/,,4,Source: unified_master_tracker
+ADD-028,10,Production Hardening — Monitoring & Docker,P6,Low,TODO,Performance,Optimize WebSocket broadcast,Use broadcast groups.,internal/realtime/hub.go,WS-001,3,
+UNI-575,10,Production Hardening — Monitoring & Docker,P6,Low,TODO,Observability,OpenAPI contract tests,Automated tests that validate handler responses against openapi.yaml schema,docs/ + tests/,,4,Source: unified_master_tracker
+UNI-576,10,Production Hardening — Monitoring & Docker,P6,Low,TODO,Observability,OpenAPI/Swagger full contract,Generate or write complete openapi.yaml for all v1 endpoints,docs/openapi.yaml,,4,Source: unified_master_tracker
+UNI-579,10,Production Hardening — Monitoring & Docker,P6,Low,TODO,Security,Multi-broker adapter interface,Abstract broker operations behind interface so non-Zerodha brokers can be added,internal/broker/,,4,Source: unified_master_tracker
+PROD-001,11,"Paper Trading, Frontend & Documentation",P6,Critical,TODO,Validation,Paper trading 4 weeks with AI,Validate all strategies.,paper_trading_logs.csv,TEST-034,8,
+PROD-002,11,"Paper Trading, Frontend & Documentation",P6,Critical,TODO,Validation,Analyze paper trading results,Win rate drawdown Sharpe.,docs/PAPER_TRADING_REPORT.md,PROD-001,4,
+PROD-003,11,"Paper Trading, Frontend & Documentation",P6,Critical,TODO,Validation,Go/no-go decision,Meeting with stakeholders.,meeting_notes.md,PROD-002,2,
+ADD-029,11,"Paper Trading, Frontend & Documentation",P6,High,TODO,Documentation,Write API examples,curl commands.,docs/API_EXAMPLES.md,None,2,
+ADD-030,11,"Paper Trading, Frontend & Documentation",P6,High,TODO,Documentation,Write environment setup guide,Local dev setup.,docs/SETUP.md,None,2,
+ADD-031,11,"Paper Trading, Frontend & Documentation",P6,High,TODO,Documentation,Write deployment checklist,Pre-launch checks.,docs/DEPLOYMENT_CHECKLIST.md,PROD-001,2,
+ADD-034,11,"Paper Trading, Frontend & Documentation",P6,High,TODO,Cleanup,Remove empty doc.go files,Delete placeholders.,internal/*/doc.go,None,2,
+ADD-035,11,"Paper Trading, Frontend & Documentation",P6,High,DONE,Cleanup,Rename candels.go to candles.go,Fix typo.,internal/data/candels.go,None,1,
+DOC-001,11,"Paper Trading, Frontend & Documentation",P6,High,TODO,API,Generate OpenAPI spec,Complete documentation.,docs/openapi.yaml,All APIs,4,
+DOC-002,11,"Paper Trading, Frontend & Documentation",P6,High,TODO,Deployment,Create deployment guide,Docker K8s steps.,docs/DEPLOYMENT.md,DEP-001,3,
+DOC-003,11,"Paper Trading, Frontend & Documentation",P6,High,TODO,Operations,Create runbook,Startup shutdown recovery.,docs/RUNBOOK.md,None,3,
+DOC-004,11,"Paper Trading, Frontend & Documentation",P6,High,TODO,Operations,Create troubleshooting guide,Common issues.,docs/TROUBLESHOOTING.md,None,2,
+DOC-005,11,"Paper Trading, Frontend & Documentation",P6,High,TODO,Operations,Create incident response plan,Emergency procedures.,docs/INCIDENT_RESPONSE.md,None,3,
+UNI-557,11,"Paper Trading, Frontend & Documentation",P6,High,TODO,Integration,Add VITE_API_BASE_URL and VITE_WS_BASE_URL env vars,Frontend hardcodes localhost:8000,signal-execution-desk/.env,,4,Source: unified_master_tracker
+UNI-558,11,"Paper Trading, Frontend & Documentation",P6,High,TODO,Integration,Create src/lib/api.ts REST client,No common apiClient exists in frontend,signal-execution-desk/src/lib/,,4,Source: unified_master_tracker
+UNI-559,11,"Paper Trading, Frontend & Documentation",P6,High,TODO,Integration,Create src/lib/ws.ts WebSocket client,No common wsClient with reconnect + heartbeat + typed dispatch,signal-execution-desk/src/lib/,,4,Source: unified_master_tracker
+UNI-560,11,"Paper Trading, Frontend & Documentation",P6,High,TODO,Integration,Wire DashboardHeader.tsx to /api/v1/quotes and /ws,Replace hardcoded localhost URLs with env vars. Fix Stop Bot reconnect.,signal-execution-desk/src/components/DashboardHeader.tsx,,4,Source: unified_master_tracker
+UNI-561,11,"Paper Trading, Frontend & Documentation",P6,High,DONE,Integration,Wire BrokerIntegration.tsx to broker APIs,Replace hardcoded isConnected=true with GET /api/v1/brokers/zerodha/status,signal-execution-desk/src/components/BrokerIntegration.tsx,,4,Source: unified_master_tracker
+UNI-562,11,"Paper Trading, Frontend & Documentation",P6,High,TODO,Integration,Wire Settings.tsx to GET/PUT /api/v1/settings,Currently saves to localStorage only,signal-execution-desk/src/components/Settings.tsx,,4,Source: unified_master_tracker
+UNI-563,11,"Paper Trading, Frontend & Documentation",P6,High,DONE,Integration,Wire MarketData.tsx to market APIs and WS,Replace mock arrays with GET /api/v1/market/overview + /api/v1/quotes + /ws/heatmap,signal-execution-desk/src/components/MarketData.tsx,,4,Source: unified_master_tracker
+UNI-564,11,"Paper Trading, Frontend & Documentation",P6,High,TODO,Integration,Wire PositionsPanel.tsx to orders/positions APIs,Replace all mock positions/orders/GTT with real API calls,signal-execution-desk/src/components/PositionsPanel.tsx,,4,Source: unified_master_tracker
+ADD-032,11,"Paper Trading, Frontend & Documentation",P6,Medium,TODO,Documentation,Write disaster recovery plan,Backup restore.,docs/DISASTER_RECOVERY.md,PROD-007,2,
+ADD-036,11,"Paper Trading, Frontend & Documentation",P6,Medium,TODO,Cleanup,Remove commented code,Clean news_pipeline.,internal/data/news_pipeline.go,None,1,
+ADD-037,11,"Paper Trading, Frontend & Documentation",P6,Medium,TODO,Cleanup,Consolidate duplicate constants,Single source.,internal/constants.go,None,2,
+DOC-006,11,"Paper Trading, Frontend & Documentation",P6,Medium,TODO,Architecture,Create architecture docs,System design.,docs/ARCHITECTURE.md,None,3,
+UNI-565,11,"Paper Trading, Frontend & Documentation",P6,Medium,TODO,Integration,Wire StrategyPanel.tsx to strategy APIs and WS,Replace mock strategies and metrics with real API calls,signal-execution-desk/src/components/StrategyPanel.tsx,,4,Source: unified_master_tracker
+UNI-566,11,"Paper Trading, Frontend & Documentation",P6,Medium,TODO,Integration,Wire MLModelsPanel.tsx to model APIs,Replace mock model registry with GET /api/v1/models,signal-execution-desk/src/components/MLModelsPanel.tsx,,4,Source: unified_master_tracker
+UNI-567,11,"Paper Trading, Frontend & Documentation",P6,Medium,TODO,Integration,Wire SentimentPanel.tsx to news/sentiment APIs,Replace mock sentiment rows with GET /api/v1/news,signal-execution-desk/src/components/SentimentPanel.tsx,,4,Source: unified_master_tracker
+ADD-033,11,"Paper Trading, Frontend & Documentation",P6,Low,TODO,Documentation,Write performance tuning guide,Optimization tips.,docs/PERFORMANCE.md,ADD-023,2,
+ADD-038,11,"Paper Trading, Frontend & Documentation",P6,Low,TODO,Cleanup,Update README,Match actual structure.,README.md,None,2,
+UNI-568,11,"Paper Trading, Frontend & Documentation",P6,Low,TODO,Integration,Add React Query hooks for all backend endpoints,No data fetching hooks defined,signal-execution-desk/src/hooks/,,4,Source: unified_master_tracker
+UNI-569,11,"Paper Trading, Frontend & Documentation",P6,Low,TODO,Integration,Add TypeScript types matching backend response shapes,No frontend type definitions match backend payloads,signal-execution-desk/src/types/,,4,Source: unified_master_tracker
+PROD-004,12,Live Launch (RL: Post-Launch / Deferred),P6,Critical,TODO,Live,Phase 1 with ₹10K capital,One strategy AI-enabled.,live_logs_phase1.csv,PROD-003,8,
+RL-001,12,Live Launch (RL: Post-Launch / Deferred),P6,Critical,DEFERRED,Environment,Define state space,OHLCV indicators portfolio.,internal/rl/environment/state.go,INF-043,4,Deferred — implement after live-launch is stable
+RL-002,12,Live Launch (RL: Post-Launch / Deferred),P6,Critical,DEFERRED,Environment,Define action space,BUY/SELL/HOLD + position size.,internal/rl/environment/action.go,None,3,Deferred — implement after live-launch is stable
+RL-003,12,Live Launch (RL: Post-Launch / Deferred),P6,Critical,DEFERRED,Environment,Implement reward function,PnL + Sharpe - penalty.,internal/rl/environment/reward.go,None,4,Deferred — implement after live-launch is stable
+RL-004,12,Live Launch (RL: Post-Launch / Deferred),P6,Critical,DEFERRED,Environment,Create Gym-style interface,Reset Step Render methods.,internal/rl/environment/env.go,RL-001 | RL-002 | RL-003,4,Deferred — implement after live-launch is stable
+RL-005,12,Live Launch (RL: Post-Launch / Deferred),P6,Critical,DEFERRED,Environment,Implement episode reset,Initialize portfolio state.,internal/rl/environment/reset.go,RL-004,2,Deferred — implement after live-launch is stable
+RL-006,12,Live Launch (RL: Post-Launch / Deferred),P6,Critical,DEFERRED,Environment,Implement step function,Execute action update reward.,internal/rl/environment/step.go,RL-004,3,Deferred — implement after live-launch is stable
+RL-007,12,Live Launch (RL: Post-Launch / Deferred),P6,Critical,DEFERRED,Bridge,Create gRPC server for Python client,Go env served to Python.,internal/rl/bridge/server.go,RL-004,5,Deferred — implement after live-launch is stable
+RL-008,12,Live Launch (RL: Post-Launch / Deferred),P6,Critical,DEFERRED,Bridge,Define protobuf messages,State Action Reward.,internal/rl/bridge/proto/environment.proto,RL-007,2,Deferred — implement after live-launch is stable
+RL-009,12,Live Launch (RL: Post-Launch / Deferred),P6,Critical,DEFERRED,Bridge,Implement Python gym client,Wrapper that calls Go backend.,scripts/rl/python_client.py,RL-008,4,Deferred — implement after live-launch is stable
+RL-034,12,Live Launch (RL: Post-Launch / Deferred),P6,Critical,DEFERRED,Testing,Unit tests for environment,State action reward.,internal/rl/environment/*_test.go,RL-004,3,Deferred — implement after live-launch is stable
+RL-035,12,Live Launch (RL: Post-Launch / Deferred),P6,Critical,DEFERRED,Testing,Integration tests for training pipeline,Full train loop.,tests/integration/rl_test.go,RL-020,3,Deferred — implement after live-launch is stable
+DEP-011,12,Live Launch (RL: Post-Launch / Deferred),P6,High,TODO,CI,Create GitHub Actions CI,go test vet.,.github/workflows/ci.yml,None,3,
+DEP-012,12,Live Launch (RL: Post-Launch / Deferred),P6,High,TODO,CI,Add coverage gate,>80% required.,.github/workflows/ci.yml,DEP-011,2,
+DEP-013,12,Live Launch (RL: Post-Launch / Deferred),P6,High,TODO,CI,Add migration validation,Test in CI.,.github/workflows/ci.yml,DEP-011,2,
+DEP-014,12,Live Launch (RL: Post-Launch / Deferred),P6,High,TODO,CD,Create GitHub Actions CD,Docker push.,.github/workflows/deploy.yml,DEP-011,2,
+DEP-015,12,Live Launch (RL: Post-Launch / Deferred),P6,High,TODO,CD,Add staging deploy,Auto on merge.,.github/workflows/deploy.yml,DEP-014,2,
+DEP-016,12,Live Launch (RL: Post-Launch / Deferred),P6,High,TODO,CD,Add production deploy,Manual approval.,.github/workflows/deploy.yml,DEP-014,2,
+DOC-007,12,Live Launch (RL: Post-Launch / Deferred),P6,High,TODO,Security,Create security docs,Threat model.,docs/SECURITY.md,SEC-001,2,
+PROD-005,12,Live Launch (RL: Post-Launch / Deferred),P6,High,TODO,Live,Phase 2 with ₹1L capital,All strategies.,live_logs_phase2.csv,PROD-004,24,
+PROD-006,12,Live Launch (RL: Post-Launch / Deferred),P6,High,TODO,Live,Phase 3 with full capital,Production scale.,live_logs_phase3.csv,PROD-005,40,
+PROD-007,12,Live Launch (RL: Post-Launch / Deferred),P6,High,TODO,Backup,Configure automated backups,Point-in-time recovery.,scripts/backup.sh,None,2,
+PROD-009,12,Live Launch (RL: Post-Launch / Deferred),P6,High,TODO,Logging,Configure log rotation,Prevent disk full.,configs/logrotate.conf,None,1,
+PROD-010,12,Live Launch (RL: Post-Launch / Deferred),P6,High,TODO,Monitoring,Set up uptime monitoring,External health checks.,configs/uptime_monitoring.json,RUNTIME-012,2,
+PROD-011,12,Live Launch (RL: Post-Launch / Deferred),P6,High,TODO,Security,Final security review,Pentest checklist.,docs/SECURITY.md,"SEC-006,SEC-011,SEC-008,SEC-009",4,
+PROD-012,12,Live Launch (RL: Post-Launch / Deferred),P6,High,TODO,Review,Post-launch review,Lessons learned.,docs/POST_LAUNCH_REVIEW.md,PROD-006,4,
+RL-010,12,Live Launch (RL: Post-Launch / Deferred),P6,High,DEFERRED,Bridge,Add vectorized environments,Parallel training.,scripts/rl/vector_env.py,RL-009,3,Deferred — implement after live-launch is stable
+RL-011,12,Live Launch (RL: Post-Launch / Deferred),P6,High,DEFERRED,PPO,Implement PPO agent,Stable-baselines3 based.,scripts/rl/ppo_agent.py,RL-009,5,Deferred — implement after live-launch is stable
+RL-012,12,Live Launch (RL: Post-Launch / Deferred),P6,High,DEFERRED,PPO,Implement policy network,MLP architecture.,scripts/rl/networks/policy_network.py,RL-011,3,Deferred — implement after live-launch is stable
+RL-013,12,Live Launch (RL: Post-Launch / Deferred),P6,High,DEFERRED,PPO,Implement value network,State value V(s).,scripts/rl/networks/value_network.py,RL-011,2,Deferred — implement after live-launch is stable
+RL-014,12,Live Launch (RL: Post-Launch / Deferred),P6,High,DEFERRED,PPO,Implement PPO update,Clip surrogate objective.,scripts/rl/ppo_update.py,RL-011,3,Deferred — implement after live-launch is stable
+RL-015,12,Live Launch (RL: Post-Launch / Deferred),P6,High,DEFERRED,PPO,Implement GAE advantage,Generalized Advantage Estimation.,scripts/rl/gae.py,RL-011,2,Deferred — implement after live-launch is stable
+RL-016,12,Live Launch (RL: Post-Launch / Deferred),P6,High,DEFERRED,A3C,Implement A3C agent,Asynchronous Advantage Actor-Critic.,scripts/rl/a3c_agent.py,RL-009,5,Deferred — implement after live-launch is stable
+RL-017,12,Live Launch (RL: Post-Launch / Deferred),P6,High,DEFERRED,A3C,Implement parallel workers,Multiple async workers.,scripts/rl/a3c_workers.py,RL-016,3,Deferred — implement after live-launch is stable
+RL-018,12,Live Launch (RL: Post-Launch / Deferred),P6,High,DEFERRED,A3C,Implement global shared model,Parameter server pattern.,scripts/rl/a3c_global_model.py,RL-016,2,Deferred — implement after live-launch is stable
+RL-027,12,Live Launch (RL: Post-Launch / Deferred),P6,High,DEFERRED,Validation,Compare with baseline strategies,PPO/A3C vs benchmarks.,scripts/rl/backtest_compare.py,RL-020,3,Deferred — implement after live-launch is stable
+RL-028,12,Live Launch (RL: Post-Launch / Deferred),P6,High,DEFERRED,Validation,Walk-forward validation,Train one period test next.,scripts/rl/walk_forward.py,RL-020,3,Deferred — implement after live-launch is stable
+DEP-009,12,Live Launch (RL: Post-Launch / Deferred),P6,Medium,TODO,K8s,Create HPA,Autoscaling.,infra/k8s/hpa.yaml,DEP-005,2,
+DEP-010,12,Live Launch (RL: Post-Launch / Deferred),P6,Medium,TODO,K8s,Create PostgreSQL StatefulSet,DB persistence.,infra/k8s/postgres.yaml,DEP-005,3,
+DOC-008,12,Live Launch (RL: Post-Launch / Deferred),P6,Medium,TODO,Monitoring,Create monitoring guide,Prometheus Grafana.,docs/MONITORING.md,MON-001,2,
+DOC-010,12,Live Launch (RL: Post-Launch / Deferred),P6,Medium,TODO,AI,Create AI operations guide,Model deployment.,docs/AI_OPS.md,AI-001,2,
+DOC-011,12,Live Launch (RL: Post-Launch / Deferred),P6,Medium,TODO,RL,Create RL training guide,PPO/A3C training.,docs/RL_TRAINING.md,RL-020,3,
+DOC-012,12,Live Launch (RL: Post-Launch / Deferred),P6,Medium,TODO,Strategy,Create strategy builder guide,UI usage.,docs/STRATEGY_BUILDER.md,SB-017,2,
+PROD-008,12,Live Launch (RL: Post-Launch / Deferred),P6,Medium,TODO,Backup,Test restore procedure,Recovery validation.,scripts/restore_test.sh,PROD-007,2,
+RL-019,12,Live Launch (RL: Post-Launch / Deferred),P6,Medium,DEFERRED,Training,Implement replay buffer,Store transitions.,internal/rl/buffer/replay_buffer.go,RL-004,3,Deferred — implement after live-launch is stable
+RL-020,12,Live Launch (RL: Post-Launch / Deferred),P6,Medium,DEFERRED,Training,Create training loop,Episode orchestration.,scripts/rl/train_loop.py,RL-011 | RL-016,4,Deferred — implement after live-launch is stable
+RL-021,12,Live Launch (RL: Post-Launch / Deferred),P6,Medium,DEFERRED,Training,Add checkpoint/resume,Save/load weights.,scripts/rl/checkpoint.py,RL-020,2,Deferred — implement after live-launch is stable
+RL-022,12,Live Launch (RL: Post-Launch / Deferred),P6,Medium,DEFERRED,Training,Add TensorBoard logging,Rewards losses.,scripts/rl/logger.py,RL-020,2,Deferred — implement after live-launch is stable
+RL-023,12,Live Launch (RL: Post-Launch / Deferred),P6,Medium,DEFERRED,Training,Hyperparameter tuning,Bayesian search.,scripts/rl/hyperparam_tune.py,RL-020,4,Deferred — implement after live-launch is stable
+RL-029,12,Live Launch (RL: Post-Launch / Deferred),P6,Medium,DEFERRED,Deployment,Export policy to ONNX,For Go inference.,scripts/rl/export_onnx.py,RL-020,2,Deferred — implement after live-launch is stable
+RL-030,12,Live Launch (RL: Post-Launch / Deferred),P6,Medium,DEFERRED,Deployment,Implement ONNX policy in Go,Load for live trading.,internal/rl/onnx_policy.go,RL-029,3,Deferred — implement after live-launch is stable
+RL-031,12,Live Launch (RL: Post-Launch / Deferred),P6,Medium,DEFERRED,Deployment,Add live RL agent,Use trained policy.,internal/rl/live_agent.go,RL-030,2,Deferred — implement after live-launch is stable
+UNI-546,12,Live Launch (RL: Post-Launch / Deferred),P6,Medium,TODO,Market,Per-market trading calendar support,Respect NSE/BSE market holidays and session times,internal/market/,,4,Source: unified_master_tracker
+DOC-009,12,Live Launch (RL: Post-Launch / Deferred),P6,Low,TODO,Contributing,Create contributing guide,How to add features.,docs/CONTRIBUTING.md,None,2,
+RL-024,12,Live Launch (RL: Post-Launch / Deferred),P6,Low,DEFERRED,Advanced,Implement LSTM policy,Temporal dependencies.,scripts/rl/networks/lstm_policy.py,RL-011,4,Deferred — implement after live-launch is stable
+RL-025,12,Live Launch (RL: Post-Launch / Deferred),P6,Low,DEFERRED,Advanced,Add attention mechanism,Transformer policy.,scripts/rl/networks/attention_policy.py,RL-011,5,Deferred — implement after live-launch is stable
+RL-026,12,Live Launch (RL: Post-Launch / Deferred),P6,Low,DEFERRED,Advanced,Multi-asset environment,Multiple instruments.,internal/rl/environment/multi_asset.go,RL-004,5,Deferred — implement after live-launch is stable
+RL-032,12,Live Launch (RL: Post-Launch / Deferred),P6,Low,DEFERRED,Visualization,Policy heatmaps,Action probabilities.,scripts/rl/visualize_policy.py,RL-020,2,Deferred — implement after live-launch is stable
+RL-033,12,Live Launch (RL: Post-Launch / Deferred),P6,Low,DEFERRED,Visualization,Episode replay,Render on chart.,scripts/rl/visualize_episode.py,RL-020,2,Deferred — implement after live-launch is stable
+UNI-580,12,Live Launch (RL: Post-Launch / Deferred),P6,Low,TODO,Security,Per-market trading calendar,Respect NSE/BSE market holidays and session times per market,internal/market/,,4,Source: unified_master_tracker

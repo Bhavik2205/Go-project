@@ -1,3 +1,3 @@
+// Package model provides ONNX-based ML inference for sentiment analysis.
+// trainer.go is reserved for model retraining pipeline logic.
 package model
-
-// Add sentiment analysis code that loads the ONNX model here.

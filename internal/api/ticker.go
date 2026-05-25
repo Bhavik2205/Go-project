@@ -14,6 +14,9 @@ import (
 // RedisMarketDataChannel defines the Redis Pub/Sub channel for market data.
 const RedisMarketDataChannel = "market_data_ticks"
 
+// // TickHandler defines a callback function type for ticks
+// type TickHandler func(jsonData []byte)
+
 // SubscribeToTicks subscribes to ticks and calls the given handler on each tick
 func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, redisClient *cache.RedisClient) error {
 	if redisClient == nil {
@@ -25,7 +28,7 @@ func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, redisClient *c
 
 	for _, info := range infos {
 		tokens = append(tokens, info.Token)
-		tokenToLabel[info.Token] = fmt.Sprintf("%s (%s)", info.Symbol, info.Exchange)
+		tokenToLabel[info.Token] = fmt.Sprintf("%s:%s", info.Exchange, info.Symbol)
 	}
 
 	z.Ticker = kiteticker.New(z.APIKey, z.AccessToken)
@@ -54,7 +57,31 @@ func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, redisClient *c
 			lastPrices[tick.InstrumentToken] = currentPrice
 			lastVolumes[tick.InstrumentToken] = int(currentVolume)
 
+			// // Visual feedback for console (can be removed in production if not needed)
+			// colorReset := "\033[0m"
+			// colorRed := "\033[31m"
+			// colorGreen := "\033[32m"
+			// color := colorReset
+
+			// if prevPrice != 0 {
+			// 	if currentPrice > prevPrice {
+			// 		color = colorGreen
+			// 	} else if currentPrice < prevPrice {
+			// 		color = colorRed
+			// 	}
+			// }
+
 			label := tokenToLabel[tick.InstrumentToken]
+			// fmt.Printf(
+			// 	"📈 %s [Token: %d] - LTP: %s%.2f%s Vol: %d O: %.2f H: %.2f L: %.2f C: %.2f\n",
+			// 	label, tick.InstrumentToken,
+			// 	color, currentPrice, colorReset,
+			// 	tick.VolumeTraded,
+			// 	tick.OHLC.Open,
+			// 	tick.OHLC.High,
+			// 	tick.OHLC.Low,
+			// 	tick.OHLC.Close,
+			// )
 
 			enrichedTick := struct {
 				Symbol           string          `json:"symbol"`

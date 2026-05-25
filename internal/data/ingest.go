@@ -23,6 +23,11 @@ import (
 	redis "github.com/redis/go-redis/v9"
 )
 
+const (
+	wsPingPeriod = 45 * time.Second
+	wsWriteWait  = 10 * time.Second
+)
+
 // MarketDataIngestor holds dependencies for market data ingestion and broadcasting.
 type MarketDataIngestor struct {
 	dbClient             *db.DBClient
@@ -79,7 +84,7 @@ func (m *MarketDataIngestor) StartIngestionAndBroadcast(ctx context.Context) {
 	m.startWebSocketBroadcasterWorkers(ctx)
 
 	// Start monitoring goroutine for metrics
-	go m.startMonitoring()
+	go m.startMonitoring(ctx)
 
 	// These remain as primary consumers/dispatchers
 	go m.subscribeAndProcessRedis(ctx)
@@ -90,7 +95,7 @@ func (m *MarketDataIngestor) StartIngestionAndBroadcast(ctx context.Context) {
 }
 
 // Monitoring goroutine for DB errors, WS drops, and broadcast rate.
-func (m *MarketDataIngestor) startMonitoring() {
+func (m *MarketDataIngestor) startMonitoring(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	var lastBroadcasted uint64
@@ -117,6 +122,8 @@ func (m *MarketDataIngestor) startMonitoring() {
 			if rate < 10 {
 				zap.L().Warn("Low broadcast rate", zap.Uint64("broadcast_rate_per_5s", rate))
 			}
+		case <-ctx.Done():
+			return
 		}
 	}
 }
@@ -162,10 +169,8 @@ func (m *MarketDataIngestor) subscribeAndProcessRedis(ctx context.Context) {
 		}
 
 		if attempt == maxAttempts-1 {
-			zap.L().Fatal("❌ Failed to subscribe to Redis PubSub after multiple attempts, exiting.",
+			zap.L().Error("Failed to subscribe to Redis PubSub after max attempts, stopping ingestor.",
 				zap.Int("max_attempts", maxAttempts))
-			close(m.dbFlushCh)
-			close(m.broadcastChannel)
 			return
 		}
 	}
@@ -176,7 +181,10 @@ func (m *MarketDataIngestor) processRedisMessages(ctx context.Context, ch <-chan
 	defer func() {
 		if pubsub != nil {
 			if err := pubsub.Close(); err != nil {
-				zap.L().Error("Failed to close Redis PubSub connection during shutdown", zap.Error(err))
+				// "use of closed network connection" is expected during shutdown — suppress it.
+				if !isClosedNetworkError(err) {
+					zap.L().Error("Failed to close Redis PubSub connection during shutdown", zap.Error(err))
+				}
 			}
 		}
 		close(m.dbFlushCh)
@@ -254,6 +262,12 @@ func min(a, b int) int {
 	return b
 }
 
+// isClosedNetworkError returns true for the benign "use of closed network connection"
+// error that occurs when a TCP connection is closed before we call Close() on it.
+func isClosedNetworkError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "use of closed network connection")
+}
+
 // processTick converts the enriched tick to MarketData and adds it to the buffer.
 func (m *MarketDataIngestor) processTick(enrichedTick struct {
 	Symbol           string
@@ -270,24 +284,27 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 	currentSequenceID := m.tickSequenceCounters[uint(tick.InstrumentToken)][normalizedTimestamp] + 1
 	m.tickSequenceCounters[uint(tick.InstrumentToken)][normalizedTimestamp] = currentSequenceID
 	m.sequenceMux.Unlock()
+	// Pad depth to 5 levels; tick.Depth.Buy/Sell are fixed [5]DepthItem arrays.
+	buyDepth := tick.Depth.Buy
+	sellDepth := tick.Depth.Sell
 	zap.L().Debug("Tick received",
 		zap.String("symbol", enrichedTick.Symbol),
 		zap.Float64("ltp", tick.LastPrice),
-		zap.Float64("bid", tick.Depth.Buy[0].Price),
-		zap.Float64("ask", tick.Depth.Sell[0].Price),
+		zap.Float64("bid", buyDepth[0].Price),
+		zap.Float64("ask", sellDepth[0].Price),
 		zap.Int("volume", int(tick.VolumeTraded)),
 		zap.Float64("prev_close", tick.OHLC.Close),
 	)
 	GetMarketHeatmap().Update(
 		enrichedTick.Symbol,
 		tick.LastPrice,
-		tick.Depth.Buy[0].Price,
-		tick.Depth.Sell[0].Price,
-		int64(tick.Depth.Buy[0].Quantity),
-		int64(tick.Depth.Sell[0].Quantity),
+		buyDepth[0].Price,
+		sellDepth[0].Price,
+		int64(buyDepth[0].Quantity),
+		int64(sellDepth[0].Quantity),
 		int64(tick.VolumeTraded),
-		tick.LastPrice,  // For volume at price
-		tick.OHLC.Close, // Assuming this is the previous close for percentage change calculation
+		tick.LastPrice,
+		tick.OHLC.Close,
 	)
 	zap.L().Debug("Heatmap updated", zap.String("symbol", enrichedTick.Symbol))
 	md := db.MarketData{
@@ -304,36 +321,36 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 		Low:                tick.OHLC.Low,
 		Close:              tick.OHLC.Close,
 		OpenInterest:       tick.OI,
-		BidPrice1:          tick.Depth.Buy[0].Price,
-		BidQuantity1:       tick.Depth.Buy[0].Quantity,
-		BidOrders1:         tick.Depth.Buy[0].Orders,
-		BidPrice2:          tick.Depth.Buy[1].Price,
-		BidQuantity2:       tick.Depth.Buy[1].Quantity,
-		BidOrders2:         tick.Depth.Buy[1].Orders,
-		BidPrice3:          tick.Depth.Buy[2].Price,
-		BidQuantity3:       tick.Depth.Buy[2].Quantity,
-		BidOrders3:         tick.Depth.Buy[2].Orders,
-		BidPrice4:          tick.Depth.Buy[3].Price,
-		BidQuantity4:       tick.Depth.Buy[3].Quantity,
-		BidOrders4:         tick.Depth.Buy[3].Orders,
-		BidPrice5:          tick.Depth.Buy[4].Price,
-		BidQuantity5:       tick.Depth.Buy[4].Quantity,
-		BidOrders5:         tick.Depth.Buy[4].Orders,
-		AskPrice1:          tick.Depth.Sell[0].Price,
-		AskQuantity1:       tick.Depth.Sell[0].Quantity,
-		AskOrders1:         tick.Depth.Sell[0].Orders,
-		AskPrice2:          tick.Depth.Sell[1].Price,
-		AskQuantity2:       tick.Depth.Sell[1].Quantity,
-		AskOrders2:         tick.Depth.Sell[1].Orders,
-		AskPrice3:          tick.Depth.Sell[2].Price,
-		AskQuantity3:       tick.Depth.Sell[2].Quantity,
-		AskOrders3:         tick.Depth.Sell[2].Orders,
-		AskPrice4:          tick.Depth.Sell[3].Price,
-		AskQuantity4:       tick.Depth.Sell[3].Quantity,
-		AskOrders4:         tick.Depth.Sell[3].Orders,
-		AskPrice5:          tick.Depth.Sell[4].Price,
-		AskQuantity5:       tick.Depth.Sell[4].Quantity,
-		AskOrders5:         tick.Depth.Sell[4].Orders,
+		BidPrice1:          buyDepth[0].Price,
+		BidQuantity1:       buyDepth[0].Quantity,
+		BidOrders1:         buyDepth[0].Orders,
+		BidPrice2:          buyDepth[1].Price,
+		BidQuantity2:       buyDepth[1].Quantity,
+		BidOrders2:         buyDepth[1].Orders,
+		BidPrice3:          buyDepth[2].Price,
+		BidQuantity3:       buyDepth[2].Quantity,
+		BidOrders3:         buyDepth[2].Orders,
+		BidPrice4:          buyDepth[3].Price,
+		BidQuantity4:       buyDepth[3].Quantity,
+		BidOrders4:         buyDepth[3].Orders,
+		BidPrice5:          buyDepth[4].Price,
+		BidQuantity5:       buyDepth[4].Quantity,
+		BidOrders5:         buyDepth[4].Orders,
+		AskPrice1:          sellDepth[0].Price,
+		AskQuantity1:       sellDepth[0].Quantity,
+		AskOrders1:         sellDepth[0].Orders,
+		AskPrice2:          sellDepth[1].Price,
+		AskQuantity2:       sellDepth[1].Quantity,
+		AskOrders2:         sellDepth[1].Orders,
+		AskPrice3:          sellDepth[2].Price,
+		AskQuantity3:       sellDepth[2].Quantity,
+		AskOrders3:         sellDepth[2].Orders,
+		AskPrice4:          sellDepth[3].Price,
+		AskQuantity4:       sellDepth[3].Quantity,
+		AskOrders4:         sellDepth[3].Orders,
+		AskPrice5:          sellDepth[4].Price,
+		AskQuantity5:       sellDepth[4].Quantity,
+		AskOrders5:         sellDepth[4].Orders,
 		TotalBuyQuantity:   tick.TotalBuyQuantity,
 		TotalSellQuantity:  tick.TotalSellQuantity,
 	}
@@ -378,7 +395,8 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 func (m *MarketDataIngestor) startDBFlusher(ctx context.Context) {
 	flushInterval := time.Duration(m.cfg.Ingestion.MarketDataFlushIntervalMS) * time.Millisecond
 	if flushInterval <= 0 {
-		zap.L().Fatal("MarketDataFlushIntervalMS must be a positive duration in app.yaml", zap.Int("MarketDataFlushIntervalMS", m.cfg.Ingestion.MarketDataFlushIntervalMS))
+		zap.L().Error("MarketDataFlushIntervalMS must be positive in app.yaml, defaulting to 500ms")
+		flushInterval = 500 * time.Millisecond
 	}
 	ticker := time.NewTicker(flushInterval)
 	defer ticker.Stop()
@@ -583,40 +601,37 @@ func (m *MarketDataIngestor) RegisterWebSocketClient(conn *websocket.Conn) {
 
 // UnregisterWebSocketClient removes a WebSocket client and signals its write pump to stop.
 func (m *MarketDataIngestor) UnregisterWebSocketClient(conn *websocket.Conn) {
-	if clientWriteCh, ok := m.wsClients.Load(conn); ok {
-		select {
-		case <-clientWriteCh.(chan []byte):
-		default:
-			close(clientWriteCh.(chan []byte))
-		}
-		m.wsClients.Delete(conn)
+	if clientWriteCh, ok := m.wsClients.LoadAndDelete(conn); ok {
+		close(clientWriteCh.(chan []byte))
 		conn.Close()
 		zap.L().Info("🔌 WebSocket client disconnected", zap.String("remote_addr", conn.RemoteAddr().String()))
-	} else {
-		zap.L().Warn("Attempted to unregister a WebSocket client that was not found.", zap.String("remote_addr", conn.RemoteAddr().String()))
 	}
 }
 
 // writePump reads messages from a client's dedicated channel and writes them to the WebSocket connection.
+// It also sends periodic pings to detect stale connections.
 func (m *MarketDataIngestor) writePump(conn *websocket.Conn, clientWriteCh <-chan []byte) {
-	defer func() {
-		m.UnregisterWebSocketClient(conn)
-		zap.L().Info("🚽 WebSocket write pump stopped for client", zap.String("remote_addr", conn.RemoteAddr().String()))
-	}()
+	defer zap.L().Info("WebSocket write pump stopped", zap.String("remote_addr", conn.RemoteAddr().String()))
+	pingTicker := time.NewTicker(wsPingPeriod)
+	defer pingTicker.Stop()
 	for {
 		select {
 		case message, ok := <-clientWriteCh:
 			if !ok {
-				zap.L().Info("WebSocket client write channel closed, write pump exiting gracefully", zap.String("remote_addr", conn.RemoteAddr().String()))
+				_ = conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
+				_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 				return
 			}
-			err := conn.WriteMessage(websocket.TextMessage, message)
-			if err != nil {
+			_ = conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
+			if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-					zap.L().Error("WebSocket write error (unexpected close) in write pump", zap.Error(err), zap.String("remote_addr", conn.RemoteAddr().String()))
-				} else {
-					zap.L().Info("WebSocket write error (graceful close/other) in write pump", zap.Error(err), zap.String("remote_addr", conn.RemoteAddr().String()))
+					zap.L().Error("WebSocket write error", zap.Error(err), zap.String("remote_addr", conn.RemoteAddr().String()))
 				}
+				return
+			}
+		case <-pingTicker.C:
+			_ = conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
 		}
@@ -709,4 +724,14 @@ func (m *MarketDataIngestor) loadInitialTickSequenceCounters() {
 		m.tickSequenceCounters[uint(r.InstrumentToken)][r.Timestamp] = r.MaxSequenceID
 	}
 	zap.L().Info("✅ Loaded initial tick sequence counters from DB", zap.Int("count", len(results)), zap.String("from_timestamp", todayStart.String()))
+}
+
+// GetWebSocketClientCount returns the number of currently connected WebSocket clients for ticks.
+func (m *MarketDataIngestor) GetWebSocketClientCount() int {
+	count := 0
+	m.wsClients.Range(func(key, value interface{}) bool {
+		count++
+		return true
+	})
+	return count
 }

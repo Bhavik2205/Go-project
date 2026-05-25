@@ -14,8 +14,9 @@ import (
 // AppConfig holds the application-wide settings
 type AppConfig struct {
 	Server struct {
-		HTTPPort      int    `yaml:"http_port"`
-		WebSocketPath string `yaml:"websocket_path"`
+		HTTPPort            int    `yaml:"http_port"`
+		MaxRequestBodyBytes int    `yaml:"max_request_body_bytes"` // New field for max request body size
+		WebSocketPath       string `yaml:"websocket_path"`
 	} `yaml:"server"`
 	Log struct {
 		Level  string `yaml:"level"`
@@ -144,16 +145,18 @@ type VWAPConfig struct {
 
 // IndicatorsConfig now embeds these new individual config structs.
 type IndicatorsConfig struct {
-	SMA            SMAConfig            `yaml:"sma"`
-	EMA            EMAConfig            `yaml:"ema"`
-	RSI            RSIConfig            `yaml:"rsi"`
-	MACD           MACDConfig           `yaml:"macd"`
-	ATR            ATRConfig            `yaml:"atr"`
-	Stochastic     StochasticConfig     `yaml:"stochastic"`
-	BollingerBands BollingerBandsConfig `yaml:"bollinger_bands"`
-	ADX            ADXConfig            `yaml:"adx"`
-	OBV            OBVConfig            `yaml:"obv"`  // New
-	VWAP           VWAPConfig           `yaml:"vwap"` // New
+	OutputWorkerCount       int                  `yaml:"output_worker_count"`        // Number of workers for indicator output processing
+	OutputChannelBufferSize int                  `yaml:"output_channel_buffer_size"` // Buffer size for indicator output channel
+	SMA                     SMAConfig            `yaml:"sma"`
+	EMA                     EMAConfig            `yaml:"ema"`
+	RSI                     RSIConfig            `yaml:"rsi"`
+	MACD                    MACDConfig           `yaml:"macd"`
+	ATR                     ATRConfig            `yaml:"atr"`
+	Stochastic              StochasticConfig     `yaml:"stochastic"`
+	BollingerBands          BollingerBandsConfig `yaml:"bollinger_bands"`
+	ADX                     ADXConfig            `yaml:"adx"`
+	OBV                     OBVConfig            `yaml:"obv"`  // New
+	VWAP                    VWAPConfig           `yaml:"vwap"` // New
 }
 
 // ZerodhaConfig holds Zerodha API connection settings
@@ -297,5 +300,25 @@ func LoadIndicatorsConfig(path string) (*IndicatorsConfig, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal indicators config %s: %w", path, err)
 	}
+	// Set defaults if not provided
+	if cfg.OutputWorkerCount == 0 {
+		cfg.OutputWorkerCount = 30
+	}
+	if cfg.OutputChannelBufferSize == 0 {
+		cfg.OutputChannelBufferSize = 5000
+	}
 	return &cfg, nil
 }
+
+// // LoadZerodhaConfig loads Zerodha API configurations from a YAML file.
+// func LoadZerodhaConfig(path string) (*ZerodhaConfig, error) {
+//     data, err := os.ReadFile(path)
+//     if err != nil {
+//         return nil, fmt.Errorf("failed to read Zerodha config file %s: %w", path, err)
+//     }
+//     var cfg ZerodhaConfig
+//     if err := yaml.Unmarshal(data, &cfg); err != nil {
+//         return nil, fmt.Errorf("failed to unmarshal Zerodha config %s: %w", path, err)
+//     }
+//     return &cfg, nil
+// }
