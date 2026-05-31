@@ -62,14 +62,14 @@ func main() {
 	utils.InitLogger(appCfg.Log.Level, appCfg.Log.Output)
 	zap.L().Info("📦 ML-Bot service starting up...")
 
-	// ---- Initialize audit logger ----
-	audit.Init(zap.L())
-
 	// --- Create the application container ---
 	application, err := app.New(appCfg, dbCfg, redisCfg, indicatorsCfg, symbolsCfg)
 	if err != nil {
 		zap.L().Fatal("Failed to initialise application", zap.Error(err))
 	}
+
+	// ---- Initialize audit logger ----
+	audit.Init(zap.L(), application.DB.DB)
 
 	// --- Graceful shutdown context ---
 	ctx, cancel := context.WithCancel(context.Background())

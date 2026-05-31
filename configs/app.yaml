@@ -28,12 +28,16 @@ ingestion:
   redis_reconnect_initial_delay_ms: 1000 # Initial delay for Redis reconnection
   redis_reconnect_max_delay_ms: 5000 # Maximum delay for Redis reconnection
   redis_reconnect_max_attempts: 10
+  tick_ingestion_timeout_ms: 100 # Timeout for tick ingestion to prevent blocking (e.g., 100 ms)
+  db_flush_timeout_ms: 5000 # Timeout for blocking DB send operations to prevent deadlocks
 
 monitor:
   broadcast_interval: 5s # e.g., 5 seconds
 
 candles:
-  intervals: ["1m", "5m", "15m", "1h"] # Define intervals for candlestick generation
+  intervals: ["1s","5s","15s","30s","1m","5m","15m","30m","1h"]
+  grace_period_ms: 100
+  finalize_interval_ms: 1000  
 
 # Other application-wide settings
 graceful_shutdown_timeout_seconds: 15

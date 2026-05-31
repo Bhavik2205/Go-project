@@ -2,12 +2,12 @@ package auth
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/Bhavik2205/ML-Bot/internal/audit"
 	"github.com/Bhavik2205/ML-Bot/internal/auth"
 	"github.com/Bhavik2205/ML-Bot/internal/db"
 	"github.com/Bhavik2205/ML-Bot/internal/validation"
-	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -35,18 +35,34 @@ func HandleSignup(dbClient *db.DBClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req signupRequest
 		if !validation.BindAndValidate(w, r, &req) {
-			audit.LogEvent(r.Context(), "signup", "user", "failure",
-				zap.String("email", req.Email),
-				zap.String("reason", "validation_failed"),
+			audit.LogEvent(r.Context(),
+				"SIGNUP",
+				"user",
+				"",
+				"CREATE",
+				"FAILURE",
+				map[string]any{
+					"email":  req.Email,
+					"reason": "validation_failed",
+				},
+				"validation_failed",
 			)
 			return
 		}
 
 		hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), 12)
 		if err != nil {
-			audit.LogEvent(r.Context(), "signup", "user", "failure",
-				zap.String("email", req.Email),
-				zap.String("reason", "password_hashing_failed"),
+			audit.LogEvent(r.Context(),
+				"SIGNUP",
+				"user",
+				"",
+				"CREATE",
+				"FAILURE",
+				map[string]any{
+					"email":  req.Email,
+					"reason": "password_hashing_failed",
+				},
+				"password_hashing_failed",
 			)
 			writeError(w, http.StatusInternalServerError, r, "INTERNAL_ERROR", "Failed to process request", nil)
 			return
@@ -59,9 +75,17 @@ func HandleSignup(dbClient *db.DBClient) http.HandlerFunc {
 			IsActive:     true,
 		}
 		if err := dbClient.DB.Create(&user).Error; err != nil {
-			audit.LogEvent(r.Context(), "signup", "user", "failure",
-				zap.String("email", req.Email),
-				zap.String("reason", "email_already_registered"),
+			audit.LogEvent(r.Context(),
+				"SIGNUP",
+				"user",
+				"",
+				"CREATE",
+				"FAILURE",
+				map[string]any{
+					"email":  req.Email,
+					"reason": "email_already_registered",
+				},
+				"email_already_registered",
 			)
 			writeError(w, http.StatusConflict, r, "CONFLICT", "Email already registered", nil)
 			return
@@ -69,18 +93,34 @@ func HandleSignup(dbClient *db.DBClient) http.HandlerFunc {
 
 		accessToken, refreshToken, err := generateTokenPair(user.ID)
 		if err != nil {
-			audit.LogEvent(r.Context(), "signup", "user", "failure",
-				zap.String("email", req.Email),
-				zap.String("reason", "token_generation_failed"),
+			audit.LogEvent(r.Context(),
+				"SIGNUP",
+				"user",
+				"",
+				"CREATE",
+				"FAILURE",
+				map[string]any{
+					"email":  req.Email,
+					"reason": "token_generation_failed",
+				},
+				"token_generation_failed",
 			)
 			writeError(w, http.StatusInternalServerError, r, "INTERNAL_ERROR", "Failed to generate tokens", nil)
 			return
 		}
 
-		audit.LogEvent(r.Context(), "signup", "user", "success",
-			zap.String("email", req.Email),
-			zap.String("user_name", req.UserName),
-			zap.Uint("user_id", user.ID),
+		audit.LogEvent(r.Context(),
+			"SIGNUP",
+			"user",
+			strconv.FormatUint(uint64(user.ID), 10),
+			"CREATE",
+			"SUCCESS",
+			map[string]any{
+				"email":     req.Email,
+				"user_name": req.UserName,
+				"user_id":   user.ID,
+			},
+			"",
 		)
 		writeSuccess(w, http.StatusCreated, r, authResponse{
 			User:         userPayload{ID: user.ID, Email: user.Email, UserName: user.UserName, IsActive: user.IsActive},

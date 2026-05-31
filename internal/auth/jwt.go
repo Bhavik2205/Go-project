@@ -144,8 +144,8 @@ func ParseToken(tokenStr, expectedType string) (*Claims, error) {
 	return claims, nil
 }
 
-func GetUserIDFromContext(ctx context.Context) (uint64, error) {
-	if userID, ok := ctx.Value("userID").(uint64); ok {
+func GetUserIDFromContext(ctx context.Context) (uint, error) {
+	if userID, ok := ctx.Value("userID").(uint); ok {
 		return userID, nil
 	}
 	return 0, errors.New("no user ID in context")

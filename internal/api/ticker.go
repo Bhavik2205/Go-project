@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Bhavik2205/ML-Bot/internal/cache" // Import your Redis client
+	"github.com/Bhavik2205/ML-Bot/internal/marketdata"
 	kitemodels "github.com/zerodha/gokiteconnect/v4/models"
 	kiteticker "github.com/zerodha/gokiteconnect/v4/ticker"
 	"go.uber.org/zap" // Use zap logger
@@ -14,10 +15,7 @@ import (
 // RedisMarketDataChannel defines the Redis Pub/Sub channel for market data.
 const RedisMarketDataChannel = "market_data_ticks"
 
-// // TickHandler defines a callback function type for ticks
-// type TickHandler func(jsonData []byte)
-
-// SubscribeToTicks subscribes to ticks and calls the given handler on each tick
+// SubscribeToTicks subscribes to ticks and publishes them as NormalizedTick to Redis.
 func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, redisClient *cache.RedisClient) error {
 	if redisClient == nil {
 		return fmt.Errorf("RedisClient is nil, cannot publish ticks")
@@ -82,27 +80,51 @@ func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, redisClient *c
 			// 	tick.OHLC.Low,
 			// 	tick.OHLC.Close,
 			// )
+			// Construct NormalizedTick
+			normalized := marketdata.NormalizedTick{
+				InstrumentToken:    tick.InstrumentToken,
+				Symbol:             label,
+				Exchange:           "", // extract from label if needed
+				EventTime:          tick.Timestamp.Time,
+				IngestTime:         time.Now(),
+				LastPrice:          tick.LastPrice,
+				LastTradedQuantity: tick.LastTradedQuantity,
+				Volume:             tick.VolumeTraded,
+				AverageTradePrice:  tick.AverageTradePrice,
+				NetChange:          tick.NetChange,
+				// PercentChange, PrevClose would need tick.OHLC.Close? We'll set later.
+				OHLC:              tick.OHLC,
+				Depth:             tick.Depth,
+				TotalBuyQuantity:  tick.TotalBuyQuantity,
+				TotalSellQuantity: tick.TotalSellQuantity,
+				OpenInterest:      tick.OI,
+			}
+			// Compute percent change and prev close
+			if normalized.OHLC.Close != 0 {
+				normalized.PrevClose = normalized.OHLC.Close
+				normalized.PercentChange = (normalized.LastPrice - normalized.PrevClose) / normalized.PrevClose * 100
+			}
 
 			enrichedTick := struct {
-				Symbol           string          `json:"symbol"`
-				ProcessedAtNanos int64           `json:"processed_at_nanos"` // Timestamp when this was processed by the API gateway
-				Tick             kitemodels.Tick `json:"tick"`
+				Symbol           string                    `json:"symbol"`
+				ProcessedAtNanos int64                     `json:"processed_at_nanos"` // Timestamp when this was processed by the API gateway
+				Tick             marketdata.NormalizedTick `json:"tick"`
 			}{
 				Symbol:           label,
 				ProcessedAtNanos: time.Now().UnixNano(),
-				Tick:             tick,
+				Tick:             normalized,
 			}
 
-			if jsonData, err := json.Marshal(enrichedTick); err == nil {
-				err := redisClient.Publish(RedisMarketDataChannel, jsonData)
-				if err != nil {
-					zap.L().Error("❌ Failed to publish tick to Redis",
-						zap.Uint32("instrument_token", tick.InstrumentToken),
-						zap.Error(err),
-					)
-				}
-			} else {
+			jsonData, err := json.Marshal(enrichedTick)
+			if err == nil {
 				zap.L().Error("❌ Failed to marshal enriched tick data for Redis",
+					zap.Uint32("instrument_token", tick.InstrumentToken),
+					zap.Error(err),
+				)
+				return
+			}
+			if err := redisClient.Publish(RedisMarketDataChannel, jsonData); err != nil {
+				zap.L().Error("❌ Failed to publish tick to Redis",
 					zap.Uint32("instrument_token", tick.InstrumentToken),
 					zap.Error(err),
 				)

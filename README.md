@@ -803,7 +803,9 @@ tree -I '.git|logs|data' --dirsfirst;
 1) chmod +x scripts/smoke_test.sh
 2)./scripts/smoke_test.sh
 
-
+* **command to kill the e2e test script**
+1) lsof -i :8080 | grep LISTEN 
+2) kill -TERM <PID (from step 1)>
 // TICKET STATUS
 
 TODO - 340

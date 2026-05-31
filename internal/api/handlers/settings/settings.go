@@ -36,10 +36,18 @@ func HandleGetSettings(dbClient *db.DBClient) http.HandlerFunc {
 		err := dbClient.DB.Where("user_id = ? AND section = ?", userID, section).First(&setting).Error
 		if err == gorm.ErrRecordNotFound {
 			// Log audit for empty response
-			audit.LogEvent(r.Context(), "settings_get", "settings", "success",
-				zap.Uint("user_id", userID),
-				zap.String("section", section),
-				zap.Bool("found", false),
+			audit.LogEvent(r.Context(),
+				"SETTINGS_GET",
+				"settings",
+				"",
+				"READ",
+				"SUCCESS",
+				map[string]any{
+					"user_id": userID,
+					"section": section,
+					"found":   false,
+				},
+				"",
 			)
 			writeJSON(w, http.StatusOK, settingsResponse{
 				Section: section,
@@ -53,10 +61,18 @@ func HandleGetSettings(dbClient *db.DBClient) http.HandlerFunc {
 			return
 		}
 
-		audit.LogEvent(r.Context(), "settings_get", "settings", "success",
-			zap.Uint("user_id", userID),
-			zap.String("section", section),
-			zap.Bool("found", true),
+		audit.LogEvent(r.Context(),
+			"SETTINGS_GET",
+			"settings",
+			"",
+			"READ",
+			"SUCCESS",
+			map[string]any{
+				"user_id": userID,
+				"section": section,
+				"found":   true,
+			},
+			"",
 		)
 
 		writeJSON(w, http.StatusOK, settingsResponse{
@@ -124,9 +140,17 @@ func HandleUpdateSettings(dbClient *db.DBClient) http.HandlerFunc {
 			}
 		}
 
-		audit.LogEvent(r.Context(), "settings_update", "settings", "success",
-			zap.Uint("user_id", userID),
-			zap.String("section", req.Section),
+		audit.LogEvent(r.Context(),
+			"SETTINGS_UPDATE",
+			"settings",
+			"",
+			"UPDATE",
+			"SUCCESS",
+			map[string]any{
+				"user_id": userID,
+				"section": req.Section,
+			},
+			"",
 		)
 
 		writeJSON(w, http.StatusOK, map[string]string{"message": "settings updated"})

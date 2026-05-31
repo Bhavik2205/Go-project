@@ -36,10 +36,15 @@ func (s *Server) Start(ctx context.Context, port int) error {
 	if s.deps.AppConfig != nil && s.deps.AppConfig.Server.MaxRequestBodyBytes > 0 {
 		maxBytes = int64(s.deps.AppConfig.Server.MaxRequestBodyBytes)
 	}
+	// Rate limiting: 10 requests/sec, burst 20
+	rateLimiter := middleware.NewRateLimiter(10, 20)
+
+	router.Use(rateLimiter.Middleware)
 	router.Use(middleware.MaxBytesMiddleware(maxBytes))
 	router.Use(middleware.SecurityHeaders())
 	router.Use(enableCORS)
 	router.Use(recoverMiddleware)
+	router.Use(middleware.AddRequestInfoToContext)
 	router.Use(middleware.RequestID)
 	router.Use(middleware.AuditMiddleware(zap.L()))
 	router.Use(middleware.Logger)

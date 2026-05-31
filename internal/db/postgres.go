@@ -48,3 +48,12 @@ func (c *DBClient) AutoMigrate(models ...interface{}) error {
 	zap.L().Info("✅ Database migrations completed successfully.")
 	return nil
 }
+
+// Close closes the underlying database connection.
+func (c *DBClient) Close() error {
+	sqlDB, err := c.DB.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.Close()
+}

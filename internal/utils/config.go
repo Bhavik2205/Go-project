@@ -34,12 +34,16 @@ type AppConfig struct {
 		RedisReconnectInitialDelayMs int `yaml:"redis_reconnect_initial_delay_ms"` // Initial delay for Redis reconnect
 		RedisReconnectMaxDelayMs     int `yaml:"redis_reconnect_max_delay_ms"`     // Max delay for Redis reconnect
 		RedisReconnectMaxAttempts    int `yaml:"redis_reconnect_max_attempts"`     // Max attempts for Redis reconnect
+		TickIngestionTimeoutMs       int `yaml:"tick_ingestion_timeout_ms"`        // Timeout for tick ingestion to prevent blocking
+		DBFlushTimeoutMs             int `yaml:"db_flush_timeout_ms"`              // Timeout for blocking DB send operations to prevent deadlocks
 	} `yaml:"ingestion"`
 	Monitor struct {
 		BroadcastInterval time.Duration `yaml:"broadcast_interval"`
 	} `yaml:"monitor"`
 	Candles struct {
-		Intervals []string `yaml:"intervals"` // e.g., ["1m", "5m", "15m", "1h", "1d"]
+		Intervals          []string `yaml:"intervals"` // e.g., ["1m", "5m", "15m", "1h", "1d"]
+		GracePeriodMs      int      `yaml:"grace_period_ms"`
+		FinalizeIntervalMs int      `yaml:"finalize_interval_ms"`
 	}
 	Market struct {
 		Simulate                  bool    `yaml:"simulate"`
@@ -199,6 +203,15 @@ func LoadAppConfig(path string) (*AppConfig, error) {
 	}
 	if cfg.Ingestion.RedisReconnectMaxAttempts == 0 {
 		cfg.Ingestion.RedisReconnectMaxAttempts = 10 // Default to 10 attempts
+	}
+	if len(cfg.Candles.Intervals) == 0 {
+		cfg.Candles.Intervals = []string{"1s", "5s", "15s", "30s", "1m", "5m", "15m", "30m", "1h"}
+	}
+	if cfg.Candles.GracePeriodMs == 0 {
+		cfg.Candles.GracePeriodMs = 100
+	}
+	if cfg.Candles.FinalizeIntervalMs == 0 {
+		cfg.Candles.FinalizeIntervalMs = 1000
 	}
 
 	return &cfg, nil

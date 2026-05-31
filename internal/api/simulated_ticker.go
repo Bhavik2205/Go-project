@@ -9,28 +9,10 @@ import (
 	"time"
 
 	"github.com/Bhavik2205/ML-Bot/internal/cache" // Ensure this path is correct
+	"github.com/Bhavik2205/ML-Bot/internal/marketdata"
 	kitemodels "github.com/zerodha/gokiteconnect/v4/models"
 	"go.uber.org/zap"
 )
-
-type SimTick struct {
-	InstrumentToken    uint32           `json:"InstrumentToken"`
-	Timestamp          string           `json:"Timestamp"`
-	LastPrice          float64          `json:"LastPrice"`
-	OHLC               kitemodels.OHLC  `json:"OHLC"`
-	VolumeTraded       uint32           `json:"VolumeTraded"`
-	Volume             uint32           `json:"Volume"`
-	Depth              kitemodels.Depth `json:"Depth"`
-	TotalBuyQuantity   uint32           `json:"TotalBuyQuantity"`
-	TotalSellQuantity  uint32           `json:"TotalSellQuantity"`
-	LastTradedQuantity uint32           `json:"LastTradedQuantity"` // <-- Added
-	AverageTradePrice  float64          `json:"AverageTradePrice"`  // <-- Added
-	NetChange          float64          `json:"NetChange"`          // <-- Added
-	// Adding PrevClose to the SimTick struct for clarity and completeness
-	PrevClose float64 `json:"PrevClose"`
-	// Adding PercentChange for convenience, often derived from NetChange and PrevClose
-	PercentChange float64 `json:"PercentChange"`
-}
 
 // SimulatedZerodhaClient mimics the ZerodhaClient for simulation purposes.
 // It doesn't connect to any external API but generates synthetic ticks.
@@ -46,8 +28,7 @@ func NewSimulatedZerodhaClient() *SimulatedZerodhaClient {
 // SimulateTicks generates and publishes synthetic market ticks to Redis.
 // It takes a context for graceful shutdown, a list of instruments to simulate,
 // the Redis client for publishing, and a multiplier to control simulation speed.
-func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*InstrumentInfo, redisClient *cache.RedisClient, simulationSpeedMultiplier float64) error {
-	// Validate required inputs
+func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*InstrumentInfo, redisClient *cache.RedisClient, simulationSpeedMultiplier float64) error { // Validate required inputs
 	if redisClient == nil {
 		return fmt.Errorf("RedisClient is nil, cannot publish simulated ticks")
 	}
@@ -239,61 +220,64 @@ func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*Ins
 				netChange = round1(netChange)         // Round net change to 2 decimals
 				percentChange = round4(percentChange) // Round percent change to 4 decimals
 
-				// --- Construct the SimTick ---
-				tick := SimTick{
-					InstrumentToken: token,
-					Timestamp:       time.Now().Format(time.RFC3339Nano),
-					LastPrice:       price, // Use the current simulated price as LastPrice
+				// Build canonical NormalizedTick
+				normalized := marketdata.NormalizedTick{
+					InstrumentToken:    token,
+					Symbol:             label,
+					Exchange:           info.Exchange,
+					EventTime:          time.Now(), // simulated time – use current time as event time
+					IngestTime:         time.Now(),
+					LastPrice:          price,
+					LastTradedQuantity: lastTradedQty,
+					Volume:             currentVolumes[token],
+					AverageTradePrice:  averageTradePrice,
+					NetChange:          netChange,
+					PercentChange:      percentChange,
+					PrevClose:          previousDayCloses[token],
 					OHLC: kitemodels.OHLC{
 						Open:  ohlc.Open,
 						High:  ohlc.High,
 						Low:   ohlc.Low,
-						Close: previousDayCloses[token],
+						Close: previousDayCloses[token], // OHLC close is previous close
 					},
-					VolumeTraded:       currentVolumes[token],
-					Volume:             currentVolumes[token],
-					Depth:              depth,
-					TotalBuyQuantity:   totalBuyQty,
-					TotalSellQuantity:  totalSellQty,
-					LastTradedQuantity: lastTradedQty,
-					AverageTradePrice:  averageTradePrice,
-					NetChange:          netChange,
-					PrevClose:          previousDayCloses[token], // Include PrevClose in the tick
-					PercentChange:      percentChange,            // Include PercentChange in the tick
+					Depth:             depth,
+					TotalBuyQuantity:  totalBuyQty,
+					TotalSellQuantity: totalSellQty,
+					OpenInterest:      0,
 				}
 
 				// --- Prepare and Publish to Redis ---
 				enrichedTick := struct {
-					Symbol           string      `json:"symbol"`
-					ProcessedAtNanos int64       `json:"processed_at_nanos"` // Real-world timestamp of processing
-					Tick             interface{} `json:"tick"`
+					Symbol           string                    `json:"symbol"`
+					ProcessedAtNanos int64                     `json:"processed_at_nanos"`
+					Tick             marketdata.NormalizedTick `json:"tick"`
 				}{
 					Symbol:           label,
 					ProcessedAtNanos: time.Now().UnixNano(),
-					Tick:             tick,
+					Tick:             normalized,
 				}
 
-				if jsonData, err := json.Marshal(enrichedTick); err == nil {
-					err := redisClient.Publish(RedisMarketDataChannel, jsonData)
-					if err != nil {
-						zap.L().Error("❌ Failed to publish simulated tick to Redis",
-							zap.Uint32("instrument_token", tick.InstrumentToken),
-							zap.Error(err),
-						)
-					} else {
-						// Optional: Log important fields to verify
-						zap.L().Debug("Published simulated tick",
-							zap.String("symbol", label),
-							zap.Float64("ltp", tick.LastPrice),
-							zap.Float64("prev_close", tick.PrevClose),
-							zap.Float64("net_change", tick.NetChange),
-							zap.Float64("percent_change", tick.PercentChange),
-						)
-					}
-				} else {
-					zap.L().Error("❌ Failed to marshal enriched simulated tick data for Redis",
-						zap.Uint32("instrument_token", tick.InstrumentToken),
+				jsonData, err := json.Marshal(enrichedTick)
+				if err != nil {
+					zap.L().Error("❌ Failed to marshal simulated tick data for Redis",
+						zap.Uint32("instrument_token", token),
 						zap.Error(err),
+					)
+					continue
+				}
+
+				if err := redisClient.Publish(RedisMarketDataChannel, jsonData); err != nil {
+					zap.L().Error("❌ Failed to publish simulated tick to Redis",
+						zap.Uint32("instrument_token", token),
+						zap.Error(err),
+					)
+				} else {
+					zap.L().Debug("Published simulated tick",
+						zap.String("symbol", label),
+						zap.Float64("ltp", normalized.LastPrice),
+						zap.Float64("prev_close", normalized.PrevClose),
+						zap.Float64("net_change", normalized.NetChange),
+						zap.Float64("percent_change", normalized.PercentChange),
 					)
 				}
 			}

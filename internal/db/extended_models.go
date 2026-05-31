@@ -40,7 +40,7 @@ type WatchlistItem struct {
 	UpdatedAt       time.Time
 	DeletedAt       *time.Time `gorm:"index"`
 	WatchlistID     uint       `gorm:"not null;index"`
-	InstrumentToken uint       `gorm:"not null"`
+	InstrumentToken uint32     `gorm:"not null"`
 	Symbol          string     `gorm:"not null;size:255"`
 }
 

@@ -1,0 +1,400 @@
+// internal/data/candles.go
+package data
+
+import (
+	"context"
+	"encoding/json"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/Bhavik2205/ML-Bot/internal/api"
+	"github.com/Bhavik2205/ML-Bot/internal/cache"
+	"github.com/Bhavik2205/ML-Bot/internal/db"
+	"github.com/Bhavik2205/ML-Bot/internal/marketdata"
+	"github.com/Bhavik2205/ML-Bot/internal/marketdata/candles"
+	"github.com/Bhavik2205/ML-Bot/internal/utils"
+	"github.com/gorilla/websocket"
+	"go.uber.org/zap"
+	"gorm.io/gorm/clause"
+
+	"github.com/Bhavik2205/ML-Bot/internal/indicators"
+)
+
+const (
+	marketOpenHour    = 9
+	marketOpenMinute  = 15
+	marketCloseHour   = 15
+	marketCloseMinute = 30
+	marketTimezone    = "Asia/Kolkata"
+)
+
+// CandleGenerator delegates to a CandleEngine.
+type CandleGenerator struct {
+	dbClient                *db.DBClient
+	redisClient             *cache.RedisClient
+	appCfg                  *utils.AppConfig
+	engine                  *candles.CandleEngine
+	candleWsClients         *sync.Map // maps *websocket.Conn to *wsClient
+	indicatorManagerInputCh chan<- indicators.Candle
+
+	candleDBFlushCh chan db.OHLCVCandle
+
+	// Metrics
+	ticksProcessed uint64
+	dbErrors       uint64
+	wsDrops        uint64
+
+	// Monitoring
+	monitorStopCh chan struct{}
+}
+
+// NewCandleGenerator creates and returns a new instance of CandleGenerator.
+func NewCandleGenerator(
+	dbC *db.DBClient,
+	rC *cache.RedisClient,
+	cfg *utils.AppConfig,
+	wsClients *sync.Map,
+	indicatorManagerInputCh chan<- indicators.Candle,
+) *CandleGenerator {
+	loc, err := time.LoadLocation(marketTimezone)
+	if err != nil {
+		zap.L().Error("Failed to load market timezone, defaulting to UTC.", zap.Error(err))
+		loc = time.UTC
+	}
+
+	// Create the flush channel for finalised candles
+	dbFlushCh := make(chan db.OHLCVCandle, cfg.Ingestion.DBFlushChannelSize)
+
+	// Engine configuration
+	engineCfg := &candles.EngineConfig{
+		Timezone:         loc,
+		Intervals:        cfg.Candles.Intervals,
+		GracePeriod:      time.Duration(cfg.Candles.GracePeriodMs) * time.Millisecond,
+		FinalizeInterval: time.Duration(cfg.Candles.FinalizeIntervalMs) * time.Millisecond,
+		OnFinalize:       nil,                 // will be set after we create the generator
+		SimulationMode:   cfg.Market.Simulate, //read from app config
+	}
+
+	engine := candles.NewCandleEngine(engineCfg)
+
+	cg := &CandleGenerator{
+		dbClient:                dbC,
+		redisClient:             rC,
+		appCfg:                  cfg,
+		engine:                  engine,
+		candleWsClients:         wsClients,
+		indicatorManagerInputCh: indicatorManagerInputCh,
+		candleDBFlushCh:         dbFlushCh,
+		monitorStopCh:           make(chan struct{}),
+	}
+
+	// Set the callback after cg is fully initialised
+	engineCfg.OnFinalize = cg.handleFinalizedCandle
+
+	return cg
+}
+
+// handleFinalizedCandle is called by the engine when a candle is finalised.
+func (cg *CandleGenerator) handleFinalizedCandle(candle *candles.OpenCandle) {
+	// Convert to db.OHLCVCandle
+	ohlcv := db.OHLCVCandle{
+		InstrumentToken: candle.InstrumentToken,
+		Interval:        candle.IntervalStr,
+		Timestamp:       candle.StartTime,
+		Open:            candle.Open,
+		High:            candle.High,
+		Low:             candle.Low,
+		Close:           candle.Close,
+		Volume:          candle.Volume,
+		TradeCount:      candle.TradeCount,
+	}
+
+	// Non‑blocking send to DB flush channel
+	select {
+	case cg.candleDBFlushCh <- ohlcv:
+	default:
+		atomic.AddUint64(&cg.dbErrors, 1)
+		zap.L().Warn("Candle DB flush channel full, dropping candle",
+			zap.Uint32("token", candle.InstrumentToken),
+			zap.String("interval", candle.IntervalStr),
+			zap.Time("timestamp", candle.StartTime))
+	}
+
+	// Send to indicator manager
+	if cg.indicatorManagerInputCh != nil {
+		indicatorCandle := indicators.Candle{
+			InstrumentToken: candle.InstrumentToken,
+			Interval:        candle.IntervalStr,
+			Timestamp:       candle.StartTime,
+			Open:            candle.Open,
+			High:            candle.High,
+			Low:             candle.Low,
+			Close:           candle.Close,
+			Volume:          candle.Volume,
+			TradeCount:      candle.TradeCount,
+		}
+		select {
+		case cg.indicatorManagerInputCh <- indicatorCandle:
+			zap.L().Debug("Sent completed candle to IndicatorsManager",
+				zap.Uint32("token", candle.InstrumentToken),
+				zap.String("interval", candle.IntervalStr),
+				zap.Time("timestamp", candle.StartTime))
+		default:
+			zap.L().Warn("IndicatorsManager input channel full; dropping candle for indicator calculation.",
+				zap.Uint32("token", candle.InstrumentToken),
+				zap.String("interval", candle.IntervalStr))
+		}
+	}
+
+	// Broadcast to WebSocket clients
+	cg.broadcastCandle(candle)
+}
+
+// broadcastCandle marshals and sends the candle data to all connected WebSocket clients.
+func (cg *CandleGenerator) broadcastCandle(candle *candles.OpenCandle) {
+	broadcastData := struct {
+		InstrumentToken uint32    `json:"instrument_token"`
+		Interval        string    `json:"interval"`
+		Timestamp       time.Time `json:"timestamp"`
+		Open            float64   `json:"open"`
+		High            float64   `json:"high"`
+		Low             float64   `json:"low"`
+		Close           float64   `json:"close"`
+		Volume          float64   `json:"volume"`
+		TradeCount      uint32    `json:"trade_count"`
+	}{
+		InstrumentToken: candle.InstrumentToken,
+		Interval:        candle.IntervalStr,
+		Timestamp:       candle.StartTime,
+		Open:            candle.Open,
+		High:            candle.High,
+		Low:             candle.Low,
+		Close:           candle.Close,
+		Volume:          candle.Volume,
+		TradeCount:      candle.TradeCount,
+	}
+
+	jsonMessage, err := json.Marshal(broadcastData)
+	if err != nil {
+		zap.L().Error("Failed to marshal candle data for WebSocket broadcast", zap.Error(err), zap.Uint32("token", candle.InstrumentToken))
+		return
+	}
+
+	cg.candleWsClients.Range(func(key, value interface{}) bool {
+		client, ok := value.(*wsClient)
+		if !ok {
+			cg.candleWsClients.Delete(key)
+			return true
+		}
+		select {
+		case client.send <- jsonMessage:
+		default:
+			atomic.AddUint64(&cg.wsDrops, 1)
+			zap.L().Warn("WebSocket send channel full, dropping candle message")
+		}
+		return true
+	})
+	zap.L().Debug("Broadcasted candle to WebSocket clients", zap.Uint32("token", candle.InstrumentToken), zap.String("interval", candle.IntervalStr))
+}
+
+// StartCandleGeneration subscribes to Redis ticks and feeds them to the engine.
+func (cg *CandleGenerator) StartCandleGeneration(ctx context.Context) {
+	// Start engine's finalizer loop
+	go cg.engine.StartFinalizer(ctx)
+
+	// Start DB writer goroutine
+	go cg.StartCandleDBWriter(ctx)
+
+	// Start monitoring goroutine
+	go cg.startMonitoring()
+
+	// Subscribe to Redis
+	pubsub := cg.redisClient.Subscribe(ctx, api.RedisMarketDataChannel)
+	if pubsub == nil {
+		zap.L().Error("Failed to subscribe to Redis PubSub for candle generation, stopping.")
+		return
+	}
+	defer func() {
+		if err := pubsub.Close(); err != nil && !isClosedNetworkError(err) {
+			zap.L().Error("Failed to close Redis PubSub connection for candle generator", zap.Error(err))
+		}
+		zap.L().Info("Redis PubSub subscriber for candle generator closed.")
+	}()
+	zap.L().Info("✅ Candle generator subscribed to Redis market data channel", zap.String("channel", api.RedisMarketDataChannel))
+
+	ch := pubsub.Channel()
+	for {
+		select {
+		case msg, ok := <-ch:
+			if !ok {
+				zap.L().Warn("Redis PubSub channel closed, attempting reconnect...")
+				// Reconnection logic (simplified for brevity, keep original if needed)
+				return
+			}
+
+			var enrichedTick struct {
+				Symbol           string                    `json:"symbol"`
+				ProcessedAtNanos int64                     `json:"processed_at_nanos"`
+				Tick             marketdata.NormalizedTick `json:"tick"`
+			}
+			if err := json.Unmarshal([]byte(msg.Payload), &enrichedTick); err != nil {
+				zap.L().Error("Failed to unmarshal Redis message payload for candle generation", zap.Error(err))
+				continue
+			}
+
+			atomic.AddUint64(&cg.ticksProcessed, 1)
+			cg.engine.ProcessTick(&enrichedTick.Tick)
+
+		case <-ctx.Done():
+			zap.L().Info("Flushing all remaining open candles during graceful shutdown...")
+			cg.engine.FinalizeAll()
+			return
+		}
+	}
+}
+
+// StartCandleDBWriter batches and writes candles to DB.
+func (cg *CandleGenerator) StartCandleDBWriter(ctx context.Context) {
+	defer cg.recoverGoroutine("StartCandleDBWriter")
+	batchSize := cg.appCfg.Ingestion.MarketDataBatchSize
+	batch := make([]db.OHLCVCandle, 0, batchSize)
+	ticker := time.NewTicker(time.Duration(cg.appCfg.Ingestion.MarketDataFlushIntervalMS) * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case candle := <-cg.candleDBFlushCh:
+			batch = append(batch, candle)
+			if len(batch) >= batchSize {
+				cg.writeCandleBatch(batch)
+				batch = batch[:0]
+			}
+		case <-ticker.C:
+			if len(batch) > 0 {
+				cg.writeCandleBatch(batch)
+				batch = batch[:0]
+			}
+		case <-ctx.Done():
+			if len(batch) > 0 {
+				cg.writeCandleBatch(batch)
+			}
+			return
+		}
+	}
+}
+
+func (cg *CandleGenerator) writeCandleBatch(batch []db.OHLCVCandle) {
+	defer cg.recoverGoroutine("writeCandleBatch")
+	result := cg.dbClient.DB.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "instrument_token"}, {Name: "interval"}, {Name: "timestamp"}},
+		DoUpdates: clause.AssignmentColumns([]string{"high", "low", "close", "volume", "trade_count", "updated_at"}),
+	}).CreateInBatches(batch, len(batch))
+	if result.Error != nil {
+		atomic.AddUint64(&cg.dbErrors, 1)
+		zap.L().Error("❌ Failed to batch save/update OHLCVCandles to DB", zap.Error(result.Error))
+	}
+}
+
+// RegisterWebSocketClient adds a new WebSocket client and starts its write pump.
+func (cg *CandleGenerator) RegisterWebSocketClient(conn *websocket.Conn) {
+	bufferSize := cg.appCfg.Ingestion.WSBroadcastChannelSize
+	client := &wsClient{conn: conn, send: make(chan []byte, bufferSize)}
+	cg.candleWsClients.Store(conn, client)
+	go cg.writePump(client)
+}
+
+// UnregisterWebSocketClient removes a WebSocket client and closes its channel.
+func (cg *CandleGenerator) UnregisterWebSocketClient(conn *websocket.Conn) {
+	if val, ok := cg.candleWsClients.Load(conn); ok {
+		client := val.(*wsClient)
+		close(client.send)
+		cg.candleWsClients.Delete(conn)
+		conn.Close()
+	}
+}
+
+// writePump writes messages from the channel to the WebSocket with deadlines and periodic pings.
+func (cg *CandleGenerator) writePump(client *wsClient) {
+	defer func() {
+		if r := recover(); r != nil {
+			zap.L().Error("Panic recovered in candle writePump", zap.Any("recover", r))
+		}
+		client.conn.Close()
+		cg.candleWsClients.Delete(client.conn)
+	}()
+	pingTicker := time.NewTicker(wsPingPeriod)
+	defer pingTicker.Stop()
+	for {
+		select {
+		case msg, ok := <-client.send:
+			if !ok {
+				_ = client.conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
+				_ = client.conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+				return
+			}
+			_ = client.conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
+			if err := client.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+				return
+			}
+		case <-pingTicker.C:
+			_ = client.conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
+			if err := client.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
+		}
+	}
+}
+
+// recoverGoroutine logs and recovers from panics in goroutines.
+func (cg *CandleGenerator) recoverGoroutine(where string) {
+	if r := recover(); r != nil {
+		zap.L().Error("Panic recovered", zap.String("where", where), zap.Any("recover", r))
+	}
+}
+
+// startMonitoring launches a goroutine to monitor system usage and candle generator health.
+func (cg *CandleGenerator) startMonitoring() {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	var lastTicksProcessed uint64
+	for {
+		select {
+		case <-cg.monitorStopCh:
+			return
+		case <-ticker.C:
+			ticks := atomic.LoadUint64(&cg.ticksProcessed)
+			dbErrs := atomic.LoadUint64(&cg.dbErrors)
+			wsDrops := atomic.LoadUint64(&cg.wsDrops)
+			tps := ticks - lastTicksProcessed
+			lastTicksProcessed = ticks
+
+			zap.L().Info("CandleGenerator monitoring",
+				zap.Uint64("ticks_processed", ticks),
+				zap.Uint64("db_errors", dbErrs),
+				zap.Uint64("ws_drops", wsDrops),
+				zap.Uint64("ticks_per_5s", tps),
+			)
+			if tps < 10 {
+				zap.L().Warn("Low tick processing speed detected", zap.Uint64("ticks_per_5s", tps))
+			}
+		}
+	}
+}
+
+// GetWebSocketClientCount returns the number of currently connected WebSocket clients for candles.
+func (cg *CandleGenerator) GetWebSocketClientCount() int {
+	count := 0
+	cg.candleWsClients.Range(func(key, value interface{}) bool {
+		count++
+		return true
+	})
+	return count
+}
+
+// Stop flushes all open candles and stops the engine.
+func (cg *CandleGenerator) Stop(ctx context.Context) error {
+	zap.L().Info("Flushing all remaining open candles during graceful shutdown...")
+	cg.engine.FinalizeAll()
+	close(cg.monitorStopCh)
+	return nil
+}

@@ -3,7 +3,6 @@ package data
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"math"
 	"strings"
 	"sync"
@@ -13,6 +12,7 @@ import (
 	"github.com/Bhavik2205/ML-Bot/internal/api"
 	"github.com/Bhavik2205/ML-Bot/internal/cache"
 	"github.com/Bhavik2205/ML-Bot/internal/db"
+	"github.com/Bhavik2205/ML-Bot/internal/marketdata"
 	"github.com/Bhavik2205/ML-Bot/internal/utils"
 	"github.com/gorilla/websocket"
 	kitemodels "github.com/zerodha/gokiteconnect/v4/models"
@@ -32,25 +32,28 @@ const (
 type MarketDataIngestor struct {
 	dbClient             *db.DBClient
 	redisClient          *cache.RedisClient
-	wsClients            *sync.Map // maps *websocket.Conn to chan []byte (the write channel for that client)
+	wsClients            *sync.Map
 	marketDataBuffer     []db.MarketData
 	bufferLock           sync.Mutex
 	lastFlushTime        time.Time
 	tickSequenceCounters map[uint]map[time.Time]int
 	sequenceMux          sync.Mutex
 	lastCleanupTime      time.Time
-	broadcastChannel     chan []byte // Channel for sending data to WebSocket broadcasters (now dispatchers)
-	livePrices           *sync.Map   // Should be a pointer to sync.Map if it's the global instance
+	broadcastChannel     chan []byte
+	livePrices           *sync.Map
 	cfg                  *utils.AppConfig
 
 	dbFlushCh              chan []db.MarketData
 	dbWorkerCount          int
 	wsBroadcastWorkerCount int
+	tickIngestionTimeout   time.Duration // used only for WebSocket broadcast
+	dbFlushTimeout         time.Duration // used for DB flush blocking sends
 
 	// Monitoring metrics
-	dbErrors      uint64
-	wsDrops       uint64
+	dbErrors      uint64 // DB write errors (not drops)
+	wsDrops       uint64 // frontend WebSocket drops
 	wsBroadcasted uint64
+	droppedTicks  uint64 // only counts frontend drops (not DB)
 }
 
 // NewMarketDataIngestor creates and returns a new instance of MarketDataIngestor.
@@ -71,30 +74,29 @@ func NewMarketDataIngestor(dbC *db.DBClient, rC *cache.RedisClient, wsClients *s
 		dbFlushCh:              make(chan []db.MarketData, cfg.Ingestion.DBFlushChannelSize),
 		dbWorkerCount:          cfg.Ingestion.DBWorkerCount,
 		wsBroadcastWorkerCount: cfg.Ingestion.WSBroadcastWorkerCount,
+		tickIngestionTimeout:   time.Duration(cfg.Ingestion.TickIngestionTimeoutMs) * time.Millisecond,
 	}
+	dbFlushTimeout := time.Duration(cfg.Ingestion.DBFlushTimeoutMs) * time.Millisecond
+	if dbFlushTimeout <= 0 {
+		dbFlushTimeout = 5 * time.Second
+	}
+	ingestor.dbFlushTimeout = dbFlushTimeout
 	ingestor.loadInitialTickSequenceCounters()
 	return ingestor
 }
 
 // StartIngestionAndBroadcast kicks off the Redis subscription, DB ingestion, and WebSocket broadcasting.
 func (m *MarketDataIngestor) StartIngestionAndBroadcast(ctx context.Context) {
-	// Start workers that handle database flushing
 	m.startDBWorkers(ctx)
-	// Start workers that act as dispatchers for WebSocket broadcasting
 	m.startWebSocketBroadcasterWorkers(ctx)
-
-	// Start monitoring goroutine for metrics
 	go m.startMonitoring(ctx)
-
-	// These remain as primary consumers/dispatchers
 	go m.subscribeAndProcessRedis(ctx)
 	go m.startDBFlusher(ctx)
 	go m.startSequenceCounterCleanup(ctx)
-
 	zap.L().Info("🚀 Market data ingestion and broadcasting started.")
 }
 
-// Monitoring goroutine for DB errors, WS drops, and broadcast rate.
+// startMonitoring logs metrics every 5s.
 func (m *MarketDataIngestor) startMonitoring(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
@@ -105,6 +107,7 @@ func (m *MarketDataIngestor) startMonitoring(ctx context.Context) {
 			dbErrs := atomic.LoadUint64(&m.dbErrors)
 			wsDrops := atomic.LoadUint64(&m.wsDrops)
 			broadcasted := atomic.LoadUint64(&m.wsBroadcasted)
+			dropTicks := atomic.LoadUint64(&m.droppedTicks)
 			rate := broadcasted - lastBroadcasted
 			lastBroadcasted = broadcasted
 
@@ -112,16 +115,8 @@ func (m *MarketDataIngestor) startMonitoring(ctx context.Context) {
 				zap.Uint64("db_errors", dbErrs),
 				zap.Uint64("ws_drops", wsDrops),
 				zap.Uint64("broadcast_rate_per_5s", rate),
+				zap.Uint64("frontend_dropped_ticks", dropTicks),
 			)
-			if dbErrs > 10 {
-				zap.L().Warn("High DB error count", zap.Uint64("db_errors", dbErrs))
-			}
-			if wsDrops > 10 {
-				zap.L().Warn("High WebSocket drop count", zap.Uint64("ws_drops", wsDrops))
-			}
-			if rate < 10 {
-				zap.L().Warn("Low broadcast rate", zap.Uint64("broadcast_rate_per_5s", rate))
-			}
 		case <-ctx.Done():
 			return
 		}
@@ -153,26 +148,34 @@ func (m *MarketDataIngestor) subscribeAndProcessRedis(ctx context.Context) {
 					return
 				}
 			}
-			logFields := []zap.Field{
-				zap.Int("attempt", attempt+1),
-				zap.Duration("initial_delay", initialDelay),
-				zap.Duration("max_delay", maxDelay),
-			}
-			logFields = append(logFields, zap.String("reason", "pubsub client or channel is nil after subscribe call (possible Redis connection issue or internal RedisClient error)"))
 			delay := initialDelay * time.Duration(math.Pow(2, float64(attempt)))
 			if delay > maxDelay {
 				delay = maxDelay
 			}
-			logFields = append(logFields, zap.Duration("delay", delay))
-			zap.L().Warn("Failed to obtain Redis PubSub client or channel, retrying...", logFields...)
+			zap.L().Warn("Failed to obtain Redis PubSub client or channel, retrying...",
+				zap.Int("attempt", attempt+1), zap.Duration("delay", delay))
 			time.Sleep(delay)
 		}
+	}
+	zap.L().Error("Failed to subscribe to Redis PubSub after max attempts, stopping ingestor.",
+		zap.Int("max_attempts", maxAttempts))
+}
 
-		if attempt == maxAttempts-1 {
-			zap.L().Error("Failed to subscribe to Redis PubSub after max attempts, stopping ingestor.",
-				zap.Int("max_attempts", maxAttempts))
-			return
-		}
+// convertNormalizedToKiteTick converts a NormalizedTick to a kitemodels.Tick for downstream compatibility.
+func convertNormalizedToKiteTick(nt marketdata.NormalizedTick) kitemodels.Tick {
+	return kitemodels.Tick{
+		InstrumentToken:    nt.InstrumentToken,
+		Timestamp:          kitemodels.Time{Time: nt.EventTime},
+		LastPrice:          nt.LastPrice,
+		LastTradedQuantity: nt.LastTradedQuantity,
+		VolumeTraded:       nt.Volume,
+		AverageTradePrice:  nt.AverageTradePrice,
+		NetChange:          nt.NetChange,
+		OHLC:               nt.OHLC,
+		Depth:              nt.Depth,
+		TotalBuyQuantity:   nt.TotalBuyQuantity,
+		TotalSellQuantity:  nt.TotalSellQuantity,
+		OI:                 nt.OpenInterest,
 	}
 }
 
@@ -180,11 +183,8 @@ func (m *MarketDataIngestor) subscribeAndProcessRedis(ctx context.Context) {
 func (m *MarketDataIngestor) processRedisMessages(ctx context.Context, ch <-chan *redis.Message, pubsub *redis.PubSub) {
 	defer func() {
 		if pubsub != nil {
-			if err := pubsub.Close(); err != nil {
-				// "use of closed network connection" is expected during shutdown — suppress it.
-				if !isClosedNetworkError(err) {
-					zap.L().Error("Failed to close Redis PubSub connection during shutdown", zap.Error(err))
-				}
+			if err := pubsub.Close(); err != nil && !isClosedNetworkError(err) {
+				zap.L().Error("Failed to close Redis PubSub connection", zap.Error(err))
 			}
 		}
 		close(m.dbFlushCh)
@@ -201,42 +201,18 @@ func (m *MarketDataIngestor) processRedisMessages(ctx context.Context, ch <-chan
 			}
 
 			var enrichedTick struct {
-				Symbol           string          `json:"symbol"`
-				ProcessedAtNanos int64           `json:"processed_at_nanos"`
-				Tick             json.RawMessage `json:"tick"`
+				Symbol           string                    `json:"symbol"`
+				ProcessedAtNanos int64                     `json:"processed_at_nanos"`
+				Tick             marketdata.NormalizedTick `json:"tick"`
 			}
 			if err := json.Unmarshal([]byte(msg.Payload), &enrichedTick); err != nil {
-				zap.L().Error("Failed to unmarshal Redis message payload outer structure", zap.Error(err), zap.String("payload_sample", string(msg.Payload[:min(len(msg.Payload), 200)])))
+				zap.L().Error("Failed to unmarshal Redis message payload", zap.Error(err))
 				continue
 			}
 
-			var kiteTick kitemodels.Tick
-			if err := json.Unmarshal(enrichedTick.Tick, &kiteTick); err != nil {
-				var tempTick map[string]interface{}
-				if errTemp := json.Unmarshal(enrichedTick.Tick, &tempTick); errTemp != nil {
-					zap.L().Error("Failed to unmarshal raw tick for manual timestamp parsing", zap.Error(errTemp), zap.String("tick_payload_sample", string(enrichedTick.Tick[:min(len(enrichedTick.Tick), 100)])))
-					continue
-				}
-				timestampStr, ok := tempTick["Timestamp"].(string)
-				if !ok {
-					zap.L().Error("Timestamp field not found or not a string in tick payload", zap.String("tick_payload_sample", string(enrichedTick.Tick[:min(len(enrichedTick.Tick), 100)])))
-					continue
-				}
-				parsedTime, errParse := time.Parse(time.RFC3339Nano, timestampStr)
-				if errParse != nil {
-					parsedTime, errParse = time.Parse(time.RFC3339, timestampStr)
-					if errParse != nil {
-						zap.L().Error("Failed to parse Timestamp from tick payload with RFC3339/RFC3339Nano",
-							zap.Error(errParse),
-							zap.String("timestamp_string", timestampStr),
-							zap.String("payload_sample", string(msg.Payload[:min(len(msg.Payload), 200)])))
-						continue
-					}
-				}
-				kiteTick.Timestamp = kitemodels.Time{Time: parsedTime}
-			}
-
-			processedEnrichedTick := struct {
+			// Convert to old tick format for downstream processing (candles, indicators, etc.)
+			kiteTick := convertNormalizedToKiteTick(enrichedTick.Tick)
+			m.processTick(struct {
 				Symbol           string
 				ProcessedAtNanos int64
 				Tick             kitemodels.Tick
@@ -244,10 +220,7 @@ func (m *MarketDataIngestor) processRedisMessages(ctx context.Context, ch <-chan
 				Symbol:           enrichedTick.Symbol,
 				ProcessedAtNanos: enrichedTick.ProcessedAtNanos,
 				Tick:             kiteTick,
-			}
-
-			m.processTick(processedEnrichedTick)
-
+			})
 		case <-ctx.Done():
 			zap.L().Info("Context cancelled, stopping Redis PubSub message processor.")
 			return
@@ -255,15 +228,6 @@ func (m *MarketDataIngestor) processRedisMessages(ctx context.Context, ch <-chan
 	}
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-// isClosedNetworkError returns true for the benign "use of closed network connection"
-// error that occurs when a TCP connection is closed before we call Close() on it.
 func isClosedNetworkError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "use of closed network connection")
 }
@@ -276,6 +240,7 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 }) {
 	tick := enrichedTick.Tick
 
+	// Sequence counter
 	m.sequenceMux.Lock()
 	if _, ok := m.tickSequenceCounters[uint(tick.InstrumentToken)]; !ok {
 		m.tickSequenceCounters[uint(tick.InstrumentToken)] = make(map[time.Time]int)
@@ -284,7 +249,7 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 	currentSequenceID := m.tickSequenceCounters[uint(tick.InstrumentToken)][normalizedTimestamp] + 1
 	m.tickSequenceCounters[uint(tick.InstrumentToken)][normalizedTimestamp] = currentSequenceID
 	m.sequenceMux.Unlock()
-	// Pad depth to 5 levels; tick.Depth.Buy/Sell are fixed [5]DepthItem arrays.
+
 	buyDepth := tick.Depth.Buy
 	sellDepth := tick.Depth.Sell
 	zap.L().Debug("Tick received",
@@ -292,9 +257,8 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 		zap.Float64("ltp", tick.LastPrice),
 		zap.Float64("bid", buyDepth[0].Price),
 		zap.Float64("ask", sellDepth[0].Price),
-		zap.Int("volume", int(tick.VolumeTraded)),
-		zap.Float64("prev_close", tick.OHLC.Close),
 	)
+
 	GetMarketHeatmap().Update(
 		enrichedTick.Symbol,
 		tick.LastPrice,
@@ -306,7 +270,7 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 		tick.LastPrice,
 		tick.OHLC.Close,
 	)
-	zap.L().Debug("Heatmap updated", zap.String("symbol", enrichedTick.Symbol))
+
 	md := db.MarketData{
 		InstrumentToken:    tick.InstrumentToken,
 		Timestamp:          normalizedTimestamp,
@@ -321,57 +285,48 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 		Low:                tick.OHLC.Low,
 		Close:              tick.OHLC.Close,
 		OpenInterest:       tick.OI,
-		BidPrice1:          buyDepth[0].Price,
-		BidQuantity1:       buyDepth[0].Quantity,
-		BidOrders1:         buyDepth[0].Orders,
-		BidPrice2:          buyDepth[1].Price,
-		BidQuantity2:       buyDepth[1].Quantity,
-		BidOrders2:         buyDepth[1].Orders,
-		BidPrice3:          buyDepth[2].Price,
-		BidQuantity3:       buyDepth[2].Quantity,
-		BidOrders3:         buyDepth[2].Orders,
-		BidPrice4:          buyDepth[3].Price,
-		BidQuantity4:       buyDepth[3].Quantity,
-		BidOrders4:         buyDepth[3].Orders,
-		BidPrice5:          buyDepth[4].Price,
-		BidQuantity5:       buyDepth[4].Quantity,
-		BidOrders5:         buyDepth[4].Orders,
-		AskPrice1:          sellDepth[0].Price,
-		AskQuantity1:       sellDepth[0].Quantity,
-		AskOrders1:         sellDepth[0].Orders,
-		AskPrice2:          sellDepth[1].Price,
-		AskQuantity2:       sellDepth[1].Quantity,
-		AskOrders2:         sellDepth[1].Orders,
-		AskPrice3:          sellDepth[2].Price,
-		AskQuantity3:       sellDepth[2].Quantity,
-		AskOrders3:         sellDepth[2].Orders,
-		AskPrice4:          sellDepth[3].Price,
-		AskQuantity4:       sellDepth[3].Quantity,
-		AskOrders4:         sellDepth[3].Orders,
-		AskPrice5:          sellDepth[4].Price,
-		AskQuantity5:       sellDepth[4].Quantity,
-		AskOrders5:         sellDepth[4].Orders,
-		TotalBuyQuantity:   tick.TotalBuyQuantity,
-		TotalSellQuantity:  tick.TotalSellQuantity,
+		BidPrice1:          buyDepth[0].Price, BidQuantity1: buyDepth[0].Quantity, BidOrders1: buyDepth[0].Orders,
+		BidPrice2: buyDepth[1].Price, BidQuantity2: buyDepth[1].Quantity, BidOrders2: buyDepth[1].Orders,
+		BidPrice3: buyDepth[2].Price, BidQuantity3: buyDepth[2].Quantity, BidOrders3: buyDepth[2].Orders,
+		BidPrice4: buyDepth[3].Price, BidQuantity4: buyDepth[3].Quantity, BidOrders4: buyDepth[3].Orders,
+		BidPrice5: buyDepth[4].Price, BidQuantity5: buyDepth[4].Quantity, BidOrders5: buyDepth[4].Orders,
+		AskPrice1: sellDepth[0].Price, AskQuantity1: sellDepth[0].Quantity, AskOrders1: sellDepth[0].Orders,
+		AskPrice2: sellDepth[1].Price, AskQuantity2: sellDepth[1].Quantity, AskOrders2: sellDepth[1].Orders,
+		AskPrice3: sellDepth[2].Price, AskQuantity3: sellDepth[2].Quantity, AskOrders3: sellDepth[2].Orders,
+		AskPrice4: sellDepth[3].Price, AskQuantity4: sellDepth[3].Quantity, AskOrders4: sellDepth[3].Orders,
+		AskPrice5: sellDepth[4].Price, AskQuantity5: sellDepth[4].Quantity, AskOrders5: sellDepth[4].Orders,
+		TotalBuyQuantity:  tick.TotalBuyQuantity,
+		TotalSellQuantity: tick.TotalSellQuantity,
 	}
 
 	m.bufferLock.Lock()
 	m.marketDataBuffer = append(m.marketDataBuffer, md)
-	if len(m.marketDataBuffer) >= m.cfg.Ingestion.MarketDataBatchSize {
-		dataToFlush := make([]db.MarketData, len(m.marketDataBuffer))
+	batchSize := m.cfg.Ingestion.MarketDataBatchSize
+	flushNow := len(m.marketDataBuffer) >= batchSize
+	var dataToFlush []db.MarketData
+	if flushNow {
+		dataToFlush = make([]db.MarketData, len(m.marketDataBuffer))
 		copy(dataToFlush, m.marketDataBuffer)
+	}
+
+	// ---- DB PATH: BLOCKING WITH TIMEOUT (FATAL ON TIMEOUT) ----
+	if flushNow {
 		select {
 		case m.dbFlushCh <- dataToFlush:
-			m.marketDataBuffer = make([]db.MarketData, 0, m.cfg.Ingestion.MarketDataBatchSize)
-		default:
+			// success
+		case <-time.After(m.dbFlushTimeout):
 			atomic.AddUint64(&m.dbErrors, 1)
-			zap.L().Warn("Dropping DB write batch: DB flush channel is full. Consider increasing buffer size or DB worker count.",
-				zap.Int("batch_size", len(dataToFlush)),
-				zap.String("instrument", enrichedTick.Symbol))
+			zap.L().Fatal("DB flush timeout – cannot persist market data. Exiting.",
+				zap.Duration("timeout", m.dbFlushTimeout),
+				zap.Int("batch_size", len(dataToFlush)))
 		}
+		m.marketDataBuffer = make([]db.MarketData, 0, batchSize)
+		m.lastFlushTime = time.Now()
 	}
 	m.bufferLock.Unlock()
 
+	// ---- FRONTEND BROADCAST: TIMEOUT (drops allowed) ----
+	// Keep the original broadcast format (kitemodels.Tick) to avoid breaking the frontend.
 	frontendData, err := json.Marshal(map[string]interface{}{
 		"symbol": enrichedTick.Symbol,
 		"tick":   tick,
@@ -383,9 +338,10 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 		case m.broadcastChannel <- frontendData:
 			atomic.AddUint64(&m.wsBroadcasted, 1)
 			m.livePrices.Store(enrichedTick.Symbol, frontendData)
-		default:
-			atomic.AddUint64(&m.wsDrops, 1)
-			zap.L().Warn("Dropping WebSocket broadcast message: broadcast channel is full. Consider increasing buffer size or WS worker count.",
+		case <-time.After(m.tickIngestionTimeout):
+			atomic.AddUint64(&m.droppedTicks, 1)
+			zap.L().Warn("Frontend broadcast timeout, dropping tick (acceptable)",
+				zap.Duration("timeout", m.tickIngestionTimeout),
 				zap.String("symbol", enrichedTick.Symbol))
 		}
 	}
@@ -395,7 +351,6 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 func (m *MarketDataIngestor) startDBFlusher(ctx context.Context) {
 	flushInterval := time.Duration(m.cfg.Ingestion.MarketDataFlushIntervalMS) * time.Millisecond
 	if flushInterval <= 0 {
-		zap.L().Error("MarketDataFlushIntervalMS must be positive in app.yaml, defaulting to 500ms")
 		flushInterval = 500 * time.Millisecond
 	}
 	ticker := time.NewTicker(flushInterval)
@@ -408,31 +363,40 @@ func (m *MarketDataIngestor) startDBFlusher(ctx context.Context) {
 			if len(m.marketDataBuffer) > 0 && time.Since(m.lastFlushTime) >= flushInterval {
 				dataToFlush := make([]db.MarketData, len(m.marketDataBuffer))
 				copy(dataToFlush, m.marketDataBuffer)
+
+				// ---- DB FLUSH WITH TIMEOUT (FATAL ON TIMEOUT) ----
 				select {
 				case m.dbFlushCh <- dataToFlush:
-					m.marketDataBuffer = make([]db.MarketData, 0, m.cfg.Ingestion.MarketDataBatchSize)
-					m.lastFlushTime = time.Now()
-					zap.L().Debug("Timed flush: sent batch to DB worker channel", zap.Int("count", len(dataToFlush)))
-				default:
+					// success
+				case <-time.After(m.dbFlushTimeout):
 					atomic.AddUint64(&m.dbErrors, 1)
-					zap.L().Warn("DB timed flush skipped: DB flush channel is full. Data will be re-attempted next interval.",
-						zap.Int("buffered_count", len(dataToFlush)))
+					zap.L().Fatal("Timed DB flush timeout – cannot persist market data. Exiting.",
+						zap.Duration("timeout", m.dbFlushTimeout),
+						zap.Int("batch_size", len(dataToFlush)))
 				}
+
+				m.marketDataBuffer = make([]db.MarketData, 0, m.cfg.Ingestion.MarketDataBatchSize)
+				m.lastFlushTime = time.Now()
+				zap.L().Debug("Timed flush: sent batch to DB worker channel", zap.Int("count", len(dataToFlush)))
 			}
 			m.bufferLock.Unlock()
+
 		case <-ctx.Done():
-			zap.L().Info("Context cancelled, attempting to flush remaining buffer to DB workers before stopping DB flusher.")
+			// Final flush on shutdown – use a short timeout to avoid hanging
 			m.bufferLock.Lock()
 			if len(m.marketDataBuffer) > 0 {
 				dataToFlush := make([]db.MarketData, len(m.marketDataBuffer))
 				copy(dataToFlush, m.marketDataBuffer)
+
+				shutdownTimeout := 1 * time.Second
 				select {
 				case m.dbFlushCh <- dataToFlush:
-					zap.L().Info("Successfully sent final buffer to DB workers.")
-				default:
+					zap.L().Info("Sent final buffer to DB workers on shutdown.")
+				case <-time.After(shutdownTimeout):
 					atomic.AddUint64(&m.dbErrors, 1)
-					zap.L().Error("Failed to send final buffer to DB workers: channel full. Data might be lost.",
-						zap.Int("buffered_count", len(dataToFlush)))
+					zap.L().Error("Final DB flush timeout on shutdown – some ticks may be lost.",
+						zap.Duration("timeout", shutdownTimeout),
+						zap.Int("batch_size", len(dataToFlush)))
 				}
 			}
 			m.bufferLock.Unlock()
@@ -459,18 +423,6 @@ func (m *MarketDataIngestor) startDBWorkers(ctx context.Context) {
 						return
 					}
 					start := time.Now()
-
-					seen := make(map[string]int)
-					for _, row := range dataToFlush {
-						key := fmt.Sprintf("%d_%s_%d", row.InstrumentToken, row.Timestamp.Format(time.RFC3339Nano), row.TickSequenceID)
-						seen[key]++
-					}
-					for k, v := range seen {
-						if v > 1 {
-							zap.L().Warn("Duplicate in batch before DB insert", zap.String("key", k), zap.Int("count", v))
-						}
-					}
-
 					maxRetries := 3
 					var result *gorm.DB
 					var err error
@@ -480,13 +432,8 @@ func (m *MarketDataIngestor) startDBWorkers(ctx context.Context) {
 							DoNothing: true,
 						}).CreateInBatches(dataToFlush, m.cfg.Ingestion.MarketDataBatchSize)
 						err = result.Error
-						if err != nil && err.Error() != "" &&
-							(strings.Contains(err.Error(), "deadlock detected") || strings.Contains(err.Error(), "SQLSTATE 40P01")) {
-							zap.L().Warn("DB deadlock detected, retrying batch insert",
-								zap.Int("worker_id", workerID),
-								zap.Int("attempt", attempt),
-								zap.Error(err),
-							)
+						if err != nil && strings.Contains(err.Error(), "deadlock") {
+							zap.L().Warn("DB deadlock, retrying", zap.Int("attempt", attempt), zap.Error(err))
 							time.Sleep(100 * time.Millisecond)
 							continue
 						}
@@ -496,26 +443,9 @@ func (m *MarketDataIngestor) startDBWorkers(ctx context.Context) {
 					if err != nil {
 						atomic.AddUint64(&m.dbErrors, 1)
 						zap.L().Error("❌ DB worker failed to batch insert market data",
-							zap.Error(err),
-							zap.Int("worker_id", workerID),
-							zap.Int("batch_size", len(dataToFlush)),
-							zap.Duration("duration", duration))
-						if duration > time.Second {
-							zap.L().Warn("DB write took too long", zap.Duration("duration", duration))
-						}
+							zap.Error(err), zap.Int("batch_size", len(dataToFlush)), zap.Duration("duration", duration))
 					} else {
-						skippedCount := len(dataToFlush) - int(result.RowsAffected)
-						if skippedCount > 0 {
-							zap.L().Warn("⚠️ DB worker flushed market data with skipped duplicates",
-								zap.Int("worker_id", workerID),
-								zap.Int("total_attempted", len(dataToFlush)),
-								zap.Int64("rows_inserted", result.RowsAffected),
-								zap.Int("rows_skipped", skippedCount))
-						} else {
-							zap.L().Debug("✅ DB worker successfully flushed market data",
-								zap.Int("worker_id", workerID),
-								zap.Int64("count", result.RowsAffected))
-						}
+						zap.L().Debug("✅ DB worker inserted batch", zap.Int64("rows", result.RowsAffected), zap.Duration("duration", duration))
 					}
 				case <-ctx.Done():
 					zap.L().Info("📦 Context cancelled, DB worker stopping", zap.Int("worker_id", workerID))
@@ -547,24 +477,20 @@ func (m *MarketDataIngestor) startWebSocketBroadcasterWorkers(ctx context.Contex
 					m.wsClients.Range(func(key, value interface{}) bool {
 						conn, ok := key.(*websocket.Conn)
 						if !ok {
-							zap.L().Warn("Found non-websocket.Conn in wsClients map, deleting.", zap.Any("key", key))
 							m.wsClients.Delete(key)
 							return true
 						}
 						clientWriteCh, ok := value.(chan []byte)
 						if !ok {
-							zap.L().Error("Value in wsClients map is not a chan []byte, deleting.", zap.Any("key", key))
 							m.wsClients.Delete(key)
 							return true
 						}
 						select {
 						case clientWriteCh <- msg:
-							// Message successfully queued for this client
 						default:
 							atomic.AddUint64(&m.wsDrops, 1)
-							zap.L().Warn("Dropping WebSocket message for client: client's write channel is full.",
-								zap.String("remote_addr", conn.RemoteAddr().String()),
-								zap.Int("worker_id", workerID))
+							zap.L().Warn("Dropping WebSocket message for client: client's write channel is full",
+								zap.String("remote_addr", conn.RemoteAddr().String()))
 						}
 						return true
 					})
@@ -589,8 +515,7 @@ func (m *MarketDataIngestor) RegisterWebSocketClient(conn *websocket.Conn) {
 		case clientWriteCh <- data:
 		default:
 			zap.L().Warn("Failed to send initial live price to new WS client (channel full during init)",
-				zap.String("symbol", key.(string)),
-				zap.String("remote_addr", conn.RemoteAddr().String()))
+				zap.String("symbol", key.(string)))
 			conn.Close()
 			m.wsClients.Delete(conn)
 			return false
@@ -609,7 +534,6 @@ func (m *MarketDataIngestor) UnregisterWebSocketClient(conn *websocket.Conn) {
 }
 
 // writePump reads messages from a client's dedicated channel and writes them to the WebSocket connection.
-// It also sends periodic pings to detect stale connections.
 func (m *MarketDataIngestor) writePump(conn *websocket.Conn, clientWriteCh <-chan []byte) {
 	defer zap.L().Info("WebSocket write pump stopped", zap.String("remote_addr", conn.RemoteAddr().String()))
 	pingTicker := time.NewTicker(wsPingPeriod)
@@ -625,7 +549,7 @@ func (m *MarketDataIngestor) writePump(conn *websocket.Conn, clientWriteCh <-cha
 			_ = conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
 			if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-					zap.L().Error("WebSocket write error", zap.Error(err), zap.String("remote_addr", conn.RemoteAddr().String()))
+					zap.L().Error("WebSocket write error", zap.Error(err))
 				}
 				return
 			}
@@ -638,20 +562,16 @@ func (m *MarketDataIngestor) writePump(conn *websocket.Conn, clientWriteCh <-cha
 	}
 }
 
-// startSequenceCounterCleanup periodically cleans up old entries in tickSequenceCounters to prevent memory leaks.
+// startSequenceCounterCleanup periodically cleans up old entries in tickSequenceCounters.
 func (m *MarketDataIngestor) startSequenceCounterCleanup(ctx context.Context) {
 	cleanupInterval := time.Duration(m.cfg.Ingestion.TickSequenceCleanupInterval) * time.Second
 	if cleanupInterval <= 0 {
 		cleanupInterval = 10 * time.Minute
-		zap.L().Warn("Invalid TickSequenceCleanupInterval in config, defaulting to 10 minutes", zap.Int("configured_value", m.cfg.Ingestion.TickSequenceCleanupInterval))
 	}
-
 	expiryDuration := time.Duration(m.cfg.Ingestion.MaxTickSequenceCacheDuration) * time.Second
 	if expiryDuration <= 0 {
 		expiryDuration = 24 * time.Hour
-		zap.L().Warn("Invalid MaxTickSequenceCacheDuration in config, defaulting to 24 hours", zap.Int("configured_value", m.cfg.Ingestion.MaxTickSequenceCacheDuration))
 	}
-
 	ticker := time.NewTicker(cleanupInterval)
 	defer ticker.Stop()
 
@@ -671,13 +591,7 @@ func (m *MarketDataIngestor) startSequenceCounterCleanup(ctx context.Context) {
 				}
 			}
 			m.sequenceMux.Unlock()
-			m.lastCleanupTime = time.Now()
-			zap.L().Debug("Cleaned up old tick sequence counters",
-				zap.Time("cleanup_time", m.lastCleanupTime),
-				zap.Duration("removed_older_than", expiryDuration),
-			)
 		case <-ctx.Done():
-			zap.L().Info("Context cancelled, stopping sequence counter cleanup goroutine.")
 			return
 		}
 	}
@@ -695,13 +609,7 @@ func (m *MarketDataIngestor) loadInitialTickSequenceCounters() {
 	}
 
 	var results []Result
-
-	loc, err := time.LoadLocation("Asia/Kolkata")
-	if err != nil {
-		zap.L().Error("Failed to load Asia/Kolkata location, using UTC.", zap.Error(err))
-		loc = time.UTC
-	}
-
+	loc, _ := time.LoadLocation("Asia/Kolkata")
 	now := time.Now().In(loc)
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 
@@ -711,19 +619,18 @@ func (m *MarketDataIngestor) loadInitialTickSequenceCounters() {
         WHERE timestamp >= ?
         GROUP BY instrument_token, timestamp;
     `
-	err = m.dbClient.DB.Raw(query, todayStart).Scan(&results).Error
+	err := m.dbClient.DB.Raw(query, todayStart).Scan(&results).Error
 	if err != nil {
-		zap.L().Error("❌ Failed to load initial tick sequence counters from DB", zap.Error(err))
+		zap.L().Error("Failed to load initial tick sequence counters", zap.Error(err))
 		return
 	}
-
 	for _, r := range results {
 		if _, ok := m.tickSequenceCounters[uint(r.InstrumentToken)]; !ok {
 			m.tickSequenceCounters[uint(r.InstrumentToken)] = make(map[time.Time]int)
 		}
 		m.tickSequenceCounters[uint(r.InstrumentToken)][r.Timestamp] = r.MaxSequenceID
 	}
-	zap.L().Info("✅ Loaded initial tick sequence counters from DB", zap.Int("count", len(results)), zap.String("from_timestamp", todayStart.String()))
+	zap.L().Info("Loaded initial tick sequence counters", zap.Int("count", len(results)))
 }
 
 // GetWebSocketClientCount returns the number of currently connected WebSocket clients for ticks.

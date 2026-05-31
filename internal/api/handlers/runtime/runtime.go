@@ -115,8 +115,16 @@ func HandleRuntimeConfig(appCfg *utils.AppConfig) http.HandlerFunc {
 		// Add default values if not set (they are already set in utils.LoadAppConfig)
 		// No secrets (passwords, tokens, keys) are included.
 		// Audit log
-		audit.LogEvent(r.Context(), "config_get", "runtime", "success",
-			zap.Uint("user_id", userID),
+		audit.LogEvent(r.Context(),
+			"CONFIG_GET",
+			"runtime",
+			"",
+			"READ",
+			"SUCCESS",
+			map[string]any{
+				"user_id": userID,
+			},
+			"",
 		)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -189,8 +197,16 @@ func HandleRuntimeMetrics(hub *realtime.Hub, dbClient *db.DBClient, startupTime 
 			MemoryAllocMB: allocMB,
 		}
 
-		audit.LogEvent(r.Context(), "metrics_get", "runtime", "success",
-			zap.Uint("user_id", userID),
+		audit.LogEvent(r.Context(),
+			"METRICS_GET",
+			"runtime",
+			"",
+			"READ",
+			"SUCCESS",
+			map[string]any{
+				"user_id": userID,
+			},
+			"",
 		)
 
 		w.Header().Set("Content-Type", "application/json")

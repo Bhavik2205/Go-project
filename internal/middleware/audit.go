@@ -39,7 +39,7 @@ func AuditMiddleware(logger *zap.Logger) func(http.Handler) http.Handler {
 				zap.String("request_id", RequestIDFromContext(r.Context())),
 			}
 			if userID != 0 {
-				fields = append(fields, zap.Uint64("user_id", userID))
+				fields = append(fields, zap.Uint("user_id", userID))
 			}
 			if rec.body.Len() > 0 && rec.statusCode >= 400 {
 				// Log response body only for errors to avoid clutter

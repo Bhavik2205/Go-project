@@ -286,7 +286,7 @@ type Order struct {
 	gorm.Model
 	UserID          uint       `gorm:"not null"`
 	User            User       `gorm:"foreignKey:UserID"`
-	InstrumentToken uint       `gorm:"not null"`
+	InstrumentToken uint32     `gorm:"not null"`
 	Instrument      Instrument `gorm:"foreignKey:InstrumentToken"`
 	BrokerOrderID   string     `gorm:"uniqueIndex;not null"` // Unique ID from the broker for this order
 	StrategyName    string     `gorm:"not null"`             // e.g., "IntradayMomentum"
@@ -312,7 +312,7 @@ type Trade struct {
 	OrderID         uint      `gorm:"not null"` // Foreign key to Order
 	Order           Order     `gorm:"foreignKey:OrderID"`
 	UserID          uint      `gorm:"not null"`             // Redundant for querying/indexing
-	InstrumentToken uint      `gorm:"not null"`             // Redundant for querying/indexing
+	InstrumentToken uint32    `gorm:"not null"`             // Redundant for querying/indexing
 	TradeID         string    `gorm:"uniqueIndex;not null"` // Unique ID for this trade (broker specific)
 	TransactionType string    `gorm:"not null"`             // "BUY" or "SELL"
 	Quantity        int       `gorm:"not null"`
@@ -327,7 +327,7 @@ type Position struct {
 	gorm.Model
 	UserID          uint       `gorm:"not null"`
 	User            User       `gorm:"foreignKey:UserID"`
-	InstrumentToken uint       `gorm:"not null"`
+	InstrumentToken uint32     `gorm:"not null"`
 	Instrument      Instrument `gorm:"foreignKey:InstrumentToken"`
 	TradingSymbol   string     `gorm:"not null"`
 	Product         string     `gorm:"not null"` // e.g., "MIS", "CNC", "NRML"

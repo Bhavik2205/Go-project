@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -10,7 +11,6 @@ import (
 	"github.com/Bhavik2205/ML-Bot/internal/cache"
 	"github.com/Bhavik2205/ML-Bot/internal/middleware"
 	"github.com/Bhavik2205/ML-Bot/internal/validation"
-	"go.uber.org/zap"
 )
 
 type logoutRequest struct {
@@ -22,8 +22,16 @@ func HandleLogout(redisClient *cache.RedisClient) http.HandlerFunc {
 		var req logoutRequest
 		if !validation.BindAndValidate(w, r, &req) {
 			// Even on validation failure, we still need to log? User might be logged out anyway?
-			audit.LogEvent(r.Context(), "logout", "user", "failure",
-				zap.String("reason", "validation failed"),
+			audit.LogEvent(r.Context(),
+				"LOGOUT",
+				"user",
+				"", // no user ID known
+				"DELETE",
+				"FAILURE",
+				map[string]any{
+					"reason": "validation failed",
+				},
+				"validation failed", // error message
 			)
 			return
 		}
@@ -51,8 +59,16 @@ func HandleLogout(redisClient *cache.RedisClient) http.HandlerFunc {
 
 		// Get user ID from context (set by Authenticate middleware)
 		userID := middleware.UserIDFromContext(r.Context())
-		audit.LogEvent(r.Context(), "logout", "user", "success",
-			zap.Uint("user_id", userID),
+		audit.LogEvent(r.Context(),
+			"LOGOUT",
+			"user",
+			fmt.Sprintf("%d", userID), // resourceID = user ID as string
+			"DELETE",                  // action = terminating session
+			"SUCCESS",
+			map[string]any{
+				"user_id": userID,
+			},
+			"",
 		)
 		w.WriteHeader(http.StatusNoContent)
 	}
