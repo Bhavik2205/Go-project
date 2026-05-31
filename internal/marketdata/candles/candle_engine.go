@@ -186,28 +186,62 @@ func (e *CandleEngine) isMarketOpen(t time.Time) bool {
 // For interval == 1 hour: align to market open hours (9:15, 10:15, … 15:15).
 // For interval > 1 hour: treat as 1d candle (market open to close).
 func (e *CandleEngine) getCandleStartTime(tickTime time.Time, interval time.Duration) time.Time {
-	marketTime := tickTime.In(e.cfg.Timezone)
-	marketOpen := time.Date(marketTime.Year(), marketTime.Month(), marketTime.Day(),
-		marketOpenHour, marketOpenMinute, 0, 0, e.cfg.Timezone)
+	t := tickTime.In(e.cfg.Timezone)
 
-	// Before market open → no candle
-	if marketTime.Before(marketOpen) {
+	// -------------------------
+	// Simulation Mode
+	// -------------------------
+	if e.cfg.SimulationMode {
+		// Daily candle
+		if interval > time.Hour {
+			return time.Date(
+				t.Year(),
+				t.Month(),
+				t.Day(),
+				0, 0, 0, 0,
+				e.cfg.Timezone,
+			)
+		}
+
+		// Current candle bucket
+		return t.Truncate(interval)
+	}
+
+	// -------------------------
+	// Live Market Mode
+	// -------------------------
+	marketOpen := time.Date(
+		t.Year(),
+		t.Month(),
+		t.Day(),
+		marketOpenHour,
+		marketOpenMinute,
+		0,
+		0,
+		e.cfg.Timezone,
+	)
+
+	// Before market open
+	if t.Before(marketOpen) {
 		return time.Time{}
 	}
 
-	// Daily or >1h candles: treat as daily from market open to close
+	// Daily candle
 	if interval > time.Hour {
 		return marketOpen
 	}
 
-	// 1‑hour candles: align to 9:15, 10:15, …
+	// 1-hour candle aligned to market open
 	if interval == time.Hour {
-		hoursSinceOpen := int(marketTime.Sub(marketOpen).Hours())
+		hoursSinceOpen := int(t.Sub(marketOpen) / time.Hour)
 		return marketOpen.Add(time.Duration(hoursSinceOpen) * time.Hour)
 	}
 
-	// Sub‑hour intervals: use the next‑candle‑start logic
-	return nextCandleStart(marketTime, marketOpen, interval)
+	// Current bucket aligned from market open
+	elapsed := t.Sub(marketOpen)
+	bucket := elapsed / interval
+
+	return marketOpen.Add(bucket * interval)
 }
 
 // nextCandleStart returns the start time of the next complete candle.
