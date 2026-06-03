@@ -5,7 +5,7 @@ CREATE TABLE trades (
     deleted_at TIMESTAMP WITH TIME ZONE,
     order_id BIGINT NOT NULL,
     user_id BIGINT NOT NULL,
-    instrument_token BIGINT NOT NULL,
+    instrument_token INTEGER NOT NULL,
     trade_id VARCHAR(255) NOT NULL UNIQUE, -- Broker's trade ID
     transaction_type VARCHAR(10) NOT NULL, -- BUY or SELL
     quantity INTEGER NOT NULL,

@@ -23,7 +23,7 @@ CREATE TABLE backtest_trades (
     id BIGSERIAL PRIMARY KEY,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     backtest_job_id BIGINT NOT NULL,
-    instrument_token BIGINT NOT NULL,
+    instrument_token INTEGER NOT NULL,
     symbol VARCHAR(255) NOT NULL,
     transaction_type VARCHAR(10) NOT NULL,        -- BUY or SELL
     quantity INTEGER NOT NULL,

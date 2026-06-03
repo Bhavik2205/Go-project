@@ -4,7 +4,7 @@ CREATE TABLE positions (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted_at TIMESTAMP WITH TIME ZONE,
     user_id BIGINT NOT NULL,
-    instrument_token BIGINT NOT NULL,
+    instrument_token INTEGER NOT NULL,
     trading_symbol VARCHAR(255) NOT NULL,
     product VARCHAR(50) NOT NULL,
     quantity INTEGER NOT NULL,

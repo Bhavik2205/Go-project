@@ -4,7 +4,7 @@ CREATE TABLE orders (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted_at TIMESTAMP WITH TIME ZONE,
     user_id BIGINT NOT NULL,
-    instrument_token BIGINT NOT NULL,
+    instrument_token INTEGER NOT NULL,
     broker_order_id VARCHAR(255) NOT NULL UNIQUE,
     strategy_name VARCHAR(255) NOT NULL,
     order_type VARCHAR(50) NOT NULL,

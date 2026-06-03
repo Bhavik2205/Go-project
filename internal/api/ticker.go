@@ -116,7 +116,7 @@ func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, redisClient *c
 			}
 
 			jsonData, err := json.Marshal(enrichedTick)
-			if err == nil {
+			if err != nil {
 				zap.L().Error("❌ Failed to marshal enriched tick data for Redis",
 					zap.Uint32("instrument_token", tick.InstrumentToken),
 					zap.Error(err),

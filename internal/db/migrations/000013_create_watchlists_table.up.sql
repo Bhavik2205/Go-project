@@ -15,7 +15,7 @@ CREATE TABLE watchlist_items (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted_at TIMESTAMP WITH TIME ZONE,
     watchlist_id BIGINT NOT NULL,
-    instrument_token BIGINT NOT NULL,
+    instrument_token INTEGER NOT NULL,
     symbol VARCHAR(255) NOT NULL,        -- e.g. 'NSE:RELIANCE'
     CONSTRAINT fk_watchlist_items_watchlist_id FOREIGN KEY (watchlist_id) REFERENCES watchlists(id) ON DELETE CASCADE,
     CONSTRAINT fk_watchlist_items_instrument_token FOREIGN KEY (instrument_token) REFERENCES instruments(instrument_token) ON DELETE RESTRICT,
