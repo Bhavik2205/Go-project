@@ -814,3 +814,81 @@ IN PROGRESS - 6
 DEPENDENT - 2
 DEFERRED - 35
 PARTIALLY DONE - 2
+
+
+### DATABASE DROP AND CREATE
+BAPS@RAN0029 MINGW64 ~/Desktop/TradingBot/Go-project (priority-p2)
+$ psql -U postgres -h localhost -d postgres
+Password for user postgres:
+psql (17.5)
+WARNING: Console code page (437) differs from Windows code page (1252)
+         8-bit characters might not work correctly. See psql reference
+         page "Notes for Windows users" for details.
+Type "help" for help.
+
+postgres=# DROP DATABASE IF EXISTS trading_bot_db;
+DROP DATABASE
+postgres=# CREATE DATABASE trading_bot_db;
+CREATE DATABASE
+postgres=# CREATE EXTENSION IF NOT EXISTS timescaledb;
+NOTICE:  extension "timescaledb" already exists, skipping
+CREATE EXTENSION
+postgres=# SELECT 'TimescaleDB extension enabled successfully or already existed.' AS status;
+                             status
+----------------------------------------------------------------
+ TimescaleDB extension enabled successfully or already existed.
+(1 row)
+
+postgres=# SELECT extname FROM pg_extension WHERE extname = 'timescaledb';
+   extname
+-------------
+ timescaledb
+(1 row)
+
+
+### OPTION 2
+BAPS@RAN0029 MINGW64 ~/Desktop/TradingBot/Go-project (priority-p2)
+$ psql -U postgres -h localhost -d postgres -c "DROP DATABASE IF EXISTS trading_bot_db;"
+Password for user postgres:
+DROP DATABASE
+
+BAPS@RAN0029 MINGW64 ~/Desktop/TradingBot/Go-project (priority-p2)
+$ psql -U postgres -h localhost -d postgres -c "CREATE DATABASE trading_bot_db;"
+Password for user postgres:
+CREATE DATABASE
+
+BAPS@RAN0029 MINGW64 ~/Desktop/TradingBot/Go-project (priority-p2)
+$ psql -U postgres -h localhost -d trading_bot_db -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
+Password for user postgres:
+CREATE EXTENSION
+
+BAPS@RAN0029 MINGW64 ~/Desktop/TradingBot/Go-project (priority-p2)
+$ ./scripts/db_migrate.sh up
+DEBUG: DB_HOST=localhost
+DEBUG: DB_PORT=5432
+DEBUG: DB_USER=postgres
+DEBUG: DB_PASSWORD=admin
+DEBUG: DB_NAME=trading_bot_db
+DEBUG: DATABASE_URL=postgres://postgres:admin@localhost:5432/trading_bot_db?sslmode=disable
+DEBUG: MIGRATION_PATH=internal/db/migrations
+Applying all up migrations...
+1/u create_users_table (17.5597ms)
+2/u create_user_broker_accounts_table (38.1182ms)
+3/u create_instruments_table (60.9953ms)
+4/u create_market_data_table (92.6413ms)
+5/u create_orders_table (115.5963ms)
+6/u create_trades_table (135.5289ms)
+7/u create_positions_table (156.9257ms)
+8/u create_news_articles_table (175.3216ms)
+9/u create_user_strategies_table (198.1154ms)
+10/u create_metrics_table (218.9004ms)
+11/u create_indicators (281.1007ms)
+12/u create_user_settings_table (290.0934ms)
+13/u create_watchlists_table (294.2281ms)
+14/u create_backtest_jobs_table (315.1906ms)
+15/u create_notification_tables (315.8083ms)
+16/u create_audit_events_table (322.0297ms)
+17/u create_option_snapshots_table (328.0394ms)
+Migration command executed successfully.
+
+BAPS@RAN0029 MINGW64 ~/Desktop/TradingBot/Go-project (priority-p2)

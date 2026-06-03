@@ -134,6 +134,7 @@ type MarketData struct {
 	// IsIndex            bool   // Instrument metadata, better in a separate instruments table
 	// OIDayHigh          uint32 // Daily high/low for OI, typically derived or not per tick
 	// OIDayLow           uint32 // Daily high/low for OI, typically derived or not per tick
+	DataSource string `gorm:"column:data_source;type:varchar(20);not null"`
 }
 
 // OHLCVCandle stores aggregated Open-High-Low-Close-Volume data for specific intervals.
@@ -150,6 +151,7 @@ type OHLCVCandle struct {
 	TradeCount      uint32    // Number of trades in this candle (optional)
 	CreatedAt       time.Time `gorm:"autoCreateTime"`
 	UpdatedAt       time.Time `gorm:"autoUpdateTime"`
+	DataSource      string    `gorm:"column:data_source;type:varchar(20);not null"`
 }
 
 // IndicatorSMA model
@@ -162,6 +164,7 @@ type IndicatorSMA struct {
 	Value           float64   `gorm:"not null;type:numeric"`
 	CreatedAt       time.Time `gorm:"autoCreateTime"`
 	UpdatedAt       time.Time `gorm:"autoUpdateTime"`
+	DataSource      string    `gorm:"column:data_source;type:varchar(20);not null"`
 }
 
 // IndicatorEMA model
@@ -174,6 +177,7 @@ type IndicatorEMA struct {
 	Value           float64   `gorm:"not null;type:numeric"`
 	CreatedAt       time.Time `gorm:"autoCreateTime"`
 	UpdatedAt       time.Time `gorm:"autoUpdateTime"`
+	DataSource      string    `gorm:"column:data_source;type:varchar(20);not null"`
 }
 
 // IndicatorMACD model
@@ -190,6 +194,7 @@ type IndicatorMACD struct {
 	Histogram       float64   `gorm:"not null;type:numeric"`
 	CreatedAt       time.Time `gorm:"autoCreateTime"`
 	UpdatedAt       time.Time `gorm:"autoUpdateTime"`
+	DataSource      string    `gorm:"column:data_source;type:varchar(20);not null"`
 }
 
 // IndicatorATR model
@@ -202,6 +207,7 @@ type IndicatorATR struct {
 	Value           float64   `gorm:"not null;type:numeric"`
 	CreatedAt       time.Time `gorm:"autoCreateTime"`
 	UpdatedAt       time.Time `gorm:"autoUpdateTime"`
+	DataSource      string    `gorm:"column:data_source;type:varchar(20);not null"`
 }
 
 // IndicatorRSI model
@@ -214,6 +220,7 @@ type IndicatorRSI struct {
 	Value           float64   `gorm:"not null;type:numeric"`
 	CreatedAt       time.Time `gorm:"autoCreateTime"`
 	UpdatedAt       time.Time `gorm:"autoUpdateTime"`
+	DataSource      string    `gorm:"column:data_source;type:varchar(20);not null"`
 }
 
 // IndicatorStochastic model
@@ -228,6 +235,7 @@ type IndicatorStochastic struct {
 	DValue          float64   `gorm:"not null;type:numeric"`
 	CreatedAt       time.Time `gorm:"autoCreateTime"`
 	UpdatedAt       time.Time `gorm:"autoUpdateTime"`
+	DataSource      string    `gorm:"column:data_source;type:varchar(20);not null"`
 }
 
 // IndicatorBollingerBands model
@@ -243,6 +251,7 @@ type IndicatorBollingerBands struct {
 	LowerBand       float64   `gorm:"not null;type:numeric"`
 	CreatedAt       time.Time `gorm:"autoCreateTime"`
 	UpdatedAt       time.Time `gorm:"autoUpdateTime"`
+	DataSource      string    `gorm:"column:data_source;type:varchar(20);not null"`
 }
 
 // IndicatorOBV model
@@ -254,6 +263,7 @@ type IndicatorOBV struct {
 	Value           float64   `gorm:"not null;type:numeric"`
 	CreatedAt       time.Time `gorm:"autoCreateTime"`
 	UpdatedAt       time.Time `gorm:"autoUpdateTime"`
+	DataSource      string    `gorm:"column:data_source;type:varchar(20);not null"`
 }
 
 // IndicatorVWAP model (VWAP is typically period-agnostic but reset daily, so no 'Period' column)
@@ -265,6 +275,7 @@ type IndicatorVWAP struct {
 	Value           float64   `gorm:"not null;type:numeric"`
 	CreatedAt       time.Time `gorm:"autoCreateTime"`
 	UpdatedAt       time.Time `gorm:"autoUpdateTime"`
+	DataSource      string    `gorm:"column:data_source;type:varchar(20);not null"`
 }
 
 // IndicatorADX model (assuming it's implemented)
@@ -279,6 +290,7 @@ type IndicatorADX struct {
 	MinusDI         float64   `gorm:"not null;type:numeric"`
 	CreatedAt       time.Time `gorm:"autoCreateTime"`
 	UpdatedAt       time.Time `gorm:"autoUpdateTime"`
+	DataSource      string    `gorm:"column:data_source;type:varchar(20);not null"`
 }
 
 // Order represents a placed order (buy/sell request) by the bot.
@@ -303,6 +315,7 @@ type Order struct {
 	Product         string     // e.g., "MIS", "CNC", "NRML"
 	ExchangeOrderID string     // Exchange specific order ID
 	Tag             string     // Optional tag for tracking
+	TradeType       string     `gorm:"column:trade_type;type:varchar(10);not null"`
 }
 
 // Trade represents a filled order or a part of a filled order (an execution).
@@ -319,6 +332,7 @@ type Trade struct {
 	Price           float64   `gorm:"not null"` // Price at which this specific trade was executed
 	TradeTime       time.Time `gorm:"not null"` // Timestamp of the trade execution
 	Exchange        string    // Exchange on which the trade happened
+	TradeType       string    `gorm:"column:trade_type;type:varchar(10);not null"`
 }
 
 // Position represents a user's current holding for an instrument.
@@ -337,6 +351,7 @@ type Position struct {
 	RealizedPnL     float64    // Profit/Loss from closed positions
 	UnrealizedPnL   float64    // Current P&L for open positions
 	UpdatedAt       time.Time  `gorm:"not null"` // Timestamp of last update
+	TradeType       string     `gorm:"column:trade_type;type:varchar(10);not null"`
 }
 
 // NewsArticle stores fetched news content and its metadata.

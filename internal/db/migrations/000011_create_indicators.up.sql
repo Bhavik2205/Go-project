@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS ohlcv_candles (
     trade_count INTEGER,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    PRIMARY KEY (instrument_token, interval, timestamp)
+    PRIMARY KEY (instrument_token, interval, timestamp),
+    data_source VARCHAR(20) NOT NULL
 );
 
 -- Convert ohlcv_candles to a TimescaleDB hypertable
@@ -31,7 +32,8 @@ CREATE TABLE IF NOT EXISTS smas (
     value NUMERIC NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    PRIMARY KEY (instrument_token, interval, period, timestamp)
+    PRIMARY KEY (instrument_token, interval, period, timestamp),
+    data_source VARCHAR(20) NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_smas_instrument_interval_period ON smas (instrument_token, interval, period, timestamp DESC);
@@ -47,7 +49,8 @@ CREATE TABLE IF NOT EXISTS emas (
     value NUMERIC NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    PRIMARY KEY (instrument_token, interval, period, timestamp)
+    PRIMARY KEY (instrument_token, interval, period, timestamp),
+    data_source VARCHAR(20) NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_emas_instrument_interval_period ON emas (instrument_token, interval, period, timestamp DESC);
@@ -67,7 +70,8 @@ CREATE TABLE IF NOT EXISTS macds (
     histogram NUMERIC NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    PRIMARY KEY (instrument_token, interval, fast_period, slow_period, signal_period, timestamp)
+    PRIMARY KEY (instrument_token, interval, fast_period, slow_period, signal_period, timestamp),
+    data_source VARCHAR(20) NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_macds_instrument_interval_periods ON macds (instrument_token, interval, fast_period, slow_period, signal_period, timestamp DESC);
@@ -83,7 +87,8 @@ CREATE TABLE IF NOT EXISTS atrs (
     value NUMERIC NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    PRIMARY KEY (instrument_token, interval, period, timestamp)
+    PRIMARY KEY (instrument_token, interval, period, timestamp),
+    data_source VARCHAR(20) NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_atrs_instrument_interval_period ON atrs (instrument_token, interval, period, timestamp DESC);
@@ -99,7 +104,8 @@ CREATE TABLE IF NOT EXISTS rsis (
     value NUMERIC NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    PRIMARY KEY (instrument_token, interval, period, timestamp)
+    PRIMARY KEY (instrument_token, interval, period, timestamp),
+    data_source VARCHAR(20) NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_rsis_instrument_interval_period ON rsis (instrument_token, interval, period, timestamp DESC);
@@ -117,7 +123,8 @@ CREATE TABLE IF NOT EXISTS stochastics (
     d_value NUMERIC NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    PRIMARY KEY (instrument_token, interval, k_period, d_period, timestamp)
+    PRIMARY KEY (instrument_token, interval, k_period, d_period, timestamp),
+    data_source VARCHAR(20) NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_stochastics_instrument_interval_periods ON stochastics (instrument_token, interval, k_period, d_period, timestamp DESC);
@@ -136,7 +143,8 @@ CREATE TABLE IF NOT EXISTS bollinger_bands (
     lower_band NUMERIC NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    PRIMARY KEY (instrument_token, interval, period, num_std_dev, timestamp)
+    PRIMARY KEY (instrument_token, interval, period, num_std_dev, timestamp),
+    data_source VARCHAR(20) NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_bollinger_bands_instrument_interval_params ON bollinger_bands (instrument_token, interval, period, num_std_dev, timestamp DESC);
@@ -151,7 +159,8 @@ CREATE TABLE IF NOT EXISTS obvs (
     value NUMERIC NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    PRIMARY KEY (instrument_token, interval, timestamp)
+    PRIMARY KEY (instrument_token, interval, timestamp),
+    data_source VARCHAR(20) NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_obvs_instrument_interval ON obvs (instrument_token, interval, timestamp DESC);
@@ -166,6 +175,7 @@ CREATE TABLE IF NOT EXISTS vwaps (
     value NUMERIC NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    data_source VARCHAR(20) NOT NULL,
     PRIMARY KEY (instrument_token, interval, timestamp)
 );
 
@@ -184,7 +194,8 @@ CREATE TABLE IF NOT EXISTS adxes (
     minus_di NUMERIC NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    PRIMARY KEY (instrument_token, interval, period, timestamp)
+    PRIMARY KEY (instrument_token, interval, period, timestamp),
+    data_source VARCHAR(20) NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_adxes_instrument_interval_period ON adxes (instrument_token, interval, period, timestamp DESC);

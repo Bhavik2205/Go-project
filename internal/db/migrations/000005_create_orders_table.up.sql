@@ -20,6 +20,7 @@ CREATE TABLE orders (
     product VARCHAR(50),
     exchange_order_id VARCHAR(255),
     tag VARCHAR(255),
+    trade_type VARCHAR(10) NOT NULL,   -- <-- NEW COLUMN
     CONSTRAINT fk_orders_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
     CONSTRAINT fk_orders_instrument_token FOREIGN KEY (instrument_token) REFERENCES instruments(instrument_token) ON DELETE RESTRICT
 );

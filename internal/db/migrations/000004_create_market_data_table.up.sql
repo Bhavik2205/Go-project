@@ -72,7 +72,8 @@ CREATE TABLE IF NOT EXISTS market_data (
     -- Other aggregated quantities (from kitemodels.Tick)
     total_buy_quantity INTEGER NOT NULL, -- Go's uint32 maps to INTEGER
     total_sell_quantity INTEGER NOT NULL, -- Go's uint32 maps to INTEGER
-
+    data_source VARCHAR(20) NOT NULL,
+    
     -- Define the composite primary key
     PRIMARY KEY (instrument_token, timestamp, tick_sequence_id)
 );

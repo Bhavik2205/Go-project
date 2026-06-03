@@ -12,6 +12,7 @@ CREATE TABLE trades (
     price DOUBLE PRECISION NOT NULL,
     trade_time TIMESTAMP WITH TIME ZONE NOT NULL,
     exchange VARCHAR(50),
+    trade_type VARCHAR(10) NOT NULL,   -- <-- NEW COLUMN
     CONSTRAINT fk_trades_order_id FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE RESTRICT,
     CONSTRAINT fk_trades_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
     CONSTRAINT fk_trades_instrument_token FOREIGN KEY (instrument_token) REFERENCES instruments(instrument_token) ON DELETE RESTRICT
