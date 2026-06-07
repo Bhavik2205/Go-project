@@ -14,6 +14,7 @@ type Candle struct {
 	Close           float64   `json:"close"`
 	Volume          float64   `json:"volume"`
 	TradeCount      uint32    `json:"trade_count,omitempty"` // Optional
+	DataSource      string    `json:"data_source"`           // <-- add this line
 }
 
 // SMA represents a Simple Moving Average value.
@@ -25,6 +26,7 @@ type SMA struct {
 	Period          int       `json:"period"`    // e.g., 20
 	Timestamp       time.Time `json:"timestamp"` // Timestamp of the candle for which this SMA is calculated
 	Value           float64   `json:"value"`
+	DataSource      string    `json:"data_source"` // <-- add this line
 }
 
 // EMA represents an Exponential Moving Average value.
@@ -36,6 +38,7 @@ type EMA struct {
 	Period          int       `json:"period"`
 	Timestamp       time.Time `json:"timestamp"`
 	Value           float64   `json:"value"`
+	DataSource      string    `json:"data_source"` // <-- add this line
 }
 
 // MACD represents Moving Average Convergence Divergence values.
@@ -50,7 +53,8 @@ type MACD struct {
 	Timestamp       time.Time `json:"timestamp"`
 	MACDLine        float64   `json:"macd_line"`
 	SignalLine      float64   `json:"signal_line"`
-	Histogram       float64   `json:"histogram"` // MACDLine - SignalLine
+	Histogram       float64   `json:"histogram"`   // MACDLine - SignalLine
+	DataSource      string    `json:"data_source"` // <-- add this line
 }
 
 // ATR represents Average True Range value.
@@ -62,6 +66,7 @@ type ATR struct {
 	Period          int       `json:"period"`
 	Timestamp       time.Time `json:"timestamp"`
 	Value           float64   `json:"value"`
+	DataSource      string    `json:"data_source"` // <-- add this line
 }
 
 // RSI represents Relative Strength Index value.
@@ -73,6 +78,7 @@ type RSI struct {
 	Period          int       `json:"period"`
 	Timestamp       time.Time `json:"timestamp"`
 	Value           float64   `json:"value"`
+	DataSource      string    `json:"data_source"` // <-- add this line
 }
 
 // Stochastic represents Stochastic Oscillator values.
@@ -84,8 +90,9 @@ type Stochastic struct {
 	KPeriod         int       `json:"k_period"` // %K period
 	DPeriod         int       `json:"d_period"` // %D period
 	Timestamp       time.Time `json:"timestamp"`
-	KValue          float64   `json:"k_value"` // %K line
-	DValue          float64   `json:"d_value"` // %D line (SMA of %K)
+	KValue          float64   `json:"k_value"`     // %K line
+	DValue          float64   `json:"d_value"`     // %D line (SMA of %K)
+	DataSource      string    `json:"data_source"` // <-- add this line
 }
 
 // BollingerBands represents Bollinger Bands values.
@@ -100,6 +107,7 @@ type BollingerBands struct {
 	UpperBand       float64   `json:"upper_band"`
 	MiddleBand      float64   `json:"middle_band"` // Typically a SMA
 	LowerBand       float64   `json:"lower_band"`
+	DataSource      string    `json:"data_source"` // <-- add this line
 }
 
 // OBV represents On-Balance Volume value.
@@ -110,6 +118,7 @@ type OBV struct {
 	Interval        string    `json:"interval"`
 	Timestamp       time.Time `json:"timestamp"`
 	Value           float64   `json:"value"`
+	DataSource      string    `json:"data_source"` // <-- add this line
 }
 
 // VWAP represents Volume Weighted Average Price value.
@@ -120,6 +129,7 @@ type VWAP struct {
 	Interval        string    `json:"interval"` // Even though VWAP is daily reset, it's calculated over intervals.
 	Timestamp       time.Time `json:"timestamp"`
 	Value           float64   `json:"value"`
+	DataSource      string    `json:"data_source"` // <-- add this line
 }
 
 // ADX represents Average Directional Index values.
@@ -130,9 +140,10 @@ type ADX struct {
 	Interval        string    `json:"interval"`
 	Period          int       `json:"period"`
 	Timestamp       time.Time `json:"timestamp"`
-	ADXValue        float64   `json:"adx_value"` // The ADX line
-	PlusDI          float64   `json:"plus_di"`   // Positive Directional Indicator (+DI)
-	MinusDI         float64   `json:"minus_di"`  // Negative Directional Indicator (-DI)
+	ADXValue        float64   `json:"adx_value"`   // The ADX line
+	PlusDI          float64   `json:"plus_di"`     // Positive Directional Indicator (+DI)
+	MinusDI         float64   `json:"minus_di"`    // Negative Directional Indicator (-DI)
+	DataSource      string    `json:"data_source"` // <-- add this line
 }
 
 // --- Implementations of the Indicator interface for each struct ---

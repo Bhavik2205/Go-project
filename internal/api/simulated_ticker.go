@@ -244,6 +244,7 @@ func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*Ins
 					TotalBuyQuantity:  totalBuyQty,
 					TotalSellQuantity: totalSellQty,
 					OpenInterest:      0,
+					Mode:              "simulation", // Indicate this tick is from simulation
 				}
 
 				// --- Prepare and Publish to Redis ---

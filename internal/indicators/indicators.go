@@ -10,6 +10,13 @@ import (
 	"go.uber.org/zap"                             // Import zap for logging
 )
 
+func dataSourceFromConfig(appCfg *utils.AppConfig) string {
+	if appCfg.Market.Simulate {
+		return "simulation"
+	}
+	return "live" // or "kite" if you want to be more specific
+}
+
 // Helper function to get closing prices from a slice of candles
 func getClosingPrices(candles []Candle) []float64 {
 	prices := make([]float64, len(candles))
@@ -75,6 +82,7 @@ func (s SMA) Calculate(candles []Candle, appCfg *utils.AppConfig, indicatorsCfg 
 			Period:          period,
 			Timestamp:       candles[i].Timestamp,
 			Value:           currentSMA,
+			DataSource:      dataSourceFromConfig(appCfg),
 		})
 
 		if i < len(prices)-1 {
@@ -136,6 +144,7 @@ func (e EMA) Calculate(candles []Candle, appCfg *utils.AppConfig, indicatorsCfg 
 		Period:          period,
 		Timestamp:       candles[period-1].Timestamp,
 		Value:           currentEMA,
+		DataSource:      dataSourceFromConfig(appCfg),
 	})
 
 	for i := period; i < len(prices); i++ {
@@ -147,6 +156,7 @@ func (e EMA) Calculate(candles []Candle, appCfg *utils.AppConfig, indicatorsCfg 
 			Period:          period,
 			Timestamp:       candles[i].Timestamp,
 			Value:           currentEMA,
+			DataSource:      dataSourceFromConfig(appCfg),
 		})
 	}
 	return results, nil
@@ -229,6 +239,7 @@ func (r RSI) Calculate(candles []Candle, appCfg *utils.AppConfig, indicatorsCfg 
 			Period:          period,
 			Timestamp:       candles[i].Timestamp,
 			Value:           rsi,
+			DataSource:      dataSourceFromConfig(appCfg),
 		})
 	}
 	return results, nil
@@ -397,6 +408,7 @@ func (m MACD) Calculate(candles []Candle, appCfg *utils.AppConfig, indicatorsCfg
 				MACDLine:        macdLineVal,
 				SignalLine:      signalLineVal,
 				Histogram:       macdLineVal - signalLineVal,
+				DataSource:      dataSourceFromConfig(appCfg),
 			})
 		}
 	}
@@ -458,6 +470,7 @@ func (a ATR) Calculate(candles []Candle, appCfg *utils.AppConfig, indicatorsCfg 
 		Period:          period,
 		Timestamp:       candles[period-1].Timestamp,
 		Value:           currentATR,
+		DataSource:      dataSourceFromConfig(appCfg),
 	})
 
 	for i := period; i < len(candles); i++ {
@@ -469,6 +482,7 @@ func (a ATR) Calculate(candles []Candle, appCfg *utils.AppConfig, indicatorsCfg 
 			Period:          period,
 			Timestamp:       candles[i].Timestamp,
 			Value:           currentATR,
+			DataSource:      dataSourceFromConfig(appCfg),
 		})
 	}
 	return results, nil
@@ -542,6 +556,7 @@ func (s Stochastic) Calculate(candles []Candle, appCfg *utils.AppConfig, indicat
 				Timestamp:       candles[i].Timestamp,
 				KValue:          k,
 				DValue:          d,
+				DataSource:      dataSourceFromConfig(appCfg),
 			})
 		}
 	}
@@ -617,6 +632,7 @@ func (b BollingerBands) Calculate(candles []Candle, appCfg *utils.AppConfig, ind
 			UpperBand:       upperBand,
 			MiddleBand:      middleBand,
 			LowerBand:       lowerBand,
+			DataSource:      dataSourceFromConfig(appCfg),
 		})
 	}
 	return results, nil
@@ -648,6 +664,7 @@ func (o OBV) Calculate(candles []Candle, appCfg *utils.AppConfig, indicatorsCfg 
 		Interval:        candles[0].Interval,
 		Timestamp:       candles[0].Timestamp,
 		Value:           candles[0].Volume,
+		DataSource:      dataSourceFromConfig(appCfg),
 	}
 	currentOBV = candles[0].Volume
 
@@ -664,6 +681,7 @@ func (o OBV) Calculate(candles []Candle, appCfg *utils.AppConfig, indicatorsCfg 
 			Interval:        candles[i].Interval,
 			Timestamp:       candles[i].Timestamp,
 			Value:           currentOBV,
+			DataSource:      dataSourceFromConfig(appCfg),
 		}
 	}
 	return results, nil
@@ -707,6 +725,7 @@ func (v VWAP) Calculate(candles []Candle, appCfg *utils.AppConfig, indicatorsCfg
 			Interval:        candle.Interval,
 			Timestamp:       candle.Timestamp,
 			Value:           vwap,
+			DataSource:      dataSourceFromConfig(appCfg),
 		}
 	}
 	return results, nil
@@ -847,6 +866,7 @@ func (a ADX) Calculate(candles []Candle, appCfg *utils.AppConfig, indicatorsCfg 
 			ADXValue:        adxValues[i],
 			PlusDI:          plusDI[i],
 			MinusDI:         minusDI[i],
+			DataSource:      dataSourceFromConfig(appCfg),
 		})
 	}
 

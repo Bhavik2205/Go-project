@@ -43,7 +43,7 @@ func getLogWriter(logFile string) zapcore.WriteSyncer {
 	lumberjackLogger := &lumberjack.Logger{
 		Filename:   logFile,
 		MaxSize:    100, // MB
-		MaxBackups: 5,
+		MaxBackups: 200,
 		MaxAge:     28,   // Days
 		Compress:   true, // Enable compression
 	}

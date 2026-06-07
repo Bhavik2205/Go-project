@@ -98,6 +98,7 @@ func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, redisClient *c
 				TotalBuyQuantity:  tick.TotalBuyQuantity,
 				TotalSellQuantity: tick.TotalSellQuantity,
 				OpenInterest:      tick.OI,
+				Mode:              "live", // "simulation", "live", or "kite"
 			}
 			// Compute percent change and prev close
 			if normalized.OHLC.Close != 0 {
