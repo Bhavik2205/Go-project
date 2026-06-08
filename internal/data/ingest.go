@@ -3,24 +3,20 @@ package data
 import (
 	"context"
 	"encoding/json"
-	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/Bhavik2205/ML-Bot/internal/api"
-	"github.com/Bhavik2205/ML-Bot/internal/cache"
 	"github.com/Bhavik2205/ML-Bot/internal/db"
 	"github.com/Bhavik2205/ML-Bot/internal/marketdata"
+	"github.com/Bhavik2205/ML-Bot/internal/marketdata/tickbus"
 	"github.com/Bhavik2205/ML-Bot/internal/utils"
 	"github.com/gorilla/websocket"
 	kitemodels "github.com/zerodha/gokiteconnect/v4/models"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-
-	redis "github.com/redis/go-redis/v9"
 )
 
 const (
@@ -31,7 +27,7 @@ const (
 // MarketDataIngestor holds dependencies for market data ingestion and broadcasting.
 type MarketDataIngestor struct {
 	dbClient             *db.DBClient
-	redisClient          *cache.RedisClient
+	tickBus              tickbus.TickBus
 	wsClients            *sync.Map
 	marketDataBuffer     []db.MarketData
 	bufferLock           sync.Mutex
@@ -58,10 +54,10 @@ type MarketDataIngestor struct {
 }
 
 // NewMarketDataIngestor creates and returns a new instance of MarketDataIngestor.
-func NewMarketDataIngestor(dbC *db.DBClient, rC *cache.RedisClient, wsClients *sync.Map, cfg *utils.AppConfig, _ *utils.IndicatorsConfig) *MarketDataIngestor {
+func NewMarketDataIngestor(dbC *db.DBClient, tb tickbus.TickBus, wsClients *sync.Map, cfg *utils.AppConfig, _ *utils.IndicatorsConfig) *MarketDataIngestor {
 	ingestor := &MarketDataIngestor{
 		dbClient:             dbC,
-		redisClient:          rC,
+		tickBus:              tb,
 		wsClients:            wsClients,
 		marketDataBuffer:     make([]db.MarketData, 0, cfg.Ingestion.MarketDataBatchSize),
 		lastFlushTime:        time.Now(),
@@ -91,7 +87,7 @@ func (m *MarketDataIngestor) StartIngestionAndBroadcast(ctx context.Context) {
 	m.startDBWorkers(ctx)
 	m.startWebSocketBroadcasterWorkers(ctx)
 	go m.startMonitoring(ctx)
-	go m.subscribeAndProcessRedis(ctx)
+	go m.startTickSubscription(ctx)
 	go m.startDBFlusher(ctx)
 	go m.startSequenceCounterCleanup(ctx)
 	zap.L().Info("🚀 Market data ingestion and broadcasting started.")
@@ -124,42 +120,24 @@ func (m *MarketDataIngestor) startMonitoring(ctx context.Context) {
 	}
 }
 
-// subscribeAndProcessRedis subscribes to the Redis market data channel and unmarshals ticks.
-func (m *MarketDataIngestor) subscribeAndProcessRedis(ctx context.Context) {
-	var pubsub *redis.PubSub
-
-	initialDelay := time.Duration(m.cfg.Ingestion.RedisReconnectInitialDelayMs) * time.Millisecond
-	maxDelay := time.Duration(m.cfg.Ingestion.RedisReconnectMaxDelayMs) * time.Millisecond
-	maxAttempts := m.cfg.Ingestion.RedisReconnectMaxAttempts
-
-	for attempt := 0; attempt < maxAttempts; attempt++ {
+// startTickSubscription subscribes to the TickBus and processes incoming ticks.
+func (m *MarketDataIngestor) startTickSubscription(ctx context.Context) {
+	tickCh, err := m.tickBus.Subscribe(ctx)
+	if err != nil {
+		zap.L().Fatal("Failed to subscribe to tick bus", zap.Error(err))
+	}
+	for {
 		select {
+		case tick, ok := <-tickCh:
+			if !ok {
+				zap.L().Warn("TickBus channel closed, stopping ingestion")
+				return
+			}
+			m.processTick(tick)
 		case <-ctx.Done():
-			zap.L().Info("Context cancelled, stopping Redis PubSub subscriber before initial subscription.")
 			return
-		default:
-			pubsub = m.redisClient.Subscribe(ctx, api.RedisMarketDataChannel)
-			if pubsub != nil {
-				ch := pubsub.Channel()
-				if ch != nil {
-					zap.L().Info("✅ Subscribed to Redis market data channel",
-						zap.String("channel", api.RedisMarketDataChannel),
-						zap.Int("attempt", attempt+1))
-					m.processRedisMessages(ctx, ch, pubsub)
-					return
-				}
-			}
-			delay := initialDelay * time.Duration(math.Pow(2, float64(attempt)))
-			if delay > maxDelay {
-				delay = maxDelay
-			}
-			zap.L().Warn("Failed to obtain Redis PubSub client or channel, retrying...",
-				zap.Int("attempt", attempt+1), zap.Duration("delay", delay))
-			time.Sleep(delay)
 		}
 	}
-	zap.L().Error("Failed to subscribe to Redis PubSub after max attempts, stopping ingestor.",
-		zap.Int("max_attempts", maxAttempts))
 }
 
 // convertNormalizedToKiteTick converts a NormalizedTick to a kitemodels.Tick for downstream compatibility.
@@ -181,73 +159,18 @@ func convertNormalizedToKiteTick(nt marketdata.NormalizedTick) kitemodels.Tick {
 	}
 }
 
-// processRedisMessages consumes messages from the Redis PubSub channel.
-func (m *MarketDataIngestor) processRedisMessages(ctx context.Context, ch <-chan *redis.Message, pubsub *redis.PubSub) {
-	defer func() {
-		if pubsub != nil {
-			if err := pubsub.Close(); err != nil && !isClosedNetworkError(err) {
-				zap.L().Error("Failed to close Redis PubSub connection", zap.Error(err))
-			}
-		}
-		close(m.dbFlushCh)
-		close(m.broadcastChannel)
-		zap.L().Info("Redis PubSub subscriber, DB flush channel, and WS broadcast channel closed.")
-	}()
-
-	for {
-		select {
-		case msg, ok := <-ch:
-			if !ok {
-				zap.L().Warn("Redis PubSub channel closed, attempting reconnect...")
-				return
-			}
-
-			var enrichedTick struct {
-				Symbol           string                    `json:"symbol"`
-				ProcessedAtNanos int64                     `json:"processed_at_nanos"`
-				Tick             marketdata.NormalizedTick `json:"tick"`
-			}
-			if err := json.Unmarshal([]byte(msg.Payload), &enrichedTick); err != nil {
-				zap.L().Error("Failed to unmarshal Redis message payload", zap.Error(err))
-				continue
-			}
-
-			// Convert to old tick format for downstream processing (candles, indicators, etc.)
-			kiteTick := convertNormalizedToKiteTick(enrichedTick.Tick)
-			m.processTick(struct {
-				Symbol           string
-				ProcessedAtNanos int64
-				Tick             kitemodels.Tick
-			}{
-				Symbol:           enrichedTick.Symbol,
-				ProcessedAtNanos: enrichedTick.ProcessedAtNanos,
-				Tick:             kiteTick,
-			})
-		case <-ctx.Done():
-			zap.L().Info("Context cancelled, stopping Redis PubSub message processor.")
-			return
-		}
-	}
-}
-
 func isClosedNetworkError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "use of closed network connection")
 }
 
 // processTick converts the enriched tick to MarketData and adds it to the buffer.
-func (m *MarketDataIngestor) processTick(enrichedTick struct {
-	Symbol           string
-	ProcessedAtNanos int64
-	Tick             kitemodels.Tick
-}) {
-	tick := enrichedTick.Tick
-
+func (m *MarketDataIngestor) processTick(tick marketdata.NormalizedTick) {
 	// Sequence counter
 	m.sequenceMux.Lock()
 	if _, ok := m.tickSequenceCounters[uint(tick.InstrumentToken)]; !ok {
 		m.tickSequenceCounters[uint(tick.InstrumentToken)] = make(map[time.Time]int)
 	}
-	normalizedTimestamp := tick.Timestamp.Time
+	normalizedTimestamp := tick.EventTime
 	currentSequenceID := m.tickSequenceCounters[uint(tick.InstrumentToken)][normalizedTimestamp] + 1
 	m.tickSequenceCounters[uint(tick.InstrumentToken)][normalizedTimestamp] = currentSequenceID
 	m.sequenceMux.Unlock()
@@ -274,7 +197,7 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 	// Log depth warning if the first level is zero (indicating ModeLTP/Quote)
 	if buyDepth[0].Price == 0 && sellDepth[0].Price == 0 {
 		zap.L().Warn("Market depth appears empty – tick may be in ModeLTP/Quote",
-			zap.String("symbol", enrichedTick.Symbol))
+			zap.String("symbol", tick.Symbol))
 	}
 
 	// Safely get first level for logging and heatmap
@@ -282,20 +205,20 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 	bestAskPrice, bestAskQty, _ := safeDepthItem(sellDepth, 0)
 
 	zap.L().Debug("Tick received",
-		zap.String("symbol", enrichedTick.Symbol),
+		zap.String("symbol", tick.Symbol),
 		zap.Float64("ltp", tick.LastPrice),
 		zap.Float64("bid", buyDepth[0].Price),
 		zap.Float64("ask", sellDepth[0].Price),
 	)
 
 	GetMarketHeatmap().Update(
-		enrichedTick.Symbol,
+		tick.Symbol,
 		tick.LastPrice,
 		bestBidPrice,
 		bestAskPrice,
 		bestBidQty,
 		bestAskQty,
-		int64(tick.VolumeTraded),
+		int64(tick.Volume),
 		tick.LastPrice,
 		tick.OHLC.Close,
 	)
@@ -319,15 +242,15 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 		TickSequenceID:     currentSequenceID,
 		LastPrice:          tick.LastPrice,
 		LastTradedQuantity: tick.LastTradedQuantity,
-		Volume:             tick.VolumeTraded,
+		Volume:             tick.Volume,
 		AverageTradePrice:  tick.AverageTradePrice,
 		NetChange:          tick.NetChange,
 		Open:               tick.OHLC.Open,
 		High:               tick.OHLC.High,
 		Low:                tick.OHLC.Low,
 		Close:              tick.OHLC.Close,
-		OpenInterest:       tick.OI,
-		BidPrice1: bid1Price, BidQuantity1: uint32(bid1Qty), BidOrders1: uint32(bid1Orders),
+		OpenInterest:       tick.OpenInterest,
+		BidPrice1:          bid1Price, BidQuantity1: uint32(bid1Qty), BidOrders1: uint32(bid1Orders),
 		BidPrice2: bid2Price, BidQuantity2: uint32(bid2Qty), BidOrders2: uint32(bid2Orders),
 		BidPrice3: bid3Price, BidQuantity3: uint32(bid3Qty), BidOrders3: uint32(bid3Orders),
 		BidPrice4: bid4Price, BidQuantity4: uint32(bid4Qty), BidOrders4: uint32(bid4Orders),
@@ -370,9 +293,10 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 
 	// ---- FRONTEND BROADCAST: TIMEOUT (drops allowed) ----
 	// Keep the original broadcast format (kitemodels.Tick) to avoid breaking the frontend.
+	kiteTick := convertNormalizedToKiteTick(tick)
 	frontendData, err := json.Marshal(map[string]interface{}{
-		"symbol": enrichedTick.Symbol,
-		"tick":   tick,
+		"symbol": tick.Symbol,
+		"tick":   kiteTick,
 	})
 	if err != nil {
 		zap.L().Error("Failed to marshal data for frontend broadcast", zap.Error(err))
@@ -380,12 +304,12 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 		select {
 		case m.broadcastChannel <- frontendData:
 			atomic.AddUint64(&m.wsBroadcasted, 1)
-			m.livePrices.Store(enrichedTick.Symbol, frontendData)
+			m.livePrices.Store(tick.Symbol, frontendData)
 		case <-time.After(m.tickIngestionTimeout):
 			atomic.AddUint64(&m.droppedTicks, 1)
 			zap.L().Warn("Frontend broadcast timeout, dropping tick (acceptable)",
 				zap.Duration("timeout", m.tickIngestionTimeout),
-				zap.String("symbol", enrichedTick.Symbol))
+				zap.String("symbol", tick.Symbol))
 		}
 	}
 }

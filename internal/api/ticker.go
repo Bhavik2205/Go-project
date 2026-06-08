@@ -1,12 +1,13 @@
 package api
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"time"
 
-	"github.com/Bhavik2205/ML-Bot/internal/cache" // Import your Redis client
+	// Import your Redis client
 	"github.com/Bhavik2205/ML-Bot/internal/marketdata"
+	"github.com/Bhavik2205/ML-Bot/internal/marketdata/tickbus"
 	kitemodels "github.com/zerodha/gokiteconnect/v4/models"
 	kiteticker "github.com/zerodha/gokiteconnect/v4/ticker"
 	"go.uber.org/zap" // Use zap logger
@@ -16,9 +17,13 @@ import (
 const RedisMarketDataChannel = "market_data_ticks"
 
 // SubscribeToTicks subscribes to ticks and publishes them as NormalizedTick to Redis.
-func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, redisClient *cache.RedisClient) error {
-	if redisClient == nil {
-		return fmt.Errorf("RedisClient is nil, cannot publish ticks")
+func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, tb tickbus.TickBus) error {
+	if tb == nil {
+		return fmt.Errorf("TickBus is nil, cannot publish ticks")
+	}
+
+	if len(infos) == 0 {
+		return fmt.Errorf("no instruments provided for subscription")
 	}
 
 	tokens := make([]uint32, 0, len(infos))
@@ -106,26 +111,9 @@ func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, redisClient *c
 				normalized.PercentChange = (normalized.LastPrice - normalized.PrevClose) / normalized.PrevClose * 100
 			}
 
-			enrichedTick := struct {
-				Symbol           string                    `json:"symbol"`
-				ProcessedAtNanos int64                     `json:"processed_at_nanos"` // Timestamp when this was processed by the API gateway
-				Tick             marketdata.NormalizedTick `json:"tick"`
-			}{
-				Symbol:           label,
-				ProcessedAtNanos: time.Now().UnixNano(),
-				Tick:             normalized,
-			}
-
-			jsonData, err := json.Marshal(enrichedTick)
-			if err != nil {
-				zap.L().Error("❌ Failed to marshal enriched tick data for Redis",
-					zap.Uint32("instrument_token", tick.InstrumentToken),
-					zap.Error(err),
-				)
-				return
-			}
-			if err := redisClient.Publish(RedisMarketDataChannel, jsonData); err != nil {
-				zap.L().Error("❌ Failed to publish tick to Redis",
+			// Publish directly to the TickBus (no extra JSON wrapper – the bus may add its own)
+			if err := tb.Publish(context.Background(), normalized); err != nil {
+				zap.L().Error("❌ Failed to publish tick to TickBus",
 					zap.Uint32("instrument_token", tick.InstrumentToken),
 					zap.Error(err),
 				)

@@ -2,14 +2,13 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
 	"math/rand"
 	"time"
 
-	"github.com/Bhavik2205/ML-Bot/internal/cache" // Ensure this path is correct
 	"github.com/Bhavik2205/ML-Bot/internal/marketdata"
+	"github.com/Bhavik2205/ML-Bot/internal/marketdata/tickbus"
 	kitemodels "github.com/zerodha/gokiteconnect/v4/models"
 	"go.uber.org/zap"
 )
@@ -28,9 +27,9 @@ func NewSimulatedZerodhaClient() *SimulatedZerodhaClient {
 // SimulateTicks generates and publishes synthetic market ticks to Redis.
 // It takes a context for graceful shutdown, a list of instruments to simulate,
 // the Redis client for publishing, and a multiplier to control simulation speed.
-func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*InstrumentInfo, redisClient *cache.RedisClient, simulationSpeedMultiplier float64) error { // Validate required inputs
-	if redisClient == nil {
-		return fmt.Errorf("RedisClient is nil, cannot publish simulated ticks")
+func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*InstrumentInfo, tb tickbus.TickBus, simulationSpeedMultiplier float64) error { // Validate required inputs
+	if tb == nil {
+		return fmt.Errorf("TickBus is nil, cannot publish simulated ticks")
 	}
 	if len(infos) == 0 {
 		return fmt.Errorf("no instruments provided for simulation")
@@ -95,7 +94,7 @@ func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*Ins
 
 	// Define the total simulated market duration and the interval between ticks in simulated time
 	simulatedMarketDuration := 6*time.Hour + 15*time.Minute // Mimic 9:15 AM to 3:30 PM (6 hours 15 minutes)
-	tickIntervalSimulated := 500 * time.Millisecond         // Generate a new "tick" every 500ms of simulated time
+	tickIntervalSimulated := 100 * time.Millisecond         // Generate a new "tick" every 100ms of simulated time
 
 	// Calculate the real-time delay needed between publishing ticks to achieve the desired speed multiplier
 	realTimeDelay := time.Duration(float64(tickIntervalSimulated) / simulationSpeedMultiplier)
@@ -247,28 +246,9 @@ func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*Ins
 					Mode:              "simulation", // Indicate this tick is from simulation
 				}
 
-				// --- Prepare and Publish to Redis ---
-				enrichedTick := struct {
-					Symbol           string                    `json:"symbol"`
-					ProcessedAtNanos int64                     `json:"processed_at_nanos"`
-					Tick             marketdata.NormalizedTick `json:"tick"`
-				}{
-					Symbol:           label,
-					ProcessedAtNanos: time.Now().UnixNano(),
-					Tick:             normalized,
-				}
-
-				jsonData, err := json.Marshal(enrichedTick)
-				if err != nil {
-					zap.L().Error("❌ Failed to marshal simulated tick data for Redis",
-						zap.Uint32("instrument_token", token),
-						zap.Error(err),
-					)
-					continue
-				}
-
-				if err := redisClient.Publish(RedisMarketDataChannel, jsonData); err != nil {
-					zap.L().Error("❌ Failed to publish simulated tick to Redis",
+				// Publish directly to TickBus (no Redis envelope)
+				if err := tb.Publish(ctx, normalized); err != nil {
+					zap.L().Error("❌ Failed to publish simulated tick to TickBus",
 						zap.Uint32("instrument_token", token),
 						zap.Error(err),
 					)

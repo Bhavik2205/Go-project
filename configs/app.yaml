@@ -45,3 +45,4 @@ graceful_shutdown_timeout_seconds: 15
 market:
   simulate: true
   simulation_speed_multiplier: 8.0 # This can be set to any float value >= 0.1
+  tick_bus: "inprocess"   # change to "redis" for multi-process or "dual" for both in-process and Redis Pub/Sub

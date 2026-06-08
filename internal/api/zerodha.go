@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Bhavik2205/ML-Bot/internal/cache"
 	kiteconnect "github.com/zerodha/gokiteconnect/v4"
 	kiteticker "github.com/zerodha/gokiteconnect/v4/ticker"
 	"go.uber.org/zap"
@@ -23,7 +22,7 @@ type ZerodhaClientInterface interface {
 	FindInstrumentToken(symbol string, exchanges []string) (*InstrumentInfo, error)
 	GetUserProfile() (kiteconnect.UserProfile, error)      // Use kiteconnect.User instead of kitemodels.UserProfile
 	GetQuote(symbols ...string) (kiteconnect.Quote, error) // Use kiteconnect.Quote
-	SubscribeToTicks(instruments []*InstrumentInfo, redisClient *cache.RedisClient) error
+	// SubscribeToTicks(instruments []*InstrumentInfo, redisClient *cache.RedisClient) error
 }
 
 // ✅ Exchange request_token for access_token (run once each day)

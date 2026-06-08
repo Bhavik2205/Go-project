@@ -48,6 +48,7 @@ type AppConfig struct {
 	Market struct {
 		Simulate                  bool    `yaml:"simulate"`
 		SimulationSpeedMultiplier float64 `yaml:"simulation_speed_multiplier"`
+		TickBus                   string  `yaml:"tick_bus"` // "inprocess" or "redis"
 	} `yaml:"market"`
 }
 
@@ -212,6 +213,9 @@ func LoadAppConfig(path string) (*AppConfig, error) {
 	}
 	if cfg.Candles.FinalizeIntervalMs == 0 {
 		cfg.Candles.FinalizeIntervalMs = 1000
+	}
+	if cfg.Market.TickBus == "" {
+		cfg.Market.TickBus = "inprocess"
 	}
 
 	return &cfg, nil

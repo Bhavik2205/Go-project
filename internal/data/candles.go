@@ -8,11 +8,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Bhavik2205/ML-Bot/internal/api"
-	"github.com/Bhavik2205/ML-Bot/internal/cache"
 	"github.com/Bhavik2205/ML-Bot/internal/db"
-	"github.com/Bhavik2205/ML-Bot/internal/marketdata"
 	"github.com/Bhavik2205/ML-Bot/internal/marketdata/candles"
+	"github.com/Bhavik2205/ML-Bot/internal/marketdata/tickbus"
+
 	"github.com/Bhavik2205/ML-Bot/internal/utils"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
@@ -32,7 +31,7 @@ const (
 // CandleGenerator delegates to a CandleEngine.
 type CandleGenerator struct {
 	dbClient                *db.DBClient
-	redisClient             *cache.RedisClient
+	tickBus                 tickbus.TickBus
 	appCfg                  *utils.AppConfig
 	engine                  *candles.CandleEngine
 	candleWsClients         *sync.Map // maps *websocket.Conn to *wsClient
@@ -59,7 +58,7 @@ func dataSourceFromConfig(cfg *utils.AppConfig) string {
 // NewCandleGenerator creates and returns a new instance of CandleGenerator.
 func NewCandleGenerator(
 	dbC *db.DBClient,
-	rC *cache.RedisClient,
+	tb tickbus.TickBus,
 	cfg *utils.AppConfig,
 	wsClients *sync.Map,
 	indicatorManagerInputCh chan<- indicators.Candle,
@@ -87,7 +86,7 @@ func NewCandleGenerator(
 
 	cg := &CandleGenerator{
 		dbClient:                dbC,
-		redisClient:             rC,
+		tickBus:                 tb,
 		appCfg:                  cfg,
 		engine:                  engine,
 		candleWsClients:         wsClients,
@@ -220,42 +219,23 @@ func (cg *CandleGenerator) StartCandleGeneration(ctx context.Context) {
 	// Start monitoring goroutine
 	go cg.startMonitoring()
 
-	// Subscribe to Redis
-	pubsub := cg.redisClient.Subscribe(ctx, api.RedisMarketDataChannel)
-	if pubsub == nil {
-		zap.L().Error("Failed to subscribe to Redis PubSub for candle generation, stopping.")
-		return
+	// Subscribe to TickBus
+	tickCh, err := cg.tickBus.Subscribe(ctx)
+	if err != nil {
+		zap.L().Fatal("Failed to subscribe to tick bus for candle generation", zap.Error(err))
 	}
-	defer func() {
-		if err := pubsub.Close(); err != nil && !isClosedNetworkError(err) {
-			zap.L().Error("Failed to close Redis PubSub connection for candle generator", zap.Error(err))
-		}
-		zap.L().Info("Redis PubSub subscriber for candle generator closed.")
-	}()
-	zap.L().Info("✅ Candle generator subscribed to Redis market data channel", zap.String("channel", api.RedisMarketDataChannel))
 
-	ch := pubsub.Channel()
 	for {
 		select {
-		case msg, ok := <-ch:
+		case tick, ok := <-tickCh:
 			if !ok {
-				zap.L().Warn("Redis PubSub channel closed, attempting reconnect...")
+				zap.L().Warn("TickBus channel closed, attempting reconnect...")
 				// Reconnection logic (simplified for brevity, keep original if needed)
 				return
 			}
 
-			var enrichedTick struct {
-				Symbol           string                    `json:"symbol"`
-				ProcessedAtNanos int64                     `json:"processed_at_nanos"`
-				Tick             marketdata.NormalizedTick `json:"tick"`
-			}
-			if err := json.Unmarshal([]byte(msg.Payload), &enrichedTick); err != nil {
-				zap.L().Error("Failed to unmarshal Redis message payload for candle generation", zap.Error(err))
-				continue
-			}
-
 			atomic.AddUint64(&cg.ticksProcessed, 1)
-			cg.engine.ProcessTick(&enrichedTick.Tick)
+			cg.engine.ProcessTick(&tick)
 
 		case <-ctx.Done():
 			zap.L().Info("Flushing all remaining open candles during graceful shutdown...")

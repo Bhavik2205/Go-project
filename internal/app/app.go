@@ -14,6 +14,7 @@ import (
 	monitor "github.com/Bhavik2205/ML-Bot/internal/execution"
 	"github.com/Bhavik2205/ML-Bot/internal/httpapi"
 	"github.com/Bhavik2205/ML-Bot/internal/indicators"
+	"github.com/Bhavik2205/ML-Bot/internal/marketdata/tickbus"
 	"github.com/Bhavik2205/ML-Bot/internal/realtime"
 	"github.com/Bhavik2205/ML-Bot/internal/runtime"
 	"github.com/Bhavik2205/ML-Bot/internal/utils"
@@ -36,8 +37,8 @@ type App struct {
 	IndicatorWsClients *sync.Map
 	IndicatorInputCh   chan indicators.Candle
 
-	rm *runtime.RuntimeManager
-
+	rm            *runtime.RuntimeManager
+	tickBus       tickbus.TickBus
 	symbolsConfig *utils.SymbolsConfig
 }
 
@@ -67,9 +68,25 @@ func New(appCfg *utils.AppConfig, dbCfg *utils.DatabaseConfig, redisCfg *utils.R
 	}
 	app.Redis = redisClient
 
+	// --- Tick Bus (in‑process or Redis) ---
+	var tb tickbus.TickBus
+	if appCfg.Market.TickBus == "inprocess" {
+		tb = tickbus.NewInProcess()
+		zap.L().Info("TickBus: using in‑process channels (zero overhead)")
+	} else if appCfg.Market.TickBus == "dual" {
+		local := tickbus.NewInProcess()
+		redis := tickbus.NewRedis(redisClient, api.RedisMarketDataChannel)
+		tb = tickbus.NewDual(local, redis)
+		zap.L().Info("TickBus: using dual mode (local + Redis Pub/Sub)")
+	} else {
+		tb = tickbus.NewRedis(redisClient, api.RedisMarketDataChannel)
+		zap.L().Info("TickBus: using Redis Pub/Sub")
+	}
+	app.tickBus = tb
+
 	// --- Core components ---
-	app.DataIngestor = data.NewMarketDataIngestor(app.DB, app.Redis, app.WsClients, appCfg, indicatorsCfg)
-	app.CandleGenerator = data.NewCandleGenerator(app.DB, app.Redis, appCfg, app.CandleWsClients, app.IndicatorInputCh)
+	app.DataIngestor = data.NewMarketDataIngestor(app.DB, app.tickBus, app.WsClients, appCfg, indicatorsCfg)
+	app.CandleGenerator = data.NewCandleGenerator(app.DB, app.tickBus, appCfg, app.CandleWsClients, app.IndicatorInputCh)
 	app.IndicatorManager = data.NewIndicatorManager(app.DB, appCfg, indicatorsCfg, app.IndicatorInputCh, app.IndicatorWsClients)
 
 	// --- Zerodha (live mode only) ---
@@ -242,7 +259,7 @@ func (a *App) startSimulatedFeed(ctx context.Context) error {
 	}
 
 	go func() {
-		if err := simGenerator.SimulateTicks(ctx, simInstruments, a.Redis, a.Config.Market.SimulationSpeedMultiplier); err != nil {
+		if err := simGenerator.SimulateTicks(ctx, simInstruments, a.tickBus, a.Config.Market.SimulationSpeedMultiplier); err != nil {
 			zap.L().Error("Simulated market data feed stopped", zap.Error(err))
 		}
 	}()
@@ -292,7 +309,7 @@ func (a *App) startRealFeed(ctx context.Context) error {
 	}
 
 	// Subscribe (this blocks until ctx is done)
-	return a.Zerodha.SubscribeToTicks(instruments, a.Redis)
+	return a.Zerodha.SubscribeToTicks(instruments, a.tickBus)
 }
 
 // serviceAdapter implements runtime.Service using functions.
