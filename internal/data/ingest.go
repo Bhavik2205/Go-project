@@ -48,6 +48,7 @@ type MarketDataIngestor struct {
 	wsBroadcastWorkerCount int
 	tickIngestionTimeout   time.Duration // used only for WebSocket broadcast
 	dbFlushTimeout         time.Duration // used for DB flush blocking sends
+	dbFlushdrops           uint64        // counts how many times we had to drop a DB flush due to timeout (should be 0 ideally)
 
 	// Monitoring metrics
 	dbErrors      uint64 // DB write errors (not drops)
@@ -252,6 +253,33 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 
 	buyDepth := tick.Depth.Buy
 	sellDepth := tick.Depth.Sell
+
+	// Helper to safely get depth item from array (or slice, works for both)
+	safeDepthItem := func(depthArray interface{}, idx int) (price float64, quantity int64, orders int) {
+		// Handle array of DepthItem
+		switch d := depthArray.(type) {
+		case [5]kitemodels.DepthItem:
+			if idx >= 0 && idx < len(d) {
+				return d[idx].Price, int64(d[idx].Quantity), int(d[idx].Orders)
+			}
+		case []kitemodels.DepthItem:
+			if idx >= 0 && idx < len(d) {
+				return d[idx].Price, int64(d[idx].Quantity), int(d[idx].Orders)
+			}
+		}
+		return 0, 0, 0
+	}
+
+	// Log depth warning if the first level is zero (indicating ModeLTP/Quote)
+	if buyDepth[0].Price == 0 && sellDepth[0].Price == 0 {
+		zap.L().Warn("Market depth appears empty – tick may be in ModeLTP/Quote",
+			zap.String("symbol", enrichedTick.Symbol))
+	}
+
+	// Safely get first level for logging and heatmap
+	bestBidPrice, bestBidQty, _ := safeDepthItem(buyDepth, 0)
+	bestAskPrice, bestAskQty, _ := safeDepthItem(sellDepth, 0)
+
 	zap.L().Debug("Tick received",
 		zap.String("symbol", enrichedTick.Symbol),
 		zap.Float64("ltp", tick.LastPrice),
@@ -262,14 +290,27 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 	GetMarketHeatmap().Update(
 		enrichedTick.Symbol,
 		tick.LastPrice,
-		buyDepth[0].Price,
-		sellDepth[0].Price,
-		int64(buyDepth[0].Quantity),
-		int64(sellDepth[0].Quantity),
+		bestBidPrice,
+		bestAskPrice,
+		bestBidQty,
+		bestAskQty,
 		int64(tick.VolumeTraded),
 		tick.LastPrice,
 		tick.OHLC.Close,
 	)
+
+	// Get all 5 depth levels (always safe because arrays have length 5)
+	bid1Price, bid1Qty, bid1Orders := safeDepthItem(buyDepth, 0)
+	bid2Price, bid2Qty, bid2Orders := safeDepthItem(buyDepth, 1)
+	bid3Price, bid3Qty, bid3Orders := safeDepthItem(buyDepth, 2)
+	bid4Price, bid4Qty, bid4Orders := safeDepthItem(buyDepth, 3)
+	bid5Price, bid5Qty, bid5Orders := safeDepthItem(buyDepth, 4)
+
+	ask1Price, ask1Qty, ask1Orders := safeDepthItem(sellDepth, 0)
+	ask2Price, ask2Qty, ask2Orders := safeDepthItem(sellDepth, 1)
+	ask3Price, ask3Qty, ask3Orders := safeDepthItem(sellDepth, 2)
+	ask4Price, ask4Qty, ask4Orders := safeDepthItem(sellDepth, 3)
+	ask5Price, ask5Qty, ask5Orders := safeDepthItem(sellDepth, 4)
 
 	md := db.MarketData{
 		InstrumentToken:    tick.InstrumentToken,
@@ -285,16 +326,16 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 		Low:                tick.OHLC.Low,
 		Close:              tick.OHLC.Close,
 		OpenInterest:       tick.OI,
-		BidPrice1:          buyDepth[0].Price, BidQuantity1: buyDepth[0].Quantity, BidOrders1: buyDepth[0].Orders,
-		BidPrice2: buyDepth[1].Price, BidQuantity2: buyDepth[1].Quantity, BidOrders2: buyDepth[1].Orders,
-		BidPrice3: buyDepth[2].Price, BidQuantity3: buyDepth[2].Quantity, BidOrders3: buyDepth[2].Orders,
-		BidPrice4: buyDepth[3].Price, BidQuantity4: buyDepth[3].Quantity, BidOrders4: buyDepth[3].Orders,
-		BidPrice5: buyDepth[4].Price, BidQuantity5: buyDepth[4].Quantity, BidOrders5: buyDepth[4].Orders,
-		AskPrice1: sellDepth[0].Price, AskQuantity1: sellDepth[0].Quantity, AskOrders1: sellDepth[0].Orders,
-		AskPrice2: sellDepth[1].Price, AskQuantity2: sellDepth[1].Quantity, AskOrders2: sellDepth[1].Orders,
-		AskPrice3: sellDepth[2].Price, AskQuantity3: sellDepth[2].Quantity, AskOrders3: sellDepth[2].Orders,
-		AskPrice4: sellDepth[3].Price, AskQuantity4: sellDepth[3].Quantity, AskOrders4: sellDepth[3].Orders,
-		AskPrice5: sellDepth[4].Price, AskQuantity5: sellDepth[4].Quantity, AskOrders5: sellDepth[4].Orders,
+		BidPrice1: bid1Price, BidQuantity1: uint32(bid1Qty), BidOrders1: uint32(bid1Orders),
+		BidPrice2: bid2Price, BidQuantity2: uint32(bid2Qty), BidOrders2: uint32(bid2Orders),
+		BidPrice3: bid3Price, BidQuantity3: uint32(bid3Qty), BidOrders3: uint32(bid3Orders),
+		BidPrice4: bid4Price, BidQuantity4: uint32(bid4Qty), BidOrders4: uint32(bid4Orders),
+		BidPrice5: bid5Price, BidQuantity5: uint32(bid5Qty), BidOrders5: uint32(bid5Orders),
+		AskPrice1: ask1Price, AskQuantity1: uint32(ask1Qty), AskOrders1: uint32(ask1Orders),
+		AskPrice2: ask2Price, AskQuantity2: uint32(ask2Qty), AskOrders2: uint32(ask2Orders),
+		AskPrice3: ask3Price, AskQuantity3: uint32(ask3Qty), AskOrders3: uint32(ask3Orders),
+		AskPrice4: ask4Price, AskQuantity4: uint32(ask4Qty), AskOrders4: uint32(ask4Orders),
+		AskPrice5: ask5Price, AskQuantity5: uint32(ask5Qty), AskOrders5: uint32(ask5Orders),
 		TotalBuyQuantity:  tick.TotalBuyQuantity,
 		TotalSellQuantity: tick.TotalSellQuantity,
 	}
@@ -315,8 +356,8 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 		case m.dbFlushCh <- dataToFlush:
 			// success
 		case <-time.After(m.dbFlushTimeout):
-			atomic.AddUint64(&m.dbErrors, 1)
-			zap.L().Fatal("DB flush timeout – cannot persist market data. Exiting.",
+			atomic.AddUint64(&m.dbFlushdrops, 1)
+			zap.L().Error("DB flush timeout – dropping batch.",
 				zap.Duration("timeout", m.dbFlushTimeout),
 				zap.Int("batch_size", len(dataToFlush)))
 		}
@@ -369,8 +410,8 @@ func (m *MarketDataIngestor) startDBFlusher(ctx context.Context) {
 				case m.dbFlushCh <- dataToFlush:
 					// success
 				case <-time.After(m.dbFlushTimeout):
-					atomic.AddUint64(&m.dbErrors, 1)
-					zap.L().Fatal("Timed DB flush timeout – cannot persist market data. Exiting.",
+					atomic.AddUint64(&m.dbFlushdrops, 1)
+					zap.L().Error("Timed DB flush timeout – dropping batch.",
 						zap.Duration("timeout", m.dbFlushTimeout),
 						zap.Int("batch_size", len(dataToFlush)))
 				}

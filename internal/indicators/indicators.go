@@ -3,6 +3,7 @@ package indicators
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"time"
 
@@ -342,8 +343,9 @@ func (m MACD) Calculate(candles []Candle, appCfg *utils.AppConfig, indicatorsCfg
 		}
 
 		if originalCandleIndex == -1 {
-			zap.L().Fatal("MACD calculation fatal error: could not find original candle for MACD line timestamp", zap.Time("timestamp", line.Timestamp))
-			return nil, errors.New("internal error: MACD line to original candle index out of bounds during signal line preparation")
+			zap.L().Error("MACD calculation error: could not find original candle for MACD line timestamp", zap.Time("timestamp", line.Timestamp))
+			return nil, fmt.Errorf("MACD line timestamp %v not found in candles", line.Timestamp)
+			// return nil, errors.New("internal error: MACD line to original candle index out of bounds during signal line preparation")
 		}
 
 		macdLineCandles[i] = Candle{
@@ -382,8 +384,9 @@ func (m MACD) Calculate(candles []Candle, appCfg *utils.AppConfig, indicatorsCfg
 				}
 			}
 			if originalCandleIndex == -1 {
-				zap.L().Fatal("MACD calculation fatal error: could not find original candle for final result timestamp", zap.Time("timestamp", ts))
-				return nil, errors.New("internal error: MACD final result to original candle index out of bounds")
+				zap.L().Error("MACD calculation error: could not find original candle for final result timestamp", zap.Time("timestamp", ts))
+				return nil, fmt.Errorf("MACD final result timestamp %v not found in candles", ts)
+				// return nil, errors.New("internal error: MACD final result to original candle index out of bounds")
 			}
 
 			results = append(results, MACD{

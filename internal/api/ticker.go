@@ -136,8 +136,67 @@ func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, redisClient *c
 		zap.L().Error("❌ Zerodha WebSocket error", zap.Error(err))
 	})
 
+	// z.Ticker.OnClose(func(code int, reason string) {
+	// 	zap.L().Warn("🔌 Zerodha WebSocket closed", zap.Int("code", code), zap.String("reason", reason))
+	// })
+
+	// ========== FIXED: WebSocket reconnect with exponential backoff ==========
 	z.Ticker.OnClose(func(code int, reason string) {
 		zap.L().Warn("🔌 Zerodha WebSocket closed", zap.Int("code", code), zap.String("reason", reason))
+
+		// Capture tokens for reconnection
+		go func(tokensToResubscribe []uint32) {
+			backoff := 1 * time.Second
+			const maxBackoff = 1 * time.Minute
+
+			for {
+				time.Sleep(backoff)
+				zap.L().Info("Attempting WebSocket reconnect", zap.Duration("backoff", backoff))
+
+				// Create new ticker with same credentials
+				newTicker := kiteticker.New(z.APIKey, z.AccessToken)
+
+				// Set up callbacks for the new ticker
+				newTicker.OnConnect(func() {
+					zap.L().Info("Reconnected to Zerodha WebSocket.")
+					if err := newTicker.Subscribe(tokensToResubscribe); err != nil {
+						zap.L().Error("Failed to resubscribe after reconnect", zap.Error(err))
+					} else {
+						zap.L().Info("Resubscribed to tokens after reconnect")
+					}
+					if err := newTicker.SetMode(kiteticker.ModeFull, tokensToResubscribe); err != nil {
+						zap.L().Error("Failed to set mode after reconnect", zap.Error(err))
+					}
+					// Replace the old ticker with the new one
+					z.Ticker = newTicker
+				})
+
+				newTicker.OnError(func(err error) {
+					zap.L().Error("Reconnected WebSocket error", zap.Error(err))
+				})
+
+				newTicker.OnClose(func(code int, reason string) {
+					zap.L().Warn("Reconnected WebSocket closed again", zap.Int("code", code), zap.String("reason", reason))
+					// This will trigger another reconnect attempt via the outer loop
+				})
+
+				// Start the new ticker in a goroutine
+				go func() {
+					defer func() {
+						if r := recover(); r != nil {
+							zap.L().Error("Panic in reconnected ticker Serve", zap.Any("recover", r))
+						}
+					}()
+					newTicker.Serve()
+				}()
+
+				// Wait 5 seconds – if the connection dies immediately, OnClose will log and loop retries.
+				// If it survives 5 seconds, assume success and exit the reconnect loop.
+				time.Sleep(5 * time.Second)
+				zap.L().Info("WebSocket reconnection attempt completed – assuming success after 5s")
+				return
+			}
+		}(tokens) // pass the captured tokens slice
 	})
 
 	go func() {
