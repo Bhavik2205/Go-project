@@ -177,6 +177,7 @@ func convertNormalizedToKiteTick(nt marketdata.NormalizedTick) kitemodels.Tick {
 		TotalBuyQuantity:   nt.TotalBuyQuantity,
 		TotalSellQuantity:  nt.TotalSellQuantity,
 		OI:                 nt.OpenInterest,
+		Mode:               nt.Mode,
 	}
 }
 
@@ -338,6 +339,7 @@ func (m *MarketDataIngestor) processTick(enrichedTick struct {
 		AskPrice5: ask5Price, AskQuantity5: uint32(ask5Qty), AskOrders5: uint32(ask5Orders),
 		TotalBuyQuantity:  tick.TotalBuyQuantity,
 		TotalSellQuantity: tick.TotalSellQuantity,
+		DataSource:        dataSourceFromConfig(m.cfg),
 	}
 
 	m.bufferLock.Lock()

@@ -49,6 +49,13 @@ type CandleGenerator struct {
 	monitorStopCh chan struct{}
 }
 
+func dataSourceFromConfig(cfg *utils.AppConfig) string {
+	if cfg.Market.Simulate {
+		return "simulation"
+	}
+	return "live"
+}
+
 // NewCandleGenerator creates and returns a new instance of CandleGenerator.
 func NewCandleGenerator(
 	dbC *db.DBClient,
@@ -108,6 +115,7 @@ func (cg *CandleGenerator) handleFinalizedCandle(candle *candles.OpenCandle) {
 		Close:           candle.Close,
 		Volume:          candle.Volume,
 		TradeCount:      candle.TradeCount,
+		DataSource:      dataSourceFromConfig(cg.appCfg),
 	}
 
 	// Non‑blocking send to DB flush channel
@@ -133,6 +141,7 @@ func (cg *CandleGenerator) handleFinalizedCandle(candle *candles.OpenCandle) {
 			Close:           candle.Close,
 			Volume:          candle.Volume,
 			TradeCount:      candle.TradeCount,
+			DataSource:      dataSourceFromConfig(cg.appCfg),
 		}
 		select {
 		case cg.indicatorManagerInputCh <- indicatorCandle:
@@ -163,6 +172,7 @@ func (cg *CandleGenerator) broadcastCandle(candle *candles.OpenCandle) {
 		Close           float64   `json:"close"`
 		Volume          float64   `json:"volume"`
 		TradeCount      uint32    `json:"trade_count"`
+		DataSource      string    `json:"data_source"`
 	}{
 		InstrumentToken: candle.InstrumentToken,
 		Interval:        candle.IntervalStr,
@@ -173,6 +183,7 @@ func (cg *CandleGenerator) broadcastCandle(candle *candles.OpenCandle) {
 		Close:           candle.Close,
 		Volume:          candle.Volume,
 		TradeCount:      candle.TradeCount,
+		DataSource:      dataSourceFromConfig(cg.appCfg),
 	}
 
 	jsonMessage, err := json.Marshal(broadcastData)

@@ -39,4 +39,6 @@ type NormalizedTick struct {
 
 	// Open interest (for derivatives)
 	OpenInterest uint32 `json:"open_interest"`
+
+	Mode string `json:"mode"` // "simulation", "live", or "kite"
 }
