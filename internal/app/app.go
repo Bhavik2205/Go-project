@@ -130,13 +130,6 @@ func New(appCfg *utils.AppConfig, dbCfg *utils.DatabaseConfig, redisCfg *utils.R
 		stop: nil,
 	})
 	app.rm.Register(&serviceAdapter{
-		name: "candle_db_writer",
-		start: func(ctx context.Context) error {
-			go app.CandleGenerator.StartCandleDBWriter(ctx)
-			return nil
-		},
-	})
-	app.rm.Register(&serviceAdapter{
 		name: "candle_generator",
 		start: func(ctx context.Context) error {
 			go app.CandleGenerator.StartCandleGeneration(ctx)
@@ -156,9 +149,13 @@ func New(appCfg *utils.AppConfig, dbCfg *utils.DatabaseConfig, redisCfg *utils.R
 	app.rm.Register(&serviceAdapter{
 		name: "system_monitor",
 		start: func(ctx context.Context) error {
+			var statsProvider interface{ DroppedTicks() uint64 }
+			if tb, ok := app.tickBus.(*tickbus.InProcessTickBus); ok {
+				statsProvider = tb
+			}
 			go monitor.StartSystemMonitor(5*time.Second, func(msg string) {
 				zap.L().Warn(msg)
-			})
+			}, statsProvider)
 			return nil
 		},
 	})

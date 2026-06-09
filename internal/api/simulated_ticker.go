@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -247,11 +248,20 @@ func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*Ins
 				}
 
 				// Publish directly to TickBus (no Redis envelope)
+				// if err := tb.Publish(ctx, normalized); err != nil {
+				// 	zap.L().Error("❌ Failed to publish simulated tick to TickBus",
+				// 		zap.Uint32("instrument_token", token),
+				// 		zap.Error(err),
+				// 	)
 				if err := tb.Publish(ctx, normalized); err != nil {
+					if errors.Is(err, context.Canceled) {
+						zap.L().Debug("Simulation tick publish skipped due to shutdown", zap.Uint32("instrument_token", token))
+						return nil // or break the loop
+					}
 					zap.L().Error("❌ Failed to publish simulated tick to TickBus",
 						zap.Uint32("instrument_token", token),
-						zap.Error(err),
-					)
+						zap.Error(err))
+
 				} else {
 					zap.L().Debug("Published simulated tick",
 						zap.String("symbol", label),
