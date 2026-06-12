@@ -28,22 +28,40 @@ groups:
           description: "{{ $value }} goroutines running. Possible goroutine leak."
 
       - alert: DBFlushQueueSaturated
-        expr: trading_db_flush_queue_depth / on() group_left() (trading_db_flush_queue_depth + 1) > 0.9
+        expr: trading_db_flush_queue_depth / trading_db_flush_queue_capacity > 0.9
         for: 15s
         labels:
           severity: critical
         annotations:
           summary: "DB flush queue >90% full"
-          description: "DB flush queue depth: {{ $value }}. Risk of tick drops."
+          description: "DB flush queue at {{ $value | humanizePercentage }}. Risk of tick drops."
 
       - alert: TickQueueSaturated
-        expr: trading_tick_queue_depth / on() group_left() (trading_tick_queue_depth + 1) > 0.9
+        expr: trading_tick_queue_depth / trading_tick_queue_capacity > 0.9
         for: 15s
         labels:
           severity: warning
         annotations:
           summary: "Tick broadcast queue >90% full"
-          description: "Tick queue depth: {{ $value }}. Frontend drops likely."
+          description: "Tick queue at {{ $value | humanizePercentage }}. Frontend drops likely."
+
+      - alert: CandleQueueSaturated
+        expr: trading_candle_queue_depth / trading_candle_queue_capacity > 0.9
+        for: 15s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Candle queue >90% full"
+          description: "Candle queue at {{ $value | humanizePercentage }}."
+
+      - alert: IndicatorQueueSaturated
+        expr: trading_indicator_queue_depth / trading_indicator_queue_capacity > 0.9
+        for: 15s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Indicator queue >90% full"
+          description: "Indicator queue at {{ $value | humanizePercentage }}."
 
       - alert: HighMemoryUsage
         expr: trading_memory_heap_alloc_bytes / trading_memory_sys_bytes > 0.85

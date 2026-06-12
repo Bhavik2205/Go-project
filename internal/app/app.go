@@ -203,11 +203,17 @@ func (a *App) Start(ctx context.Context) error {
 	observability.StartRuntimeMetricsCollector(ctx)
 	observability.StartTickStalenessMonitor(ctx)
 	observability.RegisterDependencyPinger(&appPinger{db: a.DB, redis: a.Redis})
-	observability.RegisterQueueDepthProvider(&appQueueProvider{
+	qp := &appQueueProvider{
 		ingestor:  a.DataIngestor,
 		candle:    a.CandleGenerator,
 		indicator: a.IndicatorManager,
-	})
+	}
+	observability.RegisterQueueDepthProvider(qp)
+	// Set capacity gauges once at startup — capacities are fixed at construction time.
+	observability.TickQueueCapacity.Set(float64(qp.TickQueueCap()))
+	observability.DBFlushQueueCapacity.Set(float64(qp.DBFlushQueueCap()))
+	observability.CandleQueueCapacity.Set(float64(qp.CandleQueueCap()))
+	observability.IndicatorQueueCapacity.Set(float64(qp.IndicatorQueueCap()))
 	return a.rm.StartAll(ctx)
 }
 

@@ -13,6 +13,7 @@ import (
 // runtime metrics every 5 seconds.
 func StartRuntimeMetricsCollector(ctx context.Context) {
 	go func() {
+		defer RecoverPanic("runtime-metrics-collector")
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 

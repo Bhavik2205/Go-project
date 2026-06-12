@@ -84,9 +84,19 @@ var (
 		Help: "Current depth of tick broadcast queue",
 	})
 
+	TickQueueCapacity = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "trading_tick_queue_capacity",
+		Help: "Total capacity of tick broadcast queue",
+	})
+
 	CandleQueueDepth = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "trading_candle_queue_depth",
 		Help: "Current depth of candle finalization queue",
+	})
+
+	CandleQueueCapacity = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "trading_candle_queue_capacity",
+		Help: "Total capacity of candle finalization queue",
 	})
 
 	DBFlushQueueDepth = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -94,9 +104,19 @@ var (
 		Help: "Current depth of database flush queue",
 	})
 
+	DBFlushQueueCapacity = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "trading_db_flush_queue_capacity",
+		Help: "Total capacity of database flush queue",
+	})
+
 	IndicatorQueueDepth = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "trading_indicator_queue_depth",
 		Help: "Current depth of indicator processing queue",
+	})
+
+	IndicatorQueueCapacity = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "trading_indicator_queue_capacity",
+		Help: "Total capacity of indicator processing queue",
 	})
 
 	LastTickTimestamp = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -249,7 +269,15 @@ func InitMetrics() error {
 		if initErr != nil {
 			return
 		}
+		initErr = prometheus.Register(TickQueueCapacity)
+		if initErr != nil {
+			return
+		}
 		initErr = prometheus.Register(CandleQueueDepth)
+		if initErr != nil {
+			return
+		}
+		initErr = prometheus.Register(CandleQueueCapacity)
 		if initErr != nil {
 			return
 		}
@@ -257,7 +285,15 @@ func InitMetrics() error {
 		if initErr != nil {
 			return
 		}
+		initErr = prometheus.Register(DBFlushQueueCapacity)
+		if initErr != nil {
+			return
+		}
 		initErr = prometheus.Register(IndicatorQueueDepth)
+		if initErr != nil {
+			return
+		}
+		initErr = prometheus.Register(IndicatorQueueCapacity)
 		if initErr != nil {
 			return
 		}
