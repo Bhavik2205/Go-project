@@ -2,29 +2,33 @@ package observability
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 )
 
 var (
-	lastTickTime time.Time
-	tickStalenessMu interface{} // Used for syncing in real implementation
+	// Use atomic.Int64 for thread-safe tick timestamp updates
+	// Stores unix nanoseconds for high precision
+	lastTickTimeNano atomic.Int64
 )
 
 // UpdateLastTickTimestamp records when the last tick was received.
-// Call this in the OnTick handler.
+// Call this in the OnTick handler. Thread-safe.
 func UpdateLastTickTimestamp(t time.Time) {
-	lastTickTime = t
+	lastTickTimeNano.Store(t.UnixNano())
 	LastTickTimestamp.Set(float64(t.Unix()))
 }
 
 // UpdateTickStalenessStatus checks if no ticks have been received for >5s.
-// Call this periodically from a background worker.
+// Call this periodically from a background worker. Thread-safe.
 func UpdateTickStalenessStatus() {
-	if lastTickTime.IsZero() {
+	nanoVal := lastTickTimeNano.Load()
+	if nanoVal == 0 {
 		TickFeedDead.Set(1)
 		return
 	}
 
+	lastTickTime := time.Unix(0, nanoVal)
 	since := time.Since(lastTickTime)
 	if since > 5*time.Second {
 		TickFeedDead.Set(1)
@@ -65,6 +69,24 @@ func RecordDBFlushDrop() {
 // RecordIndicatorError increments the indicator error counter.
 func RecordIndicatorError() {
 	IndicatorErrors.Inc()
+}
+
+// RecordTickGap increments the tick gap counter.
+// Call when a gap in tick sequence is detected.
+func RecordTickGap() {
+	TickGapsDetected.Inc()
+}
+
+// RecordDuplicateTick increments the duplicate tick counter.
+// Call when a duplicate tick is detected.
+func RecordDuplicateTick() {
+	DuplicateTicksDetected.Inc()
+}
+
+// RecordOutOfOrderTick increments the out-of-order tick counter.
+// Call when a tick arrives out of sequence.
+func RecordOutOfOrderTick() {
+	OutOfOrderTicksDetected.Inc()
 }
 
 // StartTickStalenessMonitor starts a background goroutine that monitors tick staleness

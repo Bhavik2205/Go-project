@@ -133,6 +133,22 @@ var (
 		Name: "trading_indicator_errors_total",
 		Help: "Total number of indicator computation errors",
 	})
+
+	// Tick quality metrics (for market data validation)
+	TickGapsDetected = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "trading_tick_gaps_detected_total",
+		Help: "Total number of gaps detected in tick sequence",
+	})
+
+	DuplicateTicksDetected = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "trading_duplicate_ticks_detected_total",
+		Help: "Total number of duplicate ticks detected",
+	})
+
+	OutOfOrderTicksDetected = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "trading_out_of_order_ticks_detected_total",
+		Help: "Total number of out-of-order ticks detected",
+	})
 )
 
 var (
@@ -178,6 +194,18 @@ func InitMetrics() error {
 			return
 		}
 		initErr = prometheus.Register(IndicatorErrors)
+		if initErr != nil {
+			return
+		}
+		initErr = prometheus.Register(TickGapsDetected)
+		if initErr != nil {
+			return
+		}
+		initErr = prometheus.Register(DuplicateTicksDetected)
+		if initErr != nil {
+			return
+		}
+		initErr = prometheus.Register(OutOfOrderTicksDetected)
 		if initErr != nil {
 			return
 		}

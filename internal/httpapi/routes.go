@@ -3,6 +3,7 @@ package httpapi
 
 import (
 	"net/http"
+	_ "net/http/pprof"
 
 	authhandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/auth"
 	profilehandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/profile"
@@ -22,6 +23,11 @@ func RegisterRoutes(router *mux.Router, deps HTTPDeps) {
 		handleV1Health(w, r, deps)
 	}).Methods("GET")
 	apiV1.Handle("/metrics", promhttp.Handler()).Methods("GET")
+	
+	// pprof profiling (for memory/goroutine leak detection)
+	// Available at: /debug/pprof
+	router.PathPrefix("/debug/pprof").Handler(http.DefaultServeMux)
+	
 	apiV1.HandleFunc("/openapi.json", handleV1OpenAPISpec).Methods("GET")
 	apiV1.HandleFunc("/auth/signup", authhandler.HandleSignup(deps.DBClient)).Methods("POST")
 	apiV1.HandleFunc("/auth/login", authhandler.HandleLogin(deps.DBClient)).Methods("POST")
