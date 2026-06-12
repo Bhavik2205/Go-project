@@ -311,10 +311,8 @@ func (cg *CandleGenerator) UnregisterWebSocketClient(conn *websocket.Conn) {
 
 // writePump writes messages from the channel to the WebSocket with deadlines and periodic pings.
 func (cg *CandleGenerator) writePump(client *wsClient) {
+	defer observability.RecoverPanic("candle-ws-write-pump")
 	defer func() {
-		if r := recover(); r != nil {
-			zap.L().Error("Panic recovered in candle writePump", zap.Any("recover", r))
-		}
 		client.conn.Close()
 		cg.candleWsClients.Delete(client.conn)
 	}()

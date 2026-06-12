@@ -3,6 +3,7 @@ package data
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -111,13 +112,11 @@ func (m *MarketDataIngestor) startMonitoring(ctx context.Context) {
 			rate := broadcasted - lastBroadcasted
 			lastBroadcasted = broadcasted
 
-			// Update Prometheus metrics
-			observability.DBErrors.Add(float64(dbErrs))
-			observability.TicksDropped.Add(float64(dropTicks + wsDrops))
-			observability.DBFlushDrops.Add(float64(dbFlushDrops))
-			observability.WebSocketBroadcasted.Add(float64(broadcasted))
+			// NOTE: Prometheus counters (DBErrors, TicksDropped, etc.) are incremented
+			// at event time via Inc()/Add(). Do NOT add cumulative totals here — that
+			// would double-count on every monitoring cycle.
 
-			// Update queue depths
+			// Update queue depth gauges only (gauges are safe to Set repeatedly).
 			observability.TickQueueDepth.Set(float64(len(m.broadcastChannel)))
 			observability.DBFlushQueueDepth.Set(float64(len(m.dbFlushCh)))
 
@@ -146,6 +145,7 @@ func (m *MarketDataIngestor) IndicatorQueueCap() int { return 0 }
 
 // startTickSubscription subscribes to the TickBus and processes incoming ticks.
 func (m *MarketDataIngestor) startTickSubscription(ctx context.Context) {
+	defer observability.RecoverPanic("ingestor-tick-subscription")
 	tickCh, err := m.tickBus.Subscribe(ctx)
 	if err != nil {
 		zap.L().Fatal("Failed to subscribe to tick bus", zap.Error(err))
@@ -343,6 +343,7 @@ func (m *MarketDataIngestor) processTick(tick marketdata.NormalizedTick) {
 
 // startDBFlusher periodically checks if the buffer needs flushing based on time.
 func (m *MarketDataIngestor) startDBFlusher(ctx context.Context) {
+	defer observability.RecoverPanic("ingestor-db-flusher")
 	flushInterval := time.Duration(m.cfg.Ingestion.MarketDataFlushIntervalMS) * time.Millisecond
 	if flushInterval <= 0 {
 		flushInterval = 500 * time.Millisecond
@@ -404,11 +405,7 @@ func (m *MarketDataIngestor) startDBFlusher(ctx context.Context) {
 func (m *MarketDataIngestor) startDBWorkers(ctx context.Context) {
 	for i := 0; i < m.dbWorkerCount; i++ {
 		go func(workerID int) {
-			defer func() {
-				if r := recover(); r != nil {
-					zap.L().Error("Panic recovered in DB worker", zap.Int("worker_id", workerID), zap.Any("recover", r))
-				}
-			}()
+			defer observability.RecoverPanic(fmt.Sprintf("ingestor-db-worker-%d", workerID))
 			zap.L().Info("📦 DB worker started", zap.Int("worker_id", workerID))
 			for {
 				select {
@@ -456,11 +453,7 @@ func (m *MarketDataIngestor) startDBWorkers(ctx context.Context) {
 func (m *MarketDataIngestor) startWebSocketBroadcasterWorkers(ctx context.Context) {
 	for i := 0; i < m.wsBroadcastWorkerCount; i++ {
 		go func(workerID int) {
-			defer func() {
-				if r := recover(); r != nil {
-					zap.L().Error("Panic recovered in WS dispatcher worker", zap.Int("worker_id", workerID), zap.Any("recover", r))
-				}
-			}()
+			defer observability.RecoverPanic(fmt.Sprintf("ingestor-ws-worker-%d", workerID))
 			zap.L().Info("🌐 WS dispatcher worker started", zap.Int("worker_id", workerID))
 			for {
 				select {
@@ -559,6 +552,7 @@ func (m *MarketDataIngestor) writePump(conn *websocket.Conn, clientWriteCh <-cha
 
 // startSequenceCounterCleanup periodically cleans up old entries in tickSequenceCounters.
 func (m *MarketDataIngestor) startSequenceCounterCleanup(ctx context.Context) {
+	defer observability.RecoverPanic("ingestor-seq-cleanup")
 	cleanupInterval := time.Duration(m.cfg.Ingestion.TickSequenceCleanupInterval) * time.Second
 	if cleanupInterval <= 0 {
 		cleanupInterval = 10 * time.Minute

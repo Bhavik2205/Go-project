@@ -117,10 +117,8 @@ func (im *IndicatorManager) IndicatorQueueCap() int { return cap(im.processedInd
 
 // writePump writes messages from the channel to the WebSocket with deadlines and periodic pings.
 func (im *IndicatorManager) writePump(client *wsClient) {
+	defer observability.RecoverPanic("indicator-ws-write-pump")
 	defer func() {
-		if r := recover(); r != nil {
-			zap.L().Error("Panic in indicator writePump", zap.Any("recover", r))
-		}
 		client.conn.Close()
 		im.indicatorWsClients.Delete(client.conn)
 	}()
@@ -226,12 +224,7 @@ func (im *IndicatorManager) startMonitoring(ctx context.Context) {
 func (im *IndicatorManager) StartOutputProcessing(ctx context.Context) {
 	for i := 0; i < im.outputWorkerCount; i++ {
 		go func(workerID int) {
-			defer func() {
-				if r := recover(); r != nil {
-					zap.L().Error("Panic in indicator output worker",
-						zap.Int("worker_id", workerID), zap.Any("recover", r))
-				}
-			}()
+			defer observability.RecoverPanic(fmt.Sprintf("indicator-output-worker-%d", workerID))
 			zap.L().Info("📦 Indicator output worker started", zap.Int("worker_id", workerID))
 			for {
 				select {

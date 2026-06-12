@@ -3,6 +3,7 @@ package observability
 import (
 	"context"
 	"runtime"
+	"runtime/debug"
 	"time"
 
 	"go.uber.org/zap"
@@ -28,10 +29,8 @@ func StartRuntimeMetricsCollector(ctx context.Context) {
 }
 
 func collectRuntimeMetrics() {
-	// Goroutines
 	GoroutineCount.Set(float64(runtime.NumGoroutine()))
 
-	// Memory stats
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 
@@ -41,17 +40,16 @@ func collectRuntimeMetrics() {
 	GCRunsTotal.Set(float64(m.NumGC))
 }
 
-// RecoverPanic recovers from a panic, logs it, and increments the panic counter.
-// Use with defer at the start of critical goroutines.
-//
-// Example:
-//   func worker() {
-//       defer observability.RecoverPanic("worker-name")
-//       // ... work ...
-//   }
+// RecoverPanic recovers from a panic, logs it with a full stack trace,
+// increments the panic counter, and continues. Use with defer.
 func RecoverPanic(component string) {
 	if r := recover(); r != nil {
 		PanicCounter.Inc()
-		zap.L().Error("Panic recovered", zap.String("component", component), zap.Any("panic", r))
+		stack := debug.Stack()
+		zap.L().Error("Panic recovered",
+			zap.String("component", component),
+			zap.Any("panic", r),
+			zap.ByteString("stack", stack),
+		)
 	}
 }
