@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Bhavik2205/ML-Bot/internal/marketdata"
+	"github.com/Bhavik2205/ML-Bot/internal/observability"
 	"go.uber.org/zap"
 )
 
@@ -100,10 +101,20 @@ func (e *CandleEngine) finalizeByWatermark() {
 			delete(e.openCandles, token)
 		}
 	}
+
+	// Update open candles gauge
+	count := 0
+	for _, byInterval := range e.openCandles {
+		count += len(byInterval)
+	}
+	observability.OpenCandlesCount.Set(float64(count))
 }
 
 // finalizeCandleLocked calls the OnFinalize callback (must be called with lock held).
 func (e *CandleEngine) finalizeCandleLocked(candle *OpenCandle) {
+	latency := time.Since(candle.EndTime).Milliseconds()
+	observability.RecordCandleLatency(float64(latency))
+	
 	if e.cfg.OnFinalize != nil {
 		e.cfg.OnFinalize(candle)
 	}

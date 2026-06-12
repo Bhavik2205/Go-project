@@ -15,6 +15,7 @@ import (
 	"github.com/Bhavik2205/ML-Bot/internal/httpapi"
 	"github.com/Bhavik2205/ML-Bot/internal/indicators"
 	"github.com/Bhavik2205/ML-Bot/internal/marketdata/tickbus"
+	"github.com/Bhavik2205/ML-Bot/internal/observability"
 	"github.com/Bhavik2205/ML-Bot/internal/realtime"
 	"github.com/Bhavik2205/ML-Bot/internal/runtime"
 	"github.com/Bhavik2205/ML-Bot/internal/utils"
@@ -52,6 +53,13 @@ func New(appCfg *utils.AppConfig, dbCfg *utils.DatabaseConfig, redisCfg *utils.R
 		IndicatorWsClients: &sync.Map{},
 		IndicatorInputCh:   make(chan indicators.Candle, 5000),
 		rm:                 runtime.NewRuntimeManager(),
+	}
+
+	// --- Initialize Prometheus metrics ---
+	if err := observability.InitMetrics(); err != nil {
+		zap.L().Warn("Failed to initialize metrics (may already be initialized)", zap.Error(err))
+	} else {
+		zap.L().Info("✅ Prometheus metrics initialized")
 	}
 
 	// --- Database ---
@@ -192,6 +200,10 @@ func New(appCfg *utils.AppConfig, dbCfg *utils.DatabaseConfig, redisCfg *utils.R
 // Start runs all services via RuntimeManager.
 func (a *App) Start(ctx context.Context) error {
 	zap.L().Info("Starting App services...")
+	// Start runtime metrics collector
+	observability.StartRuntimeMetricsCollector(ctx)
+	// Start tick staleness monitor
+	observability.StartTickStalenessMonitor(ctx)
 	return a.rm.StartAll(ctx)
 }
 

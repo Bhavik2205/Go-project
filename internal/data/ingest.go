@@ -11,6 +11,7 @@ import (
 	"github.com/Bhavik2205/ML-Bot/internal/db"
 	"github.com/Bhavik2205/ML-Bot/internal/marketdata"
 	"github.com/Bhavik2205/ML-Bot/internal/marketdata/tickbus"
+	"github.com/Bhavik2205/ML-Bot/internal/observability"
 	"github.com/Bhavik2205/ML-Bot/internal/utils"
 	"github.com/gorilla/websocket"
 	kitemodels "github.com/zerodha/gokiteconnect/v4/models"
@@ -105,14 +106,26 @@ func (m *MarketDataIngestor) startMonitoring(ctx context.Context) {
 			wsDrops := atomic.LoadUint64(&m.wsDrops)
 			broadcasted := atomic.LoadUint64(&m.wsBroadcasted)
 			dropTicks := atomic.LoadUint64(&m.droppedTicks)
+			dbFlushDrops := atomic.LoadUint64(&m.dbFlushdrops)
 			rate := broadcasted - lastBroadcasted
 			lastBroadcasted = broadcasted
+
+			// Update Prometheus metrics
+			observability.DBErrors.Add(float64(dbErrs))
+			observability.TicksDropped.Add(float64(dropTicks + wsDrops))
+			observability.DBFlushDrops.Add(float64(dbFlushDrops))
+			observability.WebSocketBroadcasted.Add(float64(broadcasted))
+
+			// Update queue depths
+			observability.TickQueueDepth.Set(float64(len(m.broadcastChannel)))
+			observability.DBFlushQueueDepth.Set(float64(len(m.dbFlushCh)))
 
 			zap.L().Info("MarketDataIngestor monitoring",
 				zap.Uint64("db_errors", dbErrs),
 				zap.Uint64("ws_drops", wsDrops),
 				zap.Uint64("broadcast_rate_per_5s", rate),
 				zap.Uint64("frontend_dropped_ticks", dropTicks),
+				zap.Uint64("db_flush_drops", dbFlushDrops),
 			)
 		case <-ctx.Done():
 			return
@@ -279,9 +292,10 @@ func (m *MarketDataIngestor) processTick(tick marketdata.NormalizedTick) {
 	if flushNow {
 		select {
 		case m.dbFlushCh <- dataToFlush:
-			// success
+			observability.TicksProcessed.Add(float64(len(dataToFlush)))
 		case <-time.After(m.dbFlushTimeout):
 			atomic.AddUint64(&m.dbFlushdrops, 1)
+			observability.DBFlushDrops.Inc()
 			zap.L().Error("DB flush timeout – dropping batch.",
 				zap.Duration("timeout", m.dbFlushTimeout),
 				zap.Int("batch_size", len(dataToFlush)))
@@ -304,9 +318,11 @@ func (m *MarketDataIngestor) processTick(tick marketdata.NormalizedTick) {
 		select {
 		case m.broadcastChannel <- frontendData:
 			atomic.AddUint64(&m.wsBroadcasted, 1)
+			observability.WebSocketBroadcasted.Inc()
 			m.livePrices.Store(tick.Symbol, frontendData)
 		case <-time.After(m.tickIngestionTimeout):
 			atomic.AddUint64(&m.droppedTicks, 1)
+			observability.TicksDropped.Inc()
 			zap.L().Warn("Frontend broadcast timeout, dropping tick (acceptable)",
 				zap.Duration("timeout", m.tickIngestionTimeout),
 				zap.String("symbol", tick.Symbol))
@@ -334,6 +350,7 @@ func (m *MarketDataIngestor) startDBFlusher(ctx context.Context) {
 				// ---- DB FLUSH WITH TIMEOUT (FATAL ON TIMEOUT) ----
 				select {
 				case m.dbFlushCh <- dataToFlush:
+			observability.TicksProcessed.Add(float64(len(dataToFlush)))
 					// success
 				case <-time.After(m.dbFlushTimeout):
 					atomic.AddUint64(&m.dbFlushdrops, 1)

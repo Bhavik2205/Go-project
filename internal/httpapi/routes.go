@@ -10,6 +10,7 @@ import (
 	"github.com/Bhavik2205/ML-Bot/internal/api/handlers/settings"
 	"github.com/Bhavik2205/ML-Bot/internal/middleware"
 	"github.com/gorilla/mux"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // RegisterRoutes sets up all API v1 routes.
@@ -20,6 +21,7 @@ func RegisterRoutes(router *mux.Router, deps HTTPDeps) {
 	apiV1.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		handleV1Health(w, r, deps)
 	}).Methods("GET")
+	apiV1.Handle("/metrics", promhttp.Handler()).Methods("GET")
 	apiV1.HandleFunc("/openapi.json", handleV1OpenAPISpec).Methods("GET")
 	apiV1.HandleFunc("/auth/signup", authhandler.HandleSignup(deps.DBClient)).Methods("POST")
 	apiV1.HandleFunc("/auth/login", authhandler.HandleLogin(deps.DBClient)).Methods("POST")

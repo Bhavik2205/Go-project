@@ -8,6 +8,7 @@ import (
 	// Import your Redis client
 	"github.com/Bhavik2205/ML-Bot/internal/marketdata"
 	"github.com/Bhavik2205/ML-Bot/internal/marketdata/tickbus"
+	"github.com/Bhavik2205/ML-Bot/internal/observability"
 	kitemodels "github.com/zerodha/gokiteconnect/v4/models"
 	kiteticker "github.com/zerodha/gokiteconnect/v4/ticker"
 	"go.uber.org/zap" // Use zap logger
@@ -50,6 +51,12 @@ func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, tb tickbus.Tic
 	lastVolumes := make(map[uint32]int)
 
 	z.Ticker.OnTick(func(tick kitemodels.Tick) {
+		observability.TicksReceived.Inc()
+		observability.UpdateLastTickTimestamp(tick.Timestamp.Time)
+
+		lag := time.Since(tick.Timestamp.Time).Milliseconds()
+		observability.RecordTickLag(float64(lag))
+
 		prevPrice := lastPrices[tick.InstrumentToken]
 		currentPrice := float32(tick.LastPrice)
 
@@ -189,11 +196,7 @@ func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, tb tickbus.Tic
 	})
 
 	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				zap.L().Error("Panic in Zerodha Ticker Serve goroutine", zap.Any("recover", r))
-			}
-		}()
+		defer observability.RecoverPanic("ticker-serve")
 		z.Ticker.Serve()
 	}()
 	return nil
