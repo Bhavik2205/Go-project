@@ -154,6 +154,32 @@ var (
 		Help: "Total number of indicator computation errors",
 	})
 
+	// WAL metrics
+	WALAppendsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "wal_appends_total",
+		Help: "Total number of ticks appended to the WAL",
+	})
+
+	WALAppendErrorsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "wal_append_errors_total",
+		Help: "Total number of WAL append errors",
+	})
+
+	WALBytesWrittenTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "wal_bytes_written_total",
+		Help: "Total bytes written to WAL segments",
+	})
+
+	WALSegmentsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "wal_segments_total",
+		Help: "Total number of WAL segments created",
+	})
+
+	WALReplayRecordsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "wal_replay_records_total",
+		Help: "Total number of records replayed from WAL",
+	})
+
 	// Tick quality metrics (for market data validation)
 	TickGapsDetected = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "trading_tick_gaps_detected_total",
@@ -182,6 +208,7 @@ var (
 var allMetrics = []prometheus.Collector{
 	TicksReceived, TicksProcessed, TicksDropped, PanicCounter, CandleFinalized,
 	DBErrors, DBFlushDrops, WebSocketBroadcasted, IndicatorErrors,
+	WALAppendsTotal, WALAppendErrorsTotal, WALBytesWrittenTotal, WALSegmentsTotal, WALReplayRecordsTotal,
 	TickGapsDetected, DuplicateTicksDetected, OutOfOrderTicksDetected,
 	TickLag, CandleLatency, IndicatorLatency,
 	GoroutineCount, MemoryHeapAlloc, MemoryHeapInuse, MemorySys, GCRunsTotal,

@@ -8,6 +8,7 @@ import (
 	// Import your Redis client
 	"github.com/Bhavik2205/ML-Bot/internal/marketdata"
 	"github.com/Bhavik2205/ML-Bot/internal/marketdata/tickbus"
+	"github.com/Bhavik2205/ML-Bot/internal/marketdata/wal"
 	"github.com/Bhavik2205/ML-Bot/internal/observability"
 	kitemodels "github.com/zerodha/gokiteconnect/v4/models"
 	kiteticker "github.com/zerodha/gokiteconnect/v4/ticker"
@@ -18,7 +19,7 @@ import (
 const RedisMarketDataChannel = "market_data_ticks"
 
 // SubscribeToTicks subscribes to ticks and publishes them as NormalizedTick to Redis.
-func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, tb tickbus.TickBus) error {
+func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, tb tickbus.TickBus, wal wal.Writer) error {
 	if tb == nil {
 		return fmt.Errorf("TickBus is nil, cannot publish ticks")
 	}
@@ -118,7 +119,17 @@ func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, tb tickbus.Tic
 				normalized.PercentChange = (normalized.LastPrice - normalized.PrevClose) / normalized.PrevClose * 100
 			}
 
-			// Publish directly to the TickBus (no extra JSON wrapper – the bus may add its own)
+			// WAL first — tick must be durable before going downstream.
+			if err := wal.Append(normalized); err != nil {
+				zap.L().Error("❌ WAL append failed",
+					zap.Uint32("instrument_token", tick.InstrumentToken),
+					zap.Error(err),
+				)
+				// WAL failure is non-fatal — we still publish to keep the pipeline live,
+				// but the metric will alert operations.
+			}
+
+			// Publish to TickBus only after WAL append attempt.
 			if err := tb.Publish(context.Background(), normalized); err != nil {
 				zap.L().Error("❌ Failed to publish tick to TickBus",
 					zap.Uint32("instrument_token", tick.InstrumentToken),

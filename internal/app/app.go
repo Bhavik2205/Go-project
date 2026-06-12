@@ -15,6 +15,7 @@ import (
 	"github.com/Bhavik2205/ML-Bot/internal/httpapi"
 	"github.com/Bhavik2205/ML-Bot/internal/indicators"
 	"github.com/Bhavik2205/ML-Bot/internal/marketdata/tickbus"
+	"github.com/Bhavik2205/ML-Bot/internal/marketdata/wal"
 	"github.com/Bhavik2205/ML-Bot/internal/observability"
 	"github.com/Bhavik2205/ML-Bot/internal/realtime"
 	"github.com/Bhavik2205/ML-Bot/internal/runtime"
@@ -40,6 +41,7 @@ type App struct {
 
 	rm            *runtime.RuntimeManager
 	tickBus       tickbus.TickBus
+	wal           wal.Writer
 	symbolsConfig *utils.SymbolsConfig
 }
 
@@ -91,6 +93,18 @@ func New(appCfg *utils.AppConfig, dbCfg *utils.DatabaseConfig, redisCfg *utils.R
 		zap.L().Info("TickBus: using Redis Pub/Sub")
 	}
 	app.tickBus = tb
+
+	// --- WAL ---
+	w, err := wal.NewWriter("wal")
+	if err != nil {
+		return nil, fmt.Errorf("wal init: %w", err)
+	}
+	app.wal = w
+	if appCfg.Market.Simulate {
+		zap.L().Info("WAL initialised (simulation mode)", zap.String("dir", "wal"))
+	} else {
+		zap.L().Info("WAL initialised", zap.String("dir", "wal"))
+	}
 
 	// --- Core components ---
 	app.DataIngestor = data.NewMarketDataIngestor(app.DB, app.tickBus, app.WsClients, appCfg, indicatorsCfg)
@@ -278,7 +292,7 @@ func (a *App) startSimulatedFeed(ctx context.Context) error {
 	}
 
 	go func() {
-		if err := simGenerator.SimulateTicks(ctx, simInstruments, a.tickBus, a.Config.Market.SimulationSpeedMultiplier); err != nil {
+		if err := simGenerator.SimulateTicks(ctx, simInstruments, a.tickBus, wal.NoopWriter{}, a.Config.Market.SimulationSpeedMultiplier); err != nil {
 			zap.L().Error("Simulated market data feed stopped", zap.Error(err))
 		}
 	}()
@@ -328,7 +342,7 @@ func (a *App) startRealFeed(ctx context.Context) error {
 	}
 
 	// Subscribe (this blocks until ctx is done)
-	return a.Zerodha.SubscribeToTicks(instruments, a.tickBus)
+	return a.Zerodha.SubscribeToTicks(instruments, a.tickBus, a.wal)
 }
 
 // serviceAdapter implements runtime.Service using functions.

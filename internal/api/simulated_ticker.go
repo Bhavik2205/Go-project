@@ -10,6 +10,7 @@ import (
 
 	"github.com/Bhavik2205/ML-Bot/internal/marketdata"
 	"github.com/Bhavik2205/ML-Bot/internal/marketdata/tickbus"
+	"github.com/Bhavik2205/ML-Bot/internal/marketdata/wal"
 	kitemodels "github.com/zerodha/gokiteconnect/v4/models"
 	"go.uber.org/zap"
 )
@@ -28,7 +29,7 @@ func NewSimulatedZerodhaClient() *SimulatedZerodhaClient {
 // SimulateTicks generates and publishes synthetic market ticks to Redis.
 // It takes a context for graceful shutdown, a list of instruments to simulate,
 // the Redis client for publishing, and a multiplier to control simulation speed.
-func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*InstrumentInfo, tb tickbus.TickBus, simulationSpeedMultiplier float64) error { // Validate required inputs
+func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*InstrumentInfo, tb tickbus.TickBus, w wal.Writer, simulationSpeedMultiplier float64) error { // Validate required inputs
 	if tb == nil {
 		return fmt.Errorf("TickBus is nil, cannot publish simulated ticks")
 	}
@@ -247,12 +248,13 @@ func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*Ins
 					Mode:              "simulation", // Indicate this tick is from simulation
 				}
 
-				// Publish directly to TickBus (no Redis envelope)
-				// if err := tb.Publish(ctx, normalized); err != nil {
-				// 	zap.L().Error("❌ Failed to publish simulated tick to TickBus",
-				// 		zap.Uint32("instrument_token", token),
-				// 		zap.Error(err),
-				// 	)
+				// WAL first — same guarantee as the real feed.
+				if err := w.Append(normalized); err != nil {
+					zap.L().Error("❌ WAL append failed (sim)",
+						zap.Uint32("instrument_token", token),
+						zap.Error(err))
+				}
+
 				if err := tb.Publish(ctx, normalized); err != nil {
 					if errors.Is(err, context.Canceled) {
 						zap.L().Debug("Simulation tick publish skipped due to shutdown", zap.Uint32("instrument_token", token))
