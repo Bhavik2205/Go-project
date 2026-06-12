@@ -176,138 +176,33 @@ var (
 	initErr     error
 )
 
+// allMetrics is the single source of truth for registration.
+// AlreadyRegisteredError is tolerated so tests and integration environments
+// that call InitMetrics more than once do not break startup.
+var allMetrics = []prometheus.Collector{
+	TicksReceived, TicksProcessed, TicksDropped, PanicCounter, CandleFinalized,
+	DBErrors, DBFlushDrops, WebSocketBroadcasted, IndicatorErrors,
+	TickGapsDetected, DuplicateTicksDetected, OutOfOrderTicksDetected,
+	TickLag, CandleLatency, IndicatorLatency,
+	GoroutineCount, MemoryHeapAlloc, MemoryHeapInuse, MemorySys, GCRunsTotal,
+	TickQueueDepth, TickQueueCapacity,
+	CandleQueueDepth, CandleQueueCapacity,
+	DBFlushQueueDepth, DBFlushQueueCapacity,
+	IndicatorQueueDepth, IndicatorQueueCapacity,
+	LastTickTimestamp, TickFeedDead, OpenCandlesCount,
+}
+
 // InitMetrics registers all Prometheus metrics.
-// This should be called once at startup.
+// AlreadyRegisteredError is treated as success — safe to call from tests.
 func InitMetrics() error {
 	metricsOnce.Do(func() {
-		// Register counters
-		initErr = prometheus.Register(TicksReceived)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(TicksProcessed)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(TicksDropped)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(PanicCounter)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(CandleFinalized)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(DBErrors)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(DBFlushDrops)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(WebSocketBroadcasted)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(IndicatorErrors)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(TickGapsDetected)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(DuplicateTicksDetected)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(OutOfOrderTicksDetected)
-		if initErr != nil {
-			return
-		}
-
-		// Register histograms
-		initErr = prometheus.Register(TickLag)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(CandleLatency)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(IndicatorLatency)
-		if initErr != nil {
-			return
-		}
-
-		// Register gauges
-		initErr = prometheus.Register(GoroutineCount)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(MemoryHeapAlloc)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(MemoryHeapInuse)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(MemorySys)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(GCRunsTotal)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(TickQueueDepth)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(TickQueueCapacity)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(CandleQueueDepth)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(CandleQueueCapacity)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(DBFlushQueueDepth)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(DBFlushQueueCapacity)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(IndicatorQueueDepth)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(IndicatorQueueCapacity)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(LastTickTimestamp)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(TickFeedDead)
-		if initErr != nil {
-			return
-		}
-		initErr = prometheus.Register(OpenCandlesCount)
-		if initErr != nil {
-			return
+		for _, m := range allMetrics {
+			if err := prometheus.Register(m); err != nil {
+				if _, ok := err.(prometheus.AlreadyRegisteredError); !ok {
+					initErr = err
+					return
+				}
+			}
 		}
 	})
 	return initErr

@@ -2,8 +2,11 @@ package observability
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"runtime"
 	"runtime/debug"
+	"runtime/pprof"
 	"time"
 
 	"go.uber.org/zap"
@@ -41,8 +44,9 @@ func collectRuntimeMetrics() {
 	GCRunsTotal.Set(float64(m.NumGC))
 }
 
-// RecoverPanic recovers from a panic, logs it with a full stack trace,
-// increments the panic counter, and continues. Use with defer.
+// RecoverPanic recovers from a panic, logs the full stack trace, increments
+// the panic counter, and writes goroutine + heap profiles to /tmp as crash
+// artifacts for post-mortem analysis.
 func RecoverPanic(component string) {
 	if r := recover(); r != nil {
 		PanicCounter.Inc()
@@ -52,5 +56,23 @@ func RecoverPanic(component string) {
 			zap.Any("panic", r),
 			zap.ByteString("stack", stack),
 		)
+		writeCrashArtifacts(component)
 	}
+}
+
+// writeCrashArtifacts dumps goroutine and heap profiles to /tmp on panic.
+// Files are named by component and timestamp so multiple panics don't overwrite each other.
+func writeCrashArtifacts(component string) {
+	ts := time.Now().Format("20060102-150405")
+	base := fmt.Sprintf("/tmp/crash-%s-%s", component, ts)
+
+	if f, err := os.Create(base + ".goroutines"); err == nil {
+		_ = pprof.Lookup("goroutine").WriteTo(f, 1)
+		f.Close()
+	}
+	if f, err := os.Create(base + ".heap"); err == nil {
+		_ = pprof.Lookup("heap").WriteTo(f, 0)
+		f.Close()
+	}
+	zap.L().Info("Crash artifacts written", zap.String("base_path", base))
 }
