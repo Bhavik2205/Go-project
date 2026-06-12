@@ -4,10 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/Bhavik2205/ML-Bot/internal/cache"
 	"github.com/Bhavik2205/ML-Bot/internal/marketdata"
 	"go.uber.org/zap"
+)
+
+// typed context key to avoid string collisions
+type ctxKey int
+
+const (
+	// ProcessedAtNanosKey can be used by callers to inject the processing timestamp.
+	ProcessedAtNanosKey ctxKey = iota
 )
 
 type RedisTickBus struct {
@@ -23,13 +32,20 @@ func NewRedis(redisClient *cache.RedisClient, channel string) *RedisTickBus {
 }
 
 func (b *RedisTickBus) Publish(ctx context.Context, tick marketdata.NormalizedTick) error {
+	// Safely extract processed_at_nanos, fallback to current time if missing
+	var nanos int64
+	if v, ok := ctx.Value(ProcessedAtNanosKey).(int64); ok {
+		nanos = v
+	} else {
+		nanos = time.Now().UnixNano()
+	}
 	enriched := struct {
 		Symbol           string                    `json:"symbol"`
 		ProcessedAtNanos int64                     `json:"processed_at_nanos"`
 		Tick             marketdata.NormalizedTick `json:"tick"`
 	}{
 		Symbol:           tick.Symbol,
-		ProcessedAtNanos: ctx.Value("processed_at_nanos").(int64), // fallback to time.Now()
+		ProcessedAtNanos: nanos,
 		Tick:             tick,
 	}
 	data, err := json.Marshal(enriched)

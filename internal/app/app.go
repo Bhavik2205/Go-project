@@ -135,9 +135,9 @@ func New(appCfg *utils.AppConfig, dbCfg *utils.DatabaseConfig, redisCfg *utils.R
 			go app.CandleGenerator.StartCandleGeneration(ctx)
 			return nil
 		},
-		// stop: func(ctx context.Context) error { // <-- add this
-		// 	return app.CandleGenerator.Stop(ctx)
-		// },
+		stop: func(ctx context.Context) error { // <-- add this
+			return app.CandleGenerator.Stop(ctx)
+		},
 	})
 	app.rm.Register(&serviceAdapter{
 		name: "indicator_manager",
