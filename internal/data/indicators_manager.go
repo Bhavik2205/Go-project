@@ -11,6 +11,7 @@ import (
 
 	"github.com/Bhavik2205/ML-Bot/internal/db"
 	"github.com/Bhavik2205/ML-Bot/internal/indicators"
+	"github.com/Bhavik2205/ML-Bot/internal/observability"
 	"github.com/Bhavik2205/ML-Bot/internal/utils"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
@@ -110,6 +111,10 @@ func NewIndicatorManager(
 	return im
 }
 
+// QueueDepthProvider methods for observability.
+func (im *IndicatorManager) IndicatorQueueLen() int { return len(im.processedIndicatorCh) }
+func (im *IndicatorManager) IndicatorQueueCap() int { return cap(im.processedIndicatorCh) }
+
 // writePump writes messages from the channel to the WebSocket with deadlines and periodic pings.
 func (im *IndicatorManager) writePump(client *wsClient) {
 	defer func() {
@@ -195,6 +200,7 @@ func (im *IndicatorManager) StartIndicatorCalculations(ctx context.Context) {
 
 // Monitoring goroutine for processed indicators, DB errors, and WS drops.
 func (im *IndicatorManager) startMonitoring(ctx context.Context) {
+	defer im.recoverGoroutine("indicator-monitoring")
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -203,6 +209,8 @@ func (im *IndicatorManager) startMonitoring(ctx context.Context) {
 			processed := atomic.SwapUint64(&im.indicatorsProcessed, 0)
 			dbErrs := atomic.SwapUint64(&im.dbErrors, 0)
 			wsDrops := atomic.SwapUint64(&im.wsDrops, 0)
+			// Update Prometheus indicator queue depth gauge
+			observability.IndicatorQueueDepth.Set(float64(len(im.processedIndicatorCh)))
 			zap.L().Info("📊 IndicatorManager monitoring",
 				zap.Uint64("indicators_processed", processed),
 				zap.Uint64("db_errors", dbErrs),

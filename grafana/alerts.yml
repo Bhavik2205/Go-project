@@ -1,0 +1,71 @@
+groups:
+  - name: trading_bot_alerts
+    rules:
+      - alert: TickFeedDead
+        expr: trading_tick_feed_dead == 1
+        for: 10s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Tick feed is dead"
+          description: "No ticks received for >5s. Check Zerodha connection."
+
+      - alert: TickGapsDetected
+        expr: increase(trading_tick_gaps_detected_total[1m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Tick sequence gaps detected"
+          description: "{{ $value }} tick gaps in the last minute."
+
+      - alert: HighGoroutineCount
+        expr: trading_goroutines_current > 2000
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "High goroutine count"
+          description: "{{ $value }} goroutines running. Possible goroutine leak."
+
+      - alert: DBFlushQueueSaturated
+        expr: trading_db_flush_queue_depth / on() group_left() (trading_db_flush_queue_depth + 1) > 0.9
+        for: 15s
+        labels:
+          severity: critical
+        annotations:
+          summary: "DB flush queue >90% full"
+          description: "DB flush queue depth: {{ $value }}. Risk of tick drops."
+
+      - alert: TickQueueSaturated
+        expr: trading_tick_queue_depth / on() group_left() (trading_tick_queue_depth + 1) > 0.9
+        for: 15s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tick broadcast queue >90% full"
+          description: "Tick queue depth: {{ $value }}. Frontend drops likely."
+
+      - alert: HighMemoryUsage
+        expr: trading_memory_heap_alloc_bytes / trading_memory_sys_bytes > 0.85
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Heap usage >85% of sys memory"
+          description: "Heap alloc: {{ $value | humanize }}. Consider investigating for leaks."
+
+      - alert: PanicsDetected
+        expr: increase(trading_panics_total[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Panics recovered in trading bot"
+          description: "{{ $value }} panics in the last 5 minutes. Check logs immediately."
+
+      - alert: DBErrorsSpike
+        expr: increase(trading_db_errors_total[5m]) > 10
+        labels:
+          severity: warning
+        annotations:
+          summary: "DB write errors spike"
+          description: "{{ $value }} DB errors in 5 minutes."

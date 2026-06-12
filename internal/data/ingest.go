@@ -96,6 +96,7 @@ func (m *MarketDataIngestor) StartIngestionAndBroadcast(ctx context.Context) {
 
 // startMonitoring logs metrics every 5s.
 func (m *MarketDataIngestor) startMonitoring(ctx context.Context) {
+	defer observability.RecoverPanic("ingestor-monitoring")
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	var lastBroadcasted uint64
@@ -132,6 +133,16 @@ func (m *MarketDataIngestor) startMonitoring(ctx context.Context) {
 		}
 	}
 }
+
+// QueueDepthProvider implementation — satisfies observability.QueueDepthProvider.
+func (m *MarketDataIngestor) TickQueueLen() int      { return len(m.broadcastChannel) }
+func (m *MarketDataIngestor) TickQueueCap() int      { return cap(m.broadcastChannel) }
+func (m *MarketDataIngestor) DBFlushQueueLen() int   { return len(m.dbFlushCh) }
+func (m *MarketDataIngestor) DBFlushQueueCap() int   { return cap(m.dbFlushCh) }
+func (m *MarketDataIngestor) CandleQueueLen() int    { return 0 } // set via RegisterQueueDepthProvider override
+func (m *MarketDataIngestor) CandleQueueCap() int    { return 0 }
+func (m *MarketDataIngestor) IndicatorQueueLen() int { return 0 }
+func (m *MarketDataIngestor) IndicatorQueueCap() int { return 0 }
 
 // startTickSubscription subscribes to the TickBus and processes incoming ticks.
 func (m *MarketDataIngestor) startTickSubscription(ctx context.Context) {

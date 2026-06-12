@@ -11,6 +11,7 @@ import (
 	"github.com/Bhavik2205/ML-Bot/internal/db"
 	"github.com/Bhavik2205/ML-Bot/internal/marketdata/candles"
 	"github.com/Bhavik2205/ML-Bot/internal/marketdata/tickbus"
+	"github.com/Bhavik2205/ML-Bot/internal/observability"
 
 	"github.com/Bhavik2205/ML-Bot/internal/utils"
 	"github.com/gorilla/websocket"
@@ -208,6 +209,10 @@ func (cg *CandleGenerator) broadcastCandle(candle *candles.OpenCandle) {
 	zap.L().Debug("Broadcasted candle to WebSocket clients", zap.Uint32("token", candle.InstrumentToken), zap.String("interval", candle.IntervalStr))
 }
 
+// QueueDepthProvider methods for observability.
+func (cg *CandleGenerator) CandleQueueLen() int { return len(cg.candleDBFlushCh) }
+func (cg *CandleGenerator) CandleQueueCap() int { return cap(cg.candleDBFlushCh) }
+
 // StartCandleGeneration subscribes to Redis ticks and feeds them to the engine.
 func (cg *CandleGenerator) StartCandleGeneration(ctx context.Context) {
 	// Start engine's finalizer loop
@@ -345,6 +350,7 @@ func (cg *CandleGenerator) recoverGoroutine(where string) {
 
 // startMonitoring launches a goroutine to monitor system usage and candle generator health.
 func (cg *CandleGenerator) startMonitoring() {
+	defer cg.recoverGoroutine("candle-monitoring")
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	var lastTicksProcessed uint64
@@ -358,6 +364,9 @@ func (cg *CandleGenerator) startMonitoring() {
 			wsDrops := atomic.LoadUint64(&cg.wsDrops)
 			tps := ticks - lastTicksProcessed
 			lastTicksProcessed = ticks
+
+			// Update Prometheus queue depth gauge
+			observability.CandleQueueDepth.Set(float64(len(cg.candleDBFlushCh)))
 
 			zap.L().Info("CandleGenerator monitoring",
 				zap.Uint64("ticks_processed", ticks),

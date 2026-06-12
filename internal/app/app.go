@@ -200,10 +200,14 @@ func New(appCfg *utils.AppConfig, dbCfg *utils.DatabaseConfig, redisCfg *utils.R
 // Start runs all services via RuntimeManager.
 func (a *App) Start(ctx context.Context) error {
 	zap.L().Info("Starting App services...")
-	// Start runtime metrics collector
 	observability.StartRuntimeMetricsCollector(ctx)
-	// Start tick staleness monitor
 	observability.StartTickStalenessMonitor(ctx)
+	observability.RegisterDependencyPinger(&appPinger{db: a.DB, redis: a.Redis})
+	observability.RegisterQueueDepthProvider(&appQueueProvider{
+		ingestor:  a.DataIngestor,
+		candle:    a.CandleGenerator,
+		indicator: a.IndicatorManager,
+	})
 	return a.rm.StartAll(ctx)
 }
 
@@ -351,3 +355,37 @@ func (s *serviceAdapter) Health() map[string]interface{} {
 	}
 	return nil
 }
+
+// appPinger implements observability.DependencyPinger using the live DB and Redis clients.
+type appPinger struct {
+	db    *db.DBClient
+	redis *cache.RedisClient
+}
+
+func (p *appPinger) PingDB(ctx context.Context) error {
+	sqlDB, err := p.db.DB.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.PingContext(ctx)
+}
+
+func (p *appPinger) PingRedis(ctx context.Context) error {
+	return p.redis.Client.Ping(ctx).Err()
+}
+
+// appQueueProvider aggregates queue depths from all pipeline components.
+type appQueueProvider struct {
+	ingestor  *data.MarketDataIngestor
+	candle    *data.CandleGenerator
+	indicator *data.IndicatorManager
+}
+
+func (q *appQueueProvider) TickQueueLen() int      { return q.ingestor.TickQueueLen() }
+func (q *appQueueProvider) TickQueueCap() int      { return q.ingestor.TickQueueCap() }
+func (q *appQueueProvider) DBFlushQueueLen() int   { return q.ingestor.DBFlushQueueLen() }
+func (q *appQueueProvider) DBFlushQueueCap() int   { return q.ingestor.DBFlushQueueCap() }
+func (q *appQueueProvider) CandleQueueLen() int    { return q.candle.CandleQueueLen() }
+func (q *appQueueProvider) CandleQueueCap() int    { return q.candle.CandleQueueCap() }
+func (q *appQueueProvider) IndicatorQueueLen() int { return q.indicator.IndicatorQueueLen() }
+func (q *appQueueProvider) IndicatorQueueCap() int { return q.indicator.IndicatorQueueCap() }
