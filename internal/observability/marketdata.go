@@ -84,9 +84,52 @@ func RecordDuplicateTick() {
 }
 
 // RecordOutOfOrderTick increments the out-of-order tick counter.
-// Call when a tick arrives out of sequence.
 func RecordOutOfOrderTick() {
 	OutOfOrderTicksDetected.Inc()
+}
+
+// RecordLateTick increments the late tick counter.
+// Call when a tick arrives after its candle has already closed.
+func RecordLateTick() {
+	LateTicks.Inc()
+}
+
+// RecordCandleDrop increments the candle drop counter.
+func RecordCandleDrop() {
+	CandleDrops.Inc()
+}
+
+// RecordCandleFinalizationFailure increments the finalization failure counter.
+func RecordCandleFinalizationFailure() {
+	CandleFinalizationFailures.Inc()
+}
+
+// RecordCandleRebuild increments the candle rebuild counter.
+func RecordCandleRebuild() {
+	CandleRebuilds.Inc()
+}
+
+// RecordIndicatorComputed increments the indicators computed counter.
+func RecordIndicatorComputed() {
+	IndicatorsComputed.Inc()
+}
+
+// SetDBUp sets the DB reachability gauge. Call from your health-check loop.
+func SetDBUp(up bool) {
+	if up {
+		DBUp.Set(1)
+	} else {
+		DBUp.Set(0)
+	}
+}
+
+// SetRedisUp sets the Redis reachability gauge. Call from your health-check loop.
+func SetRedisUp(up bool) {
+	if up {
+		RedisUp.Set(1)
+	} else {
+		RedisUp.Set(0)
+	}
 }
 
 // StartTickStalenessMonitor starts a background goroutine that monitors tick staleness

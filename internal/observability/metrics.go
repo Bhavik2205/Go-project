@@ -154,6 +154,49 @@ var (
 		Help: "Total number of indicator computation errors",
 	})
 
+	IndicatorsComputed = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "trading_indicators_computed_total",
+		Help: "Total number of indicator computations completed",
+	})
+
+	LateTicks = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "trading_late_ticks_total",
+		Help: "Total ticks that arrived after their candle closed",
+	})
+
+	CandleDrops = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "trading_candle_drops_total",
+		Help: "Total candles dropped due to queue pressure",
+	})
+
+	CandleFinalizationFailures = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "trading_candle_finalization_failures_total",
+		Help: "Total candle finalization failures",
+	})
+
+	CandleRebuilds = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "trading_candle_rebuilds_total",
+		Help: "Total candle rebuilds triggered",
+	})
+
+	// Dependency health gauges: 1 = up, 0 = down
+	DBUp = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "trading_db_up",
+		Help: "1 if database is reachable, 0 otherwise",
+	})
+
+	RedisUp = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "trading_redis_up",
+		Help: "1 if Redis is reachable, 0 otherwise",
+	})
+
+	// GC pause histogram — enables histogram_quantile in dashboards
+	GCPauseSeconds = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "trading_gc_pause_seconds",
+		Help:    "GC stop-the-world pause durations in seconds",
+		Buckets: []float64{0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5},
+	})
+
 	// WAL metrics
 	WALAppendsTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "wal_appends_total",
@@ -208,6 +251,8 @@ var (
 var allMetrics = []prometheus.Collector{
 	TicksReceived, TicksProcessed, TicksDropped, PanicCounter, CandleFinalized,
 	DBErrors, DBFlushDrops, WebSocketBroadcasted, IndicatorErrors,
+	IndicatorsComputed, LateTicks, CandleDrops, CandleFinalizationFailures, CandleRebuilds,
+	DBUp, RedisUp, GCPauseSeconds,
 	WALAppendsTotal, WALAppendErrorsTotal, WALBytesWrittenTotal, WALSegmentsTotal, WALReplayRecordsTotal,
 	TickGapsDetected, DuplicateTicksDetected, OutOfOrderTicksDetected,
 	TickLag, CandleLatency, IndicatorLatency,

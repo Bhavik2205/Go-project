@@ -32,6 +32,9 @@ func StartRuntimeMetricsCollector(ctx context.Context) {
 	}()
 }
 
+// lastNumGC tracks the previous GC count so only new pauses are recorded.
+var lastNumGC uint32
+
 func collectRuntimeMetrics() {
 	GoroutineCount.Set(float64(runtime.NumGoroutine()))
 
@@ -42,6 +45,21 @@ func collectRuntimeMetrics() {
 	MemoryHeapInuse.Set(float64(m.HeapInuse))
 	MemorySys.Set(float64(m.Sys))
 	GCRunsTotal.Set(float64(m.NumGC))
+
+	// Record new GC pause durations. PauseNs is a circular buffer of 256 entries.
+	if m.NumGC > lastNumGC {
+		newRuns := m.NumGC - lastNumGC
+		if newRuns > 256 {
+			newRuns = 256
+		}
+		for i := uint32(0); i < newRuns; i++ {
+			idx := (m.NumGC - 1 - i) % 256
+			if ns := m.PauseNs[idx]; ns > 0 {
+				GCPauseSeconds.Observe(float64(ns) / 1e9)
+			}
+		}
+		lastNumGC = m.NumGC
+	}
 }
 
 // RecoverPanic recovers from a panic, logs the full stack trace, increments
