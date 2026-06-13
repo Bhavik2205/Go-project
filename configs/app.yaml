@@ -7,7 +7,7 @@ server:
   # websocket_port: 8081
 
 log:
-  level: debug # debug, info, warn, error
+  level: info # debug, info, warn, error
   output: logs/app.log # stdout, file (for production, typically stdout for Docker)
   # If output is 'file':
   # file_path: logs/app.log
@@ -19,8 +19,8 @@ log:
 ingestion:
   market_data_batch_size: 100 # For your local setup, 500-1000 is good
   market_data_flush_interval_ms: 20 # 50ms for low latency
-  max_tick_sequence_cache_duration_s: 2 # 2 seconds
-  tick_sequence_cleanup_interval_s: 1 # This must be a positive integer
+  max_tick_sequence_cache_duration_s: 10 # keep per-second buckets for 10s (was 2 — too tight at 100ms)
+  tick_sequence_cleanup_interval_s: 5   # cleanup every 5s, well within the 10s expiry
   db_worker_count: 16 # Number of workers for database operations
   db_flush_channel_size: 10000
   ws_broadcast_worker_count: 8 # Number of workers for WebSocket broadcasting

@@ -191,12 +191,14 @@ func isClosedNetworkError(err error) bool {
 func (m *MarketDataIngestor) processTick(tick marketdata.NormalizedTick) {
 	// Sequence counter
 	m.sequenceMux.Lock()
-	if _, ok := m.tickSequenceCounters[uint(tick.InstrumentToken)]; !ok {
-		m.tickSequenceCounters[uint(tick.InstrumentToken)] = make(map[time.Time]int)
+	token := uint(tick.InstrumentToken)
+	if _, ok := m.tickSequenceCounters[token]; !ok {
+		m.tickSequenceCounters[token] = make(map[time.Time]int)
 	}
-	normalizedTimestamp := tick.EventTime
-	currentSequenceID := m.tickSequenceCounters[uint(tick.InstrumentToken)][normalizedTimestamp] + 1
-	m.tickSequenceCounters[uint(tick.InstrumentToken)][normalizedTimestamp] = currentSequenceID
+	// Truncate to second so the per-timestamp key space doesn't explode at sub-second tick rates.
+	normalizedTimestamp := tick.EventTime.Truncate(time.Second)
+	currentSequenceID := m.tickSequenceCounters[token][normalizedTimestamp] + 1
+	m.tickSequenceCounters[token][normalizedTimestamp] = currentSequenceID
 	m.sequenceMux.Unlock()
 
 	buyDepth := tick.Depth.Buy
