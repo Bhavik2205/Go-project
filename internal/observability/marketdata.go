@@ -136,17 +136,16 @@ func SetRedisUp(up bool) {
 // and updates the TickFeedDead gauge. Ticks are considered stale if no ticks have been
 // received for more than 5 seconds.
 func StartTickStalenessMonitor(ctx context.Context) {
-go func() {
-ticker := time.NewTicker(1 * time.Second)
-defer ticker.Stop()
-
-for {
-select {
-case <-ticker.C:
-UpdateTickStalenessStatus()
-case <-ctx.Done():
-return
-}
-}
-}()
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				UpdateTickStalenessStatus()
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 }

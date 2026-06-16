@@ -33,7 +33,10 @@ func TestWebSocket_ConnectAndDisconnect(t *testing.T) {
 		}
 		defer conn.Close()
 		// Read one message then close
-		conn.ReadMessage()
+		if _, _, err := conn.ReadMessage(); err != nil {
+			// client closed — normal in this test
+			_ = err
+		}
 	})
 	defer srv.Close()
 
@@ -41,7 +44,9 @@ func TestWebSocket_ConnectAndDisconnect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
-	conn.WriteMessage(websocket.TextMessage, []byte("hello"))
+	if err := conn.WriteMessage(websocket.TextMessage, []byte("hello")); err != nil {
+		t.Logf("write: %v", err) // non-fatal: server may have closed already
+	}
 	conn.Close()
 }
 
@@ -263,7 +268,9 @@ func TestWebSocket_MessageIntegrity(t *testing.T) {
 		}
 		defer conn.Close()
 		for _, msg := range messages {
-			conn.WriteMessage(websocket.TextMessage, []byte(msg))
+			if err := conn.WriteMessage(websocket.TextMessage, []byte(msg)); err != nil {
+				return
+			}
 		}
 	})
 	defer srv.Close()

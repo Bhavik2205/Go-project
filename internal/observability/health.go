@@ -3,6 +3,7 @@ package observability
 import (
 	"context"
 	"runtime"
+	"sync"
 	"time"
 )
 
@@ -43,7 +44,17 @@ type QueueDepthProvider interface {
 var (
 	globalPinger        DependencyPinger
 	globalQueueProvider QueueDepthProvider
+
+	// depCache caches the last dependency health result for up to depCacheTTL
+	// to avoid pinging DB/Redis on every health scrape.
+	depCache    sync.Map // key: string -> depCacheEntry
+	depCacheTTL = 10 * time.Second
 )
+
+type depCacheEntry struct {
+	result map[string]interface{}
+	at     time.Time
+}
 
 // RegisterDependencyPinger sets the pinger used by health checks.
 func RegisterDependencyPinger(p DependencyPinger) { globalPinger = p }
@@ -68,8 +79,11 @@ func getMemoryHealth() map[string]interface{} {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 
+	var heapPercent float64
+	if m.HeapSys > 0 {
+		heapPercent = float64(m.HeapAlloc) / float64(m.HeapSys)
+	}
 	status := HealthOK
-	heapPercent := float64(m.HeapAlloc) / float64(m.HeapSys)
 	if heapPercent > 0.9 {
 		status = HealthUnhealthy
 	} else if heapPercent > 0.75 {
@@ -111,6 +125,8 @@ func getTickHealth() map[string]interface{} {
 	since := time.Since(lastTick)
 	status := HealthOK
 	message := "Feed is live"
+	// Thresholds align with TickFeedDead metric (set=1 at >5s).
+	// >5s = degraded (stale), >30s = unhealthy (dead).
 	if since > 30*time.Second {
 		status = HealthUnhealthy
 		message = "Feed dead: no ticks for >30s"
@@ -161,6 +177,14 @@ func getDependencyHealth(dep string) map[string]interface{} {
 	if globalPinger == nil {
 		return map[string]interface{}{"status": HealthDegraded, "message": "pinger not registered"}
 	}
+
+	if v, ok := depCache.Load(dep); ok {
+		e := v.(depCacheEntry)
+		if time.Since(e.at) < depCacheTTL {
+			return e.result
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -171,8 +195,13 @@ func getDependencyHealth(dep string) map[string]interface{} {
 	case "redis":
 		err = globalPinger.PingRedis(ctx)
 	}
+
+	var result map[string]interface{}
 	if err != nil {
-		return map[string]interface{}{"status": HealthUnhealthy, "message": err.Error()}
+		result = map[string]interface{}{"status": HealthUnhealthy, "message": err.Error()}
+	} else {
+		result = map[string]interface{}{"status": HealthOK}
 	}
-	return map[string]interface{}{"status": HealthOK}
+	depCache.Store(dep, depCacheEntry{result: result, at: time.Now()})
+	return result
 }

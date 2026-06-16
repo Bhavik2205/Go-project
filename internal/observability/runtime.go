@@ -78,11 +78,11 @@ func RecoverPanic(component string) {
 	}
 }
 
-// writeCrashArtifacts dumps goroutine and heap profiles to /tmp on panic.
+// writeCrashArtifacts dumps goroutine and heap profiles to os.TempDir() on panic.
 // Files are named by component and timestamp so multiple panics don't overwrite each other.
 func writeCrashArtifacts(component string) {
 	ts := time.Now().Format("20060102-150405")
-	base := fmt.Sprintf("/tmp/crash-%s-%s", component, ts)
+	base := fmt.Sprintf("%s/crash-%s-%s", os.TempDir(), component, ts)
 
 	if f, err := os.Create(base + ".goroutines"); err == nil {
 		_ = pprof.Lookup("goroutine").WriteTo(f, 1)

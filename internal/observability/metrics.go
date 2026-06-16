@@ -238,6 +238,44 @@ var (
 		Name: "trading_out_of_order_ticks_detected_total",
 		Help: "Total number of out-of-order ticks detected",
 	})
+
+	// Reliability metrics (memory guard)
+	MemoryGuardStatus = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "reliability_memory_guard_status",
+		Help: "1 if memory guard is running, 0 if stopped",
+	})
+
+	MemoryUsagePercent = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "reliability_memory_usage_percent",
+		Help: "Current heap memory usage as percentage of system memory",
+	})
+
+	MemoryHighWaterMark = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "reliability_memory_high_water_mark_bytes",
+		Help: "Highest observed heap memory allocation in bytes",
+	})
+
+	// Reliability metrics (goroutine guard)
+	GoroutineGuardStatus = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "reliability_goroutine_guard_status",
+		Help: "1 if goroutine guard is running, 0 if stopped",
+	})
+
+	GoroutineGrowthRate = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "reliability_goroutine_growth_rate_per_min",
+		Help: "Rate of goroutine growth per minute",
+	})
+
+	// Reliability metrics (queue guard)
+	QueueGuardStatus = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "reliability_queue_guard_status",
+		Help: "1 if queue guard is running, 0 if stopped",
+	})
+
+	ReliabilityLastCheck = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "reliability_last_check_timestamp_seconds",
+		Help: "Unix timestamp of the last reliability check",
+	})
 )
 
 var (
@@ -262,6 +300,15 @@ var allMetrics = []prometheus.Collector{
 	DBFlushQueueDepth, DBFlushQueueCapacity,
 	IndicatorQueueDepth, IndicatorQueueCapacity,
 	LastTickTimestamp, TickFeedDead, OpenCandlesCount,
+	MemoryGuardStatus,
+	MemoryUsagePercent,
+	MemoryHighWaterMark,
+	GoroutineGuardStatus,
+	GoroutineGrowthRate,
+	QueueGuardStatus,
+	ReliabilityLastCheck,
+	HTTPRequestDuration,
+	HTTPRequestsTotal,
 }
 
 // InitMetrics registers all Prometheus metrics.

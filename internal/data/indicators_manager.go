@@ -45,6 +45,8 @@ type IndicatorManager struct {
 	processedIndicatorCh chan indicators.IndicatorResult
 	outputWorkerCount    int
 
+	shedding atomic.Bool // true while under memory pressure; incoming candles are dropped
+
 	// Monitoring metrics
 	indicatorsProcessed uint64
 	dbErrors            uint64
@@ -167,6 +169,10 @@ func (im *IndicatorManager) UnregisterWebSocketClient(conn *websocket.Conn) {
 	zap.L().Info("Indicator WebSocket client unregistered", zap.String("remote_addr", conn.RemoteAddr().String()))
 }
 
+// SetShedding enables or disables load shedding. When true, incoming candles
+// are dropped rather than processed, reducing CPU and memory usage under pressure.
+func (im *IndicatorManager) SetShedding(v bool) { im.shedding.Store(v) }
+
 // StartIndicatorCalculations listens for incoming candles and processes them
 // for indicator calculation. This function should be run as a goroutine.
 func (im *IndicatorManager) StartIndicatorCalculations(ctx context.Context) {
@@ -186,6 +192,12 @@ func (im *IndicatorManager) StartIndicatorCalculations(ctx context.Context) {
 			if !ok {
 				zap.L().Error("Indicator input candle channel closed unexpectedly. Stopping indicator manager.")
 				return
+			}
+			if im.shedding.Load() {
+				zap.L().Debug("load shedding: dropping indicator candle",
+					zap.Uint32("token", candle.InstrumentToken),
+					zap.String("interval", candle.Interval))
+				continue
 			}
 			im.processCandle(candle)
 		case <-ctx.Done():
@@ -282,19 +294,34 @@ func (im *IndicatorManager) handleOutput(indicator indicators.IndicatorResult) {
 	}
 
 	// 1. Save to Database
-	var err error
-	err = im.dbClient.DB.Clauses(clause.OnConflict{
-		Columns:   conflictColumns,
-		DoUpdates: clause.AssignmentColumns(db.GetUpdatableIndicatorColumns(indicatorName)),
-	}).Create(indicator).Error
+	err := im.dbClient.DB.Clauses(
+		clause.OnConflict{
+			Columns: conflictColumns,
+			DoUpdates: clause.AssignmentColumns(
+				db.GetUpdatableIndicatorColumns(indicatorName),
+			),
+		},
+	).Create(indicator).Error
 
 	if err != nil {
 		atomic.AddUint64(&im.dbErrors, 1)
-		zap.L().Error("Failed to save indicator to database",
+
+		zap.L().Error(
+			"Failed to save indicator to database",
 			zap.Error(err),
-			zap.Uint32("instrument_token", indicator.GetInstrumentToken()),
-			zap.String("interval", indicator.GetInterval()),
-			zap.String("indicator_name", indicator.GetIndicatorName()))
+			zap.Uint32(
+				"instrument_token",
+				indicator.GetInstrumentToken(),
+			),
+			zap.String(
+				"interval",
+				indicator.GetInterval(),
+			),
+			zap.String(
+				"indicator_name",
+				indicator.GetIndicatorName(),
+			),
+		)
 	}
 
 	// 2. Broadcast via WebSocket

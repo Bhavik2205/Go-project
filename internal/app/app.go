@@ -18,6 +18,7 @@ import (
 	"github.com/Bhavik2205/ML-Bot/internal/marketdata/wal"
 	"github.com/Bhavik2205/ML-Bot/internal/observability"
 	"github.com/Bhavik2205/ML-Bot/internal/realtime"
+	"github.com/Bhavik2205/ML-Bot/internal/reliability"
 	"github.com/Bhavik2205/ML-Bot/internal/runtime"
 	"github.com/Bhavik2205/ML-Bot/internal/utils"
 	"go.uber.org/zap"
@@ -39,10 +40,11 @@ type App struct {
 	IndicatorWsClients *sync.Map
 	IndicatorInputCh   chan indicators.Candle
 
-	rm            *runtime.RuntimeManager
-	tickBus       tickbus.TickBus
-	wal           wal.Writer
-	symbolsConfig *utils.SymbolsConfig
+	rm             *runtime.RuntimeManager
+	tickBus        tickbus.TickBus
+	wal            wal.Writer
+	symbolsConfig  *utils.SymbolsConfig
+	ResourceBudget *reliability.ResourceBudget
 }
 
 // New creates and initialises a new App.
@@ -63,6 +65,10 @@ func New(appCfg *utils.AppConfig, dbCfg *utils.DatabaseConfig, redisCfg *utils.R
 	} else {
 		zap.L().Info("✅ Prometheus metrics initialized")
 	}
+
+	// --- Resource Budget (reliability guards) ---
+	rb := reliability.NewResourceBudget(reliability.DefaultConfig())
+	app.ResourceBudget = rb
 
 	// --- Database ---
 	dbClient, err := db.NewPostgresClient(dbCfg)
@@ -228,12 +234,39 @@ func (a *App) Start(ctx context.Context) error {
 	observability.DBFlushQueueCapacity.Set(float64(qp.DBFlushQueueCap()))
 	observability.CandleQueueCapacity.Set(float64(qp.CandleQueueCap()))
 	observability.IndicatorQueueCapacity.Set(float64(qp.IndicatorQueueCap()))
+
+	// Wire the live pipeline queues into the ResourceBudget QueueGuard.
+	if a.ResourceBudget != nil {
+		a.ResourceBudget.RegisterQueues(map[string]reliability.QueueDepthProvider{
+			"tick_broadcast":   &queueAdapter{lenFn: qp.TickQueueLen, capFn: qp.TickQueueCap},
+			"db_flush":         &queueAdapter{lenFn: qp.DBFlushQueueLen, capFn: qp.DBFlushQueueCap},
+			"candle_flush":     &queueAdapter{lenFn: qp.CandleQueueLen, capFn: qp.CandleQueueCap},
+			"indicator_output": &queueAdapter{lenFn: qp.IndicatorQueueLen, capFn: qp.IndicatorQueueCap},
+		})
+		// Shed non-critical work under memory pressure: pause indicator calculations
+		// by closing and replacing the input channel so new candles are dropped
+		// rather than queued. Restore re-opens the channel when pressure clears.
+		a.ResourceBudget.SetLoadSheddingCallback(
+			func() {
+				zap.L().Warn("load shedding activated: dropping indicator candles until memory pressure clears")
+				a.IndicatorManager.SetShedding(true)
+			},
+			func() {
+				zap.L().Info("load shedding cleared: resuming indicator calculations")
+				a.IndicatorManager.SetShedding(false)
+			},
+		)
+	}
+
 	return a.rm.StartAll(ctx)
 }
 
 // Stop stops all services via RuntimeManager.
 func (a *App) Stop(ctx context.Context) error {
 	zap.L().Info("Stopping App services...")
+	if a.ResourceBudget != nil {
+		a.ResourceBudget.Stop()
+	}
 	return a.rm.StopAll(ctx)
 }
 
@@ -409,3 +442,12 @@ func (q *appQueueProvider) CandleQueueLen() int    { return q.candle.CandleQueue
 func (q *appQueueProvider) CandleQueueCap() int    { return q.candle.CandleQueueCap() }
 func (q *appQueueProvider) IndicatorQueueLen() int { return q.indicator.IndicatorQueueLen() }
 func (q *appQueueProvider) IndicatorQueueCap() int { return q.indicator.IndicatorQueueCap() }
+
+// queueAdapter bridges an appQueueProvider method pair to reliability.QueueDepthProvider.
+type queueAdapter struct {
+	lenFn func() int
+	capFn func() int
+}
+
+func (a *queueAdapter) Len() int { return a.lenFn() }
+func (a *queueAdapter) Cap() int { return a.capFn() }

@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	httpRequestDuration = prometheus.NewHistogramVec(
+	HTTPRequestDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "trading_http_request_duration_ms",
 			Help:    "HTTP request duration in milliseconds",
@@ -18,7 +18,7 @@ var (
 		[]string{"method", "path", "status"},
 	)
 
-	httpRequestsTotal = prometheus.NewCounterVec(
+	HTTPRequestsTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "trading_http_requests_total",
 			Help: "Total HTTP requests",
@@ -27,27 +27,19 @@ var (
 	)
 )
 
-func init() {
-	// Register HTTP metrics on import
-	prometheus.Register(httpRequestDuration)
-	prometheus.Register(httpRequestsTotal)
-}
-
 // HTTPMiddleware wraps an HTTP handler with metrics collection.
 func HTTPMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
-		// Wrap ResponseWriter to capture status code
 		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-
 		next.ServeHTTP(wrapped, r)
 
 		duration := time.Since(start)
 		statusStr := fmt.Sprintf("%d", wrapped.statusCode)
 
-		httpRequestDuration.WithLabelValues(r.Method, r.URL.Path, statusStr).Observe(duration.Seconds() * 1000)
-		httpRequestsTotal.WithLabelValues(r.Method, r.URL.Path, statusStr).Inc()
+		HTTPRequestDuration.WithLabelValues(r.Method, r.URL.Path, statusStr).Observe(duration.Seconds() * 1000)
+		HTTPRequestsTotal.WithLabelValues(r.Method, r.URL.Path, statusStr).Inc()
 	})
 }
 

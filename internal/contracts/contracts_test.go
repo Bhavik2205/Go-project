@@ -86,8 +86,10 @@ func TestPagination_OmittedWhenNil(t *testing.T) {
 	resp := contracts.NewSuccess("req_page", "data")
 	b, _ := json.Marshal(resp)
 	var decoded map[string]any
-	json.Unmarshal(b, &decoded)
-	meta := decoded["meta"].(map[string]any)
+	if err := json.Unmarshal(b, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	meta, _ := decoded["meta"].(map[string]any)
 	if _, ok := meta["pagination"]; ok {
 		t.Error("pagination should be omitted when nil")
 	}

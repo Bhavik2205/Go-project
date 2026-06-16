@@ -113,8 +113,6 @@ func (e EMA) Calculate(candles []Candle, appCfg *utils.AppConfig, indicatorsCfg 
 	// For now, let's use the ShortPeriod as the main period for the generic EMA calculation.
 	// If both short and long EMAs are calculated separately (like in MACD), this function might need to be adjusted.
 	// For this generic CalculateEMA, we'll assume it's for one period.
-	period = indicatorsCfg.EMA.ShortPeriod // Using ShortPeriod for the generic EMA calculation
-
 	if period <= 0 {
 		err := errors.New("EMA period must be greater than 0")
 		zap.L().Error("Invalid EMA period", zap.Int("period", period), zap.Error(err))

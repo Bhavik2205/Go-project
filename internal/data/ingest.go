@@ -183,10 +183,6 @@ func convertNormalizedToKiteTick(nt marketdata.NormalizedTick) kitemodels.Tick {
 	}
 }
 
-func isClosedNetworkError(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "use of closed network connection")
-}
-
 // processTick converts the enriched tick to MarketData and adds it to the buffer.
 func (m *MarketDataIngestor) processTick(tick marketdata.NormalizedTick) {
 	// Sequence counter

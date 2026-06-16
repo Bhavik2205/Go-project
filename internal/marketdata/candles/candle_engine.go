@@ -255,9 +255,9 @@ func (e *CandleEngine) getCandleStartTime(tickTime time.Time, interval time.Dura
 	return marketOpen.Add(bucket * interval)
 }
 
-// nextCandleStart returns the start time of the next complete candle.
+// NextCandleStart returns the start time of the next complete candle.
 // If t exactly aligns with a boundary, that candle is considered "next".
-func nextCandleStart(t, marketOpen time.Time, interval time.Duration) time.Time {
+func NextCandleStart(t, marketOpen time.Time, interval time.Duration) time.Time {
 	if t.Before(marketOpen) {
 		return marketOpen
 	}

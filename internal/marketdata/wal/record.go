@@ -31,9 +31,9 @@ func marshalPayload(r *TickRecord) []byte {
 	return buf
 }
 
-// marshalRecord serialises the full record including CRC into buf.
+// MarshalRecord serialises the full record including CRC into buf.
 // buf must be at least RecordSize bytes.
-func marshalRecord(r *TickRecord, buf []byte) {
+func MarshalRecord(r *TickRecord, buf []byte) {
 	payload := marshalPayload(r)
 	copy(buf[:recordPayloadSize], payload)
 	binary.LittleEndian.PutUint32(buf[recordPayloadSize:], r.CRC32)
