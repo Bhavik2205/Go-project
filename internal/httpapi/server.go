@@ -77,10 +77,12 @@ func (s *Server) Start(ctx context.Context, port int) error {
 	}
 
 	s.httpServer = &http.Server{
-		Addr:         ":" + fmt.Sprint(port),
-		Handler:      router,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		Addr:        ":" + fmt.Sprint(port),
+		Handler:     router,
+		ReadTimeout: 30 * time.Second,
+		// WriteTimeout must exceed the longest pprof sample window (profile?seconds=N).
+		// Set to 0 (no timeout) so pprof CPU profiles complete without EOF.
+		WriteTimeout: 0,
 		IdleTimeout:  120 * time.Second,
 	}
 

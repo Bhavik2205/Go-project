@@ -1,6 +1,7 @@
 package data
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -44,15 +45,19 @@ type MarketDataIngestor struct {
 	dbFlushCh              chan []db.MarketData
 	dbWorkerCount          int
 	wsBroadcastWorkerCount int
-	tickIngestionTimeout   time.Duration // used only for WebSocket broadcast
-	dbFlushTimeout         time.Duration // used for DB flush blocking sends
-	dbFlushdrops           uint64        // counts how many times we had to drop a DB flush due to timeout (should be 0 ideally)
+	tickIngestionTimeout   time.Duration
+	dbFlushTimeout         time.Duration
+	dbFlushdrops           uint64
+
+	// Pooled JSON encode buffer and encoder — eliminates per-tick allocations.
+	encodeBuf *bytes.Buffer
+	encoder   *json.Encoder
 
 	// Monitoring metrics
-	dbErrors      uint64 // DB write errors (not drops)
-	wsDrops       uint64 // frontend WebSocket drops
+	dbErrors      uint64
+	wsDrops       uint64
 	wsBroadcasted uint64
-	droppedTicks  uint64 // only counts frontend drops (not DB)
+	droppedTicks  uint64
 }
 
 // NewMarketDataIngestor creates and returns a new instance of MarketDataIngestor.
@@ -80,6 +85,11 @@ func NewMarketDataIngestor(dbC *db.DBClient, tb tickbus.TickBus, wsClients *sync
 		dbFlushTimeout = 5 * time.Second
 	}
 	ingestor.dbFlushTimeout = dbFlushTimeout
+
+	// Pre-allocate reusable timers in a stopped state.
+	ingestor.encodeBuf = &bytes.Buffer{}
+	ingestor.encoder = json.NewEncoder(ingestor.encodeBuf)
+
 	ingestor.loadInitialTickSequenceCounters()
 	return ingestor
 }
@@ -164,6 +174,12 @@ func (m *MarketDataIngestor) startTickSubscription(ctx context.Context) {
 	}
 }
 
+// tickBroadcastMsg is a fixed struct for JSON encoding — avoids map[string]interface{} heap allocation per tick.
+type tickBroadcastMsg struct {
+	Symbol string           `json:"symbol"`
+	Tick   kitemodels.Tick  `json:"tick"`
+}
+
 // convertNormalizedToKiteTick converts a NormalizedTick to a kitemodels.Tick for downstream compatibility.
 func convertNormalizedToKiteTick(nt marketdata.NormalizedTick) kitemodels.Tick {
 	return kitemodels.Tick{
@@ -183,6 +199,22 @@ func convertNormalizedToKiteTick(nt marketdata.NormalizedTick) kitemodels.Tick {
 	}
 }
 
+// safeDepthItem extracts price/quantity/orders from a depth array at the given index.
+// Package-level to avoid per-tick heap allocation from a closure.
+func safeDepthItem(depthArray interface{}, idx int) (price float64, quantity int64, orders int) {
+	switch d := depthArray.(type) {
+	case [5]kitemodels.DepthItem:
+		if idx >= 0 && idx < len(d) {
+			return d[idx].Price, int64(d[idx].Quantity), int(d[idx].Orders)
+		}
+	case []kitemodels.DepthItem:
+		if idx >= 0 && idx < len(d) {
+			return d[idx].Price, int64(d[idx].Quantity), int(d[idx].Orders)
+		}
+	}
+	return 0, 0, 0
+}
+
 // processTick converts the enriched tick to MarketData and adds it to the buffer.
 func (m *MarketDataIngestor) processTick(tick marketdata.NormalizedTick) {
 	// Sequence counter
@@ -191,7 +223,6 @@ func (m *MarketDataIngestor) processTick(tick marketdata.NormalizedTick) {
 	if _, ok := m.tickSequenceCounters[token]; !ok {
 		m.tickSequenceCounters[token] = make(map[time.Time]int)
 	}
-	// Truncate to second so the per-timestamp key space doesn't explode at sub-second tick rates.
 	normalizedTimestamp := tick.EventTime.Truncate(time.Second)
 	currentSequenceID := m.tickSequenceCounters[token][normalizedTimestamp] + 1
 	m.tickSequenceCounters[token][normalizedTimestamp] = currentSequenceID
@@ -199,22 +230,6 @@ func (m *MarketDataIngestor) processTick(tick marketdata.NormalizedTick) {
 
 	buyDepth := tick.Depth.Buy
 	sellDepth := tick.Depth.Sell
-
-	// Helper to safely get depth item from array (or slice, works for both)
-	safeDepthItem := func(depthArray interface{}, idx int) (price float64, quantity int64, orders int) {
-		// Handle array of DepthItem
-		switch d := depthArray.(type) {
-		case [5]kitemodels.DepthItem:
-			if idx >= 0 && idx < len(d) {
-				return d[idx].Price, int64(d[idx].Quantity), int(d[idx].Orders)
-			}
-		case []kitemodels.DepthItem:
-			if idx >= 0 && idx < len(d) {
-				return d[idx].Price, int64(d[idx].Quantity), int(d[idx].Orders)
-			}
-		}
-		return 0, 0, 0
-	}
 
 	// Log depth warning if the first level is zero (indicating ModeLTP/Quote)
 	if buyDepth[0].Price == 0 && sellDepth[0].Price == 0 {
@@ -297,16 +312,15 @@ func (m *MarketDataIngestor) processTick(tick marketdata.NormalizedTick) {
 		copy(dataToFlush, m.marketDataBuffer)
 	}
 
-	// ---- DB PATH: BLOCKING WITH TIMEOUT (FATAL ON TIMEOUT) ----
+	// ---- DB PATH: non-blocking, drop batch if workers are saturated ----
 	if flushNow {
 		select {
 		case m.dbFlushCh <- dataToFlush:
 			observability.TicksProcessed.Add(float64(len(dataToFlush)))
-		case <-time.After(m.dbFlushTimeout):
+		default:
 			atomic.AddUint64(&m.dbFlushdrops, 1)
 			observability.DBFlushDrops.Inc()
-			zap.L().Error("DB flush timeout – dropping batch.",
-				zap.Duration("timeout", m.dbFlushTimeout),
+			zap.L().Warn("DB flush channel full – dropping market_data batch",
 				zap.Int("batch_size", len(dataToFlush)))
 		}
 		m.marketDataBuffer = make([]db.MarketData, 0, batchSize)
@@ -314,27 +328,23 @@ func (m *MarketDataIngestor) processTick(tick marketdata.NormalizedTick) {
 	}
 	m.bufferLock.Unlock()
 
-	// ---- FRONTEND BROADCAST: TIMEOUT (drops allowed) ----
-	// Keep the original broadcast format (kitemodels.Tick) to avoid breaking the frontend.
+	// ---- FRONTEND BROADCAST: non-blocking, drop if channel full ----
 	kiteTick := convertNormalizedToKiteTick(tick)
-	frontendData, err := json.Marshal(map[string]interface{}{
-		"symbol": tick.Symbol,
-		"tick":   kiteTick,
-	})
-	if err != nil {
-		zap.L().Error("Failed to marshal data for frontend broadcast", zap.Error(err))
+	m.encodeBuf.Reset()
+	encErr := m.encoder.Encode(tickBroadcastMsg{Symbol: tick.Symbol, Tick: kiteTick})
+	if encErr != nil {
+		zap.L().Error("Failed to marshal data for frontend broadcast", zap.Error(encErr))
 	} else {
+		frontendData := make([]byte, m.encodeBuf.Len())
+		copy(frontendData, m.encodeBuf.Bytes())
 		select {
 		case m.broadcastChannel <- frontendData:
 			atomic.AddUint64(&m.wsBroadcasted, 1)
 			observability.WebSocketBroadcasted.Inc()
 			m.livePrices.Store(tick.Symbol, frontendData)
-		case <-time.After(m.tickIngestionTimeout):
+		default:
 			atomic.AddUint64(&m.droppedTicks, 1)
 			observability.TicksDropped.Inc()
-			zap.L().Warn("Frontend broadcast timeout, dropping tick (acceptable)",
-				zap.Duration("timeout", m.tickIngestionTimeout),
-				zap.String("symbol", tick.Symbol))
 		}
 	}
 }

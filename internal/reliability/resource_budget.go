@@ -43,9 +43,9 @@ type ResourceBudgetConfig struct {
 // DefaultConfig returns sensible production defaults.
 func DefaultConfig() ResourceBudgetConfig {
 	return ResourceBudgetConfig{
-		MemoryWarningPercent:     0.80,
-		MemoryCriticalPercent:    0.90,
-		MemoryDegradationPercent: 0.95,
+		MemoryWarningPercent:     0.88,
+		MemoryCriticalPercent:    0.93,
+		MemoryDegradationPercent: 0.97,
 		GoroutineMaxGrowthRate:   10.0, // fire spike if goroutine count grows >10% per check interval
 		QueueThresholds: map[string]float64{
 			"tick_broadcast":   0.80,

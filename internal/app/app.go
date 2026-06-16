@@ -55,7 +55,7 @@ func New(appCfg *utils.AppConfig, dbCfg *utils.DatabaseConfig, redisCfg *utils.R
 		WsClients:          &sync.Map{},
 		CandleWsClients:    &sync.Map{},
 		IndicatorWsClients: &sync.Map{},
-		IndicatorInputCh:   make(chan indicators.Candle, 5000),
+		IndicatorInputCh:   make(chan indicators.Candle, 50_000),
 		rm:                 runtime.NewRuntimeManager(),
 	}
 
@@ -243,17 +243,14 @@ func (a *App) Start(ctx context.Context) error {
 			"candle_flush":     &queueAdapter{lenFn: qp.CandleQueueLen, capFn: qp.CandleQueueCap},
 			"indicator_output": &queueAdapter{lenFn: qp.IndicatorQueueLen, capFn: qp.IndicatorQueueCap},
 		})
-		// Shed non-critical work under memory pressure: pause indicator calculations
-		// by closing and replacing the input channel so new candles are dropped
-		// rather than queued. Restore re-opens the channel when pressure clears.
+		// Load shedding only drops WS broadcasts, never candle data.
+		// Indicator states must never go stale from a dropped candle.
 		a.ResourceBudget.SetLoadSheddingCallback(
 			func() {
-				zap.L().Warn("load shedding activated: dropping indicator candles until memory pressure clears")
-				a.IndicatorManager.SetShedding(true)
+				zap.L().Warn("load shedding activated: WS broadcasts paused, candle/indicator processing continues")
 			},
 			func() {
-				zap.L().Info("load shedding cleared: resuming indicator calculations")
-				a.IndicatorManager.SetShedding(false)
+				zap.L().Info("load shedding cleared")
 			},
 		)
 	}

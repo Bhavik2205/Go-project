@@ -103,8 +103,8 @@ func NewCandleGenerator(
 }
 
 // handleFinalizedCandle is called by the engine when a candle is finalised.
+// Both the DB flush and indicator sends are blocking — candle data is never dropped.
 func (cg *CandleGenerator) handleFinalizedCandle(candle *candles.OpenCandle) {
-	// Convert to db.OHLCVCandle
 	ohlcv := db.OHLCVCandle{
 		InstrumentToken: candle.InstrumentToken,
 		Interval:        candle.IntervalStr,
@@ -118,20 +118,13 @@ func (cg *CandleGenerator) handleFinalizedCandle(candle *candles.OpenCandle) {
 		DataSource:      dataSourceFromConfig(cg.appCfg),
 	}
 
-	// Non‑blocking send to DB flush channel
-	select {
-	case cg.candleDBFlushCh <- ohlcv:
-	default:
-		atomic.AddUint64(&cg.dbErrors, 1)
-		zap.L().Warn("Candle DB flush channel full, dropping candle",
-			zap.Uint32("token", candle.InstrumentToken),
-			zap.String("interval", candle.IntervalStr),
-			zap.Time("timestamp", candle.StartTime))
-	}
+	// Blocking send — the DB writer goroutine drains this; channel is large enough
+	// to absorb bursts. If it fills, we block here rather than lose a candle.
+	cg.candleDBFlushCh <- ohlcv
 
-	// Send to indicator manager
+	// Send to indicator manager — blocking, never drop a candle from indicator state.
 	if cg.indicatorManagerInputCh != nil {
-		indicatorCandle := indicators.Candle{
+		cg.indicatorManagerInputCh <- indicators.Candle{
 			InstrumentToken: candle.InstrumentToken,
 			Interval:        candle.IntervalStr,
 			Timestamp:       candle.StartTime,
@@ -143,20 +136,9 @@ func (cg *CandleGenerator) handleFinalizedCandle(candle *candles.OpenCandle) {
 			TradeCount:      candle.TradeCount,
 			DataSource:      dataSourceFromConfig(cg.appCfg),
 		}
-		select {
-		case cg.indicatorManagerInputCh <- indicatorCandle:
-			zap.L().Debug("Sent completed candle to IndicatorsManager",
-				zap.Uint32("token", candle.InstrumentToken),
-				zap.String("interval", candle.IntervalStr),
-				zap.Time("timestamp", candle.StartTime))
-		default:
-			zap.L().Warn("IndicatorsManager input channel full; dropping candle for indicator calculation.",
-				zap.Uint32("token", candle.InstrumentToken),
-				zap.String("interval", candle.IntervalStr))
-		}
 	}
 
-	// Broadcast to WebSocket clients
+	// WS broadcast is best-effort — drops are acceptable for display.
 	cg.broadcastCandle(candle)
 }
 

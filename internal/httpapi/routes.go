@@ -24,9 +24,8 @@ func RegisterRoutes(router *mux.Router, deps HTTPDeps) {
 	}).Methods("GET")
 	apiV1.Handle("/metrics", promhttp.Handler()).Methods("GET")
 	
-	// pprof profiling (for memory/goroutine leak detection)
-	// Available at: /debug/pprof
-	router.PathPrefix("/debug/pprof").Handler(http.DefaultServeMux)
+	// pprof profiling — preserve full path so DefaultServeMux matches /debug/pprof/*
+	router.PathPrefix("/debug/pprof").Handler(http.StripPrefix("", http.DefaultServeMux))
 	
 	apiV1.HandleFunc("/openapi.json", handleV1OpenAPISpec).Methods("GET")
 	apiV1.HandleFunc("/auth/signup", authhandler.HandleSignup(deps.DBClient)).Methods("POST")
