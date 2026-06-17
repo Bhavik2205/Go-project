@@ -76,6 +76,7 @@ func (g *MemoryGuard) run(cfg MemoryGuardConfig) {
 			runtime.ReadMemStats(&m)
 
 			sys := m.Sys
+			heapSys := m.HeapSys
 			heapAlloc := m.HeapAlloc
 
 			for {
@@ -89,9 +90,13 @@ func (g *MemoryGuard) run(cfg MemoryGuardConfig) {
 				}
 			}
 
-			warning := uint64(float64(sys) * cfg.WarningPercent)
-			critical := uint64(float64(sys) * cfg.CriticalPercent)
-			degradation := uint64(float64(sys) * cfg.DegradationPercent)
+			heapBudget := heapSys
+			if heapBudget == 0 {
+				heapBudget = sys
+			}
+			warning := uint64(float64(heapBudget) * cfg.WarningPercent)
+			critical := uint64(float64(heapBudget) * cfg.CriticalPercent)
+			degradation := uint64(float64(heapBudget) * cfg.DegradationPercent)
 
 			// Update Prometheus gauges (already exist in observability)
 			observability.MemoryHeapAlloc.Set(float64(heapAlloc))
@@ -99,8 +104,8 @@ func (g *MemoryGuard) run(cfg MemoryGuardConfig) {
 
 			// Update reliability-specific metrics
 			var usagePct float64
-			if sys > 0 {
-				usagePct = float64(heapAlloc) / float64(sys) * 100
+			if heapBudget > 0 {
+				usagePct = float64(heapAlloc) / float64(heapBudget) * 100
 			}
 			observability.MemoryUsagePercent.Set(usagePct)
 			observability.ReliabilityLastCheck.Set(float64(time.Now().Unix()))
@@ -129,6 +134,7 @@ func (g *MemoryGuard) run(cfg MemoryGuardConfig) {
 
 			zap.L().Debug("memory stats",
 				zap.Uint64("heap_alloc_mb", heapAlloc/1024/1024),
+				zap.Uint64("heap_sys_mb", heapSys/1024/1024),
 				zap.Uint64("sys_mb", sys/1024/1024),
 				zap.Float64("usage_pct", usagePct),
 			)

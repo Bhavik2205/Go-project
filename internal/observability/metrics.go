@@ -149,6 +149,12 @@ var (
 		Help: "Total number of market data broadcasts to WebSocket clients",
 	})
 
+	// NEW METRIC for dropped frontend broadcasts
+	WebSocketBroadcastDrops = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "trading_websocket_broadcast_drops_total",
+		Help: "Total number of market data broadcasts dropped because client channels were full",
+	})
+
 	IndicatorErrors = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "trading_indicator_errors_total",
 		Help: "Total number of indicator computation errors",
@@ -247,7 +253,7 @@ var (
 
 	MemoryUsagePercent = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "reliability_memory_usage_percent",
-		Help: "Current heap memory usage as percentage of system memory",
+		Help: "Current heap allocation as a percentage of Go heap memory reserved by the runtime",
 	})
 
 	MemoryHighWaterMark = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -288,8 +294,9 @@ var (
 // that call InitMetrics more than once do not break startup.
 var allMetrics = []prometheus.Collector{
 	TicksReceived, TicksProcessed, TicksDropped, PanicCounter, CandleFinalized,
-	DBErrors, DBFlushDrops, WebSocketBroadcasted, IndicatorErrors,
-	IndicatorsComputed, LateTicks, CandleDrops, CandleFinalizationFailures, CandleRebuilds,
+	DBErrors, DBFlushDrops, WebSocketBroadcasted, WebSocketBroadcastDrops, // <-- added here
+	IndicatorErrors, IndicatorsComputed, LateTicks, CandleDrops,
+	CandleFinalizationFailures, CandleRebuilds,
 	DBUp, RedisUp, GCPauseSeconds,
 	WALAppendsTotal, WALAppendErrorsTotal, WALBytesWrittenTotal, WALSegmentsTotal, WALReplayRecordsTotal,
 	TickGapsDetected, DuplicateTicksDetected, OutOfOrderTicksDetected,

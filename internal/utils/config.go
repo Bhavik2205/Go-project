@@ -54,8 +54,8 @@ type AppConfig struct {
 
 // DatabaseConfig holds database connection settings
 type DatabaseConfig struct {
-	MaxConnections           int `yaml:"max_connections"`
-	IdleConnections          int `yaml:"idle_connections"`
+	MaxConnections           int `yaml:"max_open_connections"`
+	IdleConnections          int `yaml:"max_idle_connections"`
 	ConnectionTimeoutSeconds int `yaml:"connection_timeout_seconds"`
 	// These will be loaded from environment variables for security
 	Host     string
@@ -242,6 +242,15 @@ func LoadDatabaseConfig(path string) (*DatabaseConfig, error) {
 	if cfg.Host == "" || cfg.Port == "" || cfg.User == "" || cfg.Password == "" || cfg.DBName == "" {
 		return nil, errors.New("missing one or more required database environment variables (DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME)")
 	}
+
+	if cfg.MaxConnections <= 0 {
+		return nil, fmt.Errorf("invalid max_open_connections: %d", cfg.MaxConnections)
+	}
+
+	if cfg.IdleConnections < 0 {
+		return nil, fmt.Errorf("invalid max_idle_connections: %d", cfg.IdleConnections)
+	}
+
 	return &cfg, nil
 }
 

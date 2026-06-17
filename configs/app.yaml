@@ -22,14 +22,14 @@ ingestion:
   max_tick_sequence_cache_duration_s: 10 # keep per-second buckets for 10s (was 2 — too tight at 100ms)
   tick_sequence_cleanup_interval_s: 5   # cleanup every 5s, well within the 10s expiry
   db_worker_count: 4
-  db_flush_channel_size: 50000
+  db_flush_channel_size: 5000
   ws_broadcast_worker_count: 4
-  ws_broadcast_channel_size: 20000
+  ws_broadcast_channel_size: 5000
   redis_reconnect_initial_delay_ms: 1000 # Initial delay for Redis reconnection
   redis_reconnect_max_delay_ms: 5000 # Maximum delay for Redis reconnection
   redis_reconnect_max_attempts: 10
-  tick_ingestion_timeout_ms: 100 # Timeout for tick ingestion to prevent blocking (e.g., 100 ms)
-  db_flush_timeout_ms: 5000 # Timeout for blocking DB send operations to prevent deadlocks
+  tick_ingestion_timeout_ms: 100 # Reserved for future ingress safeguards; steady-state persistence now uses backpressure
+  db_flush_timeout_ms: 5000 # Used only during bounded shutdown flushes; steady-state persistence now uses backpressure
 
 monitor:
   broadcast_interval: 5s # e.g., 5 seconds

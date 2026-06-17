@@ -21,38 +21,39 @@ func NewInProcess() *InProcessTickBus {
 	return &InProcessTickBus{}
 }
 
-// Publish sends a tick to all subscribers. It is non‑blocking: if a subscriber's channel
-// is full, the tick is dropped and the drop counter is incremented. The subscriber slice
-// is copied under read lock to avoid deadlocking Subscribe() during a slow publish.
+// Publish sends a tick to all subscribers. It applies backpressure instead of
+// dropping data: if a subscriber is saturated we wait until it drains or the
+// caller's context is cancelled. The subscriber slice is copied under read lock
+// so Subscribe() is never blocked behind a slow publish loop.
 func (b *InProcessTickBus) Publish(ctx context.Context, tick marketdata.NormalizedTick) error {
-	// Take a snapshot of subscribers under read lock
 	b.mu.RLock()
 	subs := make([]chan marketdata.NormalizedTick, len(b.subscribers))
 	copy(subs, b.subscribers)
 	b.mu.RUnlock()
 
 	for _, ch := range subs {
+		if cap(ch) > 0 && len(ch) == cap(ch) {
+			b.maybeLogBackpressureWarning(len(ch), cap(ch))
+		}
 		select {
 		case ch <- tick:
 		case <-ctx.Done():
 			return ctx.Err()
-		default:
-			// Channel is full – drop the tick
-			atomic.AddUint64(&b.droppedTicks, 1)
-			b.maybeLogDropWarning()
 		}
 	}
 	return nil
 }
 
-// maybeLogDropWarning logs a warning at most once per second.
-func (b *InProcessTickBus) maybeLogDropWarning() {
+// maybeLogBackpressureWarning logs a warning at most once per second while a
+// subscriber is forcing the publisher to wait.
+func (b *InProcessTickBus) maybeLogBackpressureWarning(depth, capacity int) {
 	now := time.Now().UnixNano()
 	last := atomic.LoadInt64(&b.lastLogTime)
 	if now-last >= int64(time.Second) {
 		if atomic.CompareAndSwapInt64(&b.lastLogTime, last, now) {
-			zap.L().Warn("Tick dropped because subscriber channel full",
-				zap.Uint64("total_dropped", atomic.LoadUint64(&b.droppedTicks)))
+			zap.L().Warn("TickBus subscriber saturated; publisher waiting for backpressure to clear",
+				zap.Int("queue_depth", depth),
+				zap.Int("queue_capacity", capacity))
 		}
 	}
 }

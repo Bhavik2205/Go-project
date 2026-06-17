@@ -55,7 +55,7 @@ func New(appCfg *utils.AppConfig, dbCfg *utils.DatabaseConfig, redisCfg *utils.R
 		WsClients:          &sync.Map{},
 		CandleWsClients:    &sync.Map{},
 		IndicatorWsClients: &sync.Map{},
-		IndicatorInputCh:   make(chan indicators.Candle, 50_000),
+		IndicatorInputCh:   make(chan indicators.Candle, 5_000),
 		rm:                 runtime.NewRuntimeManager(),
 	}
 
@@ -372,7 +372,7 @@ func (a *App) startRealFeed(ctx context.Context) error {
 	}
 
 	// Subscribe (this blocks until ctx is done)
-	return a.Zerodha.SubscribeToTicks(instruments, a.tickBus, a.wal)
+	return a.Zerodha.SubscribeToTicks(ctx, instruments, a.tickBus, a.wal)
 }
 
 // serviceAdapter implements runtime.Service using functions.

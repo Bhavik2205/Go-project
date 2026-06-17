@@ -13,8 +13,7 @@ import (
 
 // IndicatorBatchWriter accumulates indicator rows per table and flushes them
 // to Postgres in bulk. Each table owns a typed slice so that GORM's
-// CreateInBatches receives a concrete type — []db.IndicatorSMA, not
-// []interface{} — which is required for reflection-based schema resolution.
+// CreateInBatches receives a concrete type, which is required for schema resolution.
 type IndicatorBatchWriter struct {
 	db        *gorm.DB
 	flushSize int
@@ -34,8 +33,8 @@ type IndicatorBatchWriter struct {
 
 // typedBuf is a generic per-table accumulator with its own mutex.
 type typedBuf[T any] struct {
-	mu    sync.Mutex
-	rows  []T
+	mu   sync.Mutex
+	rows []T
 }
 
 func (b *typedBuf[T]) add(row T) int {
@@ -63,6 +62,25 @@ func (b *typedBuf[T]) pending() int {
 	n := len(b.rows)
 	b.mu.Unlock()
 	return n
+}
+
+func dedupeByKey[T any, K comparable](rows []T, keyFn func(T) K) []T {
+	if len(rows) < 2 {
+		return rows
+	}
+
+	lastIndex := make(map[K]int, len(rows))
+	for i, row := range rows {
+		lastIndex[keyFn(row)] = i
+	}
+
+	deduped := make([]T, 0, len(lastIndex))
+	for i, row := range rows {
+		if lastIndex[keyFn(row)] == i {
+			deduped = append(deduped, row)
+		}
+	}
+	return deduped
 }
 
 // NewIndicatorBatchWriter creates a writer that flushes when any table reaches
@@ -103,16 +121,12 @@ func (w *IndicatorBatchWriter) FlushAll() {
 	w.flushADX()
 }
 
-// PendingCount returns total un-flushed rows across all tables (for metrics).
+// PendingCount returns total un-flushed rows across all tables.
 func (w *IndicatorBatchWriter) PendingCount() int {
 	return w.sma.pending() + w.ema.pending() + w.rsi.pending() +
 		w.macd.pending() + w.atr.pending() + w.bollinger.pending() +
 		w.stochastic.pending() + w.obv.pending() + w.vwap.pending() + w.adx.pending()
 }
-
-// ---------------------------------------------------------------------------
-// Typed Add methods — one per indicator
-// ---------------------------------------------------------------------------
 
 func (w *IndicatorBatchWriter) AddSMA(row dbmodels.IndicatorSMA) {
 	if w.sma.add(row) >= w.flushSize {
@@ -174,15 +188,24 @@ func (w *IndicatorBatchWriter) AddADX(row dbmodels.IndicatorADX) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Typed flush methods — GORM receives a concrete []T, not []interface{}
-// ---------------------------------------------------------------------------
-
 func (w *IndicatorBatchWriter) flushSMA() {
 	rows := w.sma.drain()
 	if rows == nil {
 		return
 	}
+	rows = dedupeByKey(rows, func(row dbmodels.IndicatorSMA) struct {
+		Token     uint32
+		Interval  string
+		Period    int
+		Timestamp time.Time
+	} {
+		return struct {
+			Token     uint32
+			Interval  string
+			Period    int
+			Timestamp time.Time
+		}{row.InstrumentToken, row.Interval, row.Period, row.Timestamp}
+	})
 	if err := w.db.Table("smas").Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "instrument_token"}, {Name: "interval"}, {Name: "period"}, {Name: "timestamp"}},
 		DoUpdates: clause.AssignmentColumns([]string{"value", "updated_at"}),
@@ -196,6 +219,19 @@ func (w *IndicatorBatchWriter) flushEMA() {
 	if rows == nil {
 		return
 	}
+	rows = dedupeByKey(rows, func(row dbmodels.IndicatorEMA) struct {
+		Token     uint32
+		Interval  string
+		Period    int
+		Timestamp time.Time
+	} {
+		return struct {
+			Token     uint32
+			Interval  string
+			Period    int
+			Timestamp time.Time
+		}{row.InstrumentToken, row.Interval, row.Period, row.Timestamp}
+	})
 	if err := w.db.Table("emas").Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "instrument_token"}, {Name: "interval"}, {Name: "period"}, {Name: "timestamp"}},
 		DoUpdates: clause.AssignmentColumns([]string{"value", "updated_at"}),
@@ -209,6 +245,19 @@ func (w *IndicatorBatchWriter) flushRSI() {
 	if rows == nil {
 		return
 	}
+	rows = dedupeByKey(rows, func(row dbmodels.IndicatorRSI) struct {
+		Token     uint32
+		Interval  string
+		Period    int
+		Timestamp time.Time
+	} {
+		return struct {
+			Token     uint32
+			Interval  string
+			Period    int
+			Timestamp time.Time
+		}{row.InstrumentToken, row.Interval, row.Period, row.Timestamp}
+	})
 	if err := w.db.Table("rsis").Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "instrument_token"}, {Name: "interval"}, {Name: "period"}, {Name: "timestamp"}},
 		DoUpdates: clause.AssignmentColumns([]string{"value", "updated_at"}),
@@ -222,6 +271,23 @@ func (w *IndicatorBatchWriter) flushMACD() {
 	if rows == nil {
 		return
 	}
+	rows = dedupeByKey(rows, func(row dbmodels.IndicatorMACD) struct {
+		Token        uint32
+		Interval     string
+		FastPeriod   int
+		SlowPeriod   int
+		SignalPeriod int
+		Timestamp    time.Time
+	} {
+		return struct {
+			Token        uint32
+			Interval     string
+			FastPeriod   int
+			SlowPeriod   int
+			SignalPeriod int
+			Timestamp    time.Time
+		}{row.InstrumentToken, row.Interval, row.FastPeriod, row.SlowPeriod, row.SignalPeriod, row.Timestamp}
+	})
 	if err := w.db.Table("macds").Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "instrument_token"}, {Name: "interval"}, {Name: "fast_period"}, {Name: "slow_period"}, {Name: "signal_period"}, {Name: "timestamp"}},
 		DoUpdates: clause.AssignmentColumns([]string{"macd_line", "signal_line", "histogram", "updated_at"}),
@@ -235,6 +301,19 @@ func (w *IndicatorBatchWriter) flushATR() {
 	if rows == nil {
 		return
 	}
+	rows = dedupeByKey(rows, func(row dbmodels.IndicatorATR) struct {
+		Token     uint32
+		Interval  string
+		Period    int
+		Timestamp time.Time
+	} {
+		return struct {
+			Token     uint32
+			Interval  string
+			Period    int
+			Timestamp time.Time
+		}{row.InstrumentToken, row.Interval, row.Period, row.Timestamp}
+	})
 	if err := w.db.Table("atrs").Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "instrument_token"}, {Name: "interval"}, {Name: "period"}, {Name: "timestamp"}},
 		DoUpdates: clause.AssignmentColumns([]string{"value", "updated_at"}),
@@ -248,6 +327,21 @@ func (w *IndicatorBatchWriter) flushBollinger() {
 	if rows == nil {
 		return
 	}
+	rows = dedupeByKey(rows, func(row dbmodels.IndicatorBollingerBands) struct {
+		Token     uint32
+		Interval  string
+		Period    int
+		NumStdDev float64
+		Timestamp time.Time
+	} {
+		return struct {
+			Token     uint32
+			Interval  string
+			Period    int
+			NumStdDev float64
+			Timestamp time.Time
+		}{row.InstrumentToken, row.Interval, row.Period, row.NumStdDev, row.Timestamp}
+	})
 	if err := w.db.Table("bollinger_bands").Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "instrument_token"}, {Name: "interval"}, {Name: "period"}, {Name: "num_std_dev"}, {Name: "timestamp"}},
 		DoUpdates: clause.AssignmentColumns([]string{"upper_band", "middle_band", "lower_band", "updated_at"}),
@@ -261,6 +355,21 @@ func (w *IndicatorBatchWriter) flushStochastic() {
 	if rows == nil {
 		return
 	}
+	rows = dedupeByKey(rows, func(row dbmodels.IndicatorStochastic) struct {
+		Token     uint32
+		Interval  string
+		KPeriod   int
+		DPeriod   int
+		Timestamp time.Time
+	} {
+		return struct {
+			Token     uint32
+			Interval  string
+			KPeriod   int
+			DPeriod   int
+			Timestamp time.Time
+		}{row.InstrumentToken, row.Interval, row.KPeriod, row.DPeriod, row.Timestamp}
+	})
 	if err := w.db.Table("stochastics").Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "instrument_token"}, {Name: "interval"}, {Name: "k_period"}, {Name: "d_period"}, {Name: "timestamp"}},
 		DoUpdates: clause.AssignmentColumns([]string{"k_value", "d_value", "updated_at"}),
@@ -274,6 +383,17 @@ func (w *IndicatorBatchWriter) flushOBV() {
 	if rows == nil {
 		return
 	}
+	rows = dedupeByKey(rows, func(row dbmodels.IndicatorOBV) struct {
+		Token     uint32
+		Interval  string
+		Timestamp time.Time
+	} {
+		return struct {
+			Token     uint32
+			Interval  string
+			Timestamp time.Time
+		}{row.InstrumentToken, row.Interval, row.Timestamp}
+	})
 	if err := w.db.Table("obvs").Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "instrument_token"}, {Name: "interval"}, {Name: "timestamp"}},
 		DoUpdates: clause.AssignmentColumns([]string{"value", "updated_at"}),
@@ -287,6 +407,17 @@ func (w *IndicatorBatchWriter) flushVWAP() {
 	if rows == nil {
 		return
 	}
+	rows = dedupeByKey(rows, func(row dbmodels.IndicatorVWAP) struct {
+		Token     uint32
+		Interval  string
+		Timestamp time.Time
+	} {
+		return struct {
+			Token     uint32
+			Interval  string
+			Timestamp time.Time
+		}{row.InstrumentToken, row.Interval, row.Timestamp}
+	})
 	if err := w.db.Table("vwaps").Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "instrument_token"}, {Name: "interval"}, {Name: "timestamp"}},
 		DoUpdates: clause.AssignmentColumns([]string{"value", "updated_at"}),
@@ -300,6 +431,19 @@ func (w *IndicatorBatchWriter) flushADX() {
 	if rows == nil {
 		return
 	}
+	rows = dedupeByKey(rows, func(row dbmodels.IndicatorADX) struct {
+		Token     uint32
+		Interval  string
+		Period    int
+		Timestamp time.Time
+	} {
+		return struct {
+			Token     uint32
+			Interval  string
+			Period    int
+			Timestamp time.Time
+		}{row.InstrumentToken, row.Interval, row.Period, row.Timestamp}
+	})
 	if err := w.db.Table("adxes").Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "instrument_token"}, {Name: "interval"}, {Name: "period"}, {Name: "timestamp"}},
 		DoUpdates: clause.AssignmentColumns([]string{"adx_value", "plus_di", "minus_di", "updated_at"}),

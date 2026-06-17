@@ -18,7 +18,7 @@ import (
 const RedisMarketDataChannel = "market_data_ticks"
 
 // SubscribeToTicks subscribes to ticks and publishes them as NormalizedTick to the TickBus.
-func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, tb tickbus.TickBus, wal wal.Writer) error {
+func (z *ZerodhaClient) SubscribeToTicks(ctx context.Context, infos []*InstrumentInfo, tb tickbus.TickBus, wal wal.Writer) error {
 	if tb == nil {
 		return fmt.Errorf("TickBus is nil, cannot publish ticks")
 	}
@@ -94,7 +94,7 @@ func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, tb tickbus.Tic
 					zap.Error(err),
 				)
 			}
-			if err := tb.Publish(context.Background(), normalized); err != nil {
+			if err := tb.Publish(ctx, normalized); err != nil {
 				zap.L().Error("❌ Failed to publish tick to TickBus",
 					zap.Uint32("instrument_token", tick.InstrumentToken),
 					zap.Error(err),
@@ -124,6 +124,12 @@ func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, tb tickbus.Tic
 			backoff := initialBackoff
 
 			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+
 				zap.L().Info(
 					"Attempting WebSocket reconnect",
 					zap.Duration("backoff", backoff),
@@ -197,6 +203,8 @@ func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, tb tickbus.Tic
 						"Successfully reconnected and resubscribed",
 					)
 					return
+				case <-ctx.Done():
+					return
 
 				case <-time.After(connectTimeout):
 					zap.L().Warn(
@@ -205,7 +213,11 @@ func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, tb tickbus.Tic
 					)
 				}
 
-				time.Sleep(backoff)
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(backoff):
+				}
 
 				if backoff < maxBackoff {
 					backoff *= 2
@@ -221,6 +233,12 @@ func (z *ZerodhaClient) SubscribeToTicks(infos []*InstrumentInfo, tb tickbus.Tic
 	go func() {
 		defer observability.RecoverPanic("ticker-serve")
 		z.Ticker.Serve()
+	}()
+	go func() {
+		<-ctx.Done()
+		if z.Ticker != nil {
+			z.Ticker.Close()
+		}
 	}()
 	return nil
 }
