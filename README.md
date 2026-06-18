@@ -1,3 +1,12 @@
+# ⚠️ Proprietary Software Notice
+
+#### This repository contains proprietary software and intellectual property owned by Bhavik Patel.
+
+#### The source code is publicly visible for transparency and demonstration purposes only. Public visibility does not constitute permission to use, copy, modify, distribute, deploy, commercialize, or create derivative works from this software.
+
+#### All rights are reserved unless explicitly granted in writing by the copyright holder.
+
+#### Unauthorized use of this software, including deployment in production environments, commercial products, trading systems, market data platforms, or derivative projects, is prohibited.
 
 # Equity Trading Bot
 

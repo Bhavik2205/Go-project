@@ -21,7 +21,10 @@ tree -I '.git|logs|data' --dirsfirst;
 │   └── zerodha.yaml
 ├── docs
 │   ├── API_WEBSOCKET_STATUS_REPORT.md
+│   ├── complete_review.pdf
+│   ├── deepseek_csv_20260609_378553.csv
 │   ├── GO_FRONTEND_INTEGRATION_AUDIT.md
+│   ├── ML-Bot_Full_Codebase_Audit.md
 │   ├── openapi.yaml
 │   ├── README.md
 │   ├── REPOSITORY_AUDIT_EXECUTION_ROADMAP_2026-05-13.md
@@ -30,7 +33,18 @@ tree -I '.git|logs|data' --dirsfirst;
 │   ├── TRADING_BOT_ARCHITECTURE.md
 │   ├── trading_bot_master_plan_FIXED (2).csv
 │   ├── trading_bot_master_plan_UPDATED.csv
+│   ├── TRADING_SYSTEM_PRINCIPLES.docx
 │   └── TradingBot_Base_Build_Tickets.docx
+├── grafana
+│   ├── dashboards
+│   │   ├── 01-market-data.json
+│   │   ├── 02-queues.json
+│   │   ├── 03-candles.json
+│   │   ├── 04-indicators.json
+│   │   ├── 05-runtime.json
+│   │   └── 06-recovery.json
+│   ├── alerts.yml
+│   └── README.md
 ├── internal
 │   ├── api
 │   │   ├── dto
@@ -84,7 +98,8 @@ tree -I '.git|logs|data' --dirsfirst;
 │   ├── app
 │   │   └── app.go
 │   ├── audit
-│   │   └── audit.go
+│   │   ├── audit.go
+│   │   └── repository.go
 │   ├── auth
 │   │   ├── doc.go
 │   │   ├── jwt_test.go
@@ -155,14 +170,34 @@ tree -I '.git|logs|data' --dirsfirst;
 │   ├── indicators
 │   │   ├── indicators.go
 │   │   ├── interface.go
+│   │   ├── state.go
 │   │   └── types.go
 │   ├── jobs
 │   │   └── doc.go
-│   ├── market
-│   │   └── doc.go
+│   ├── marketdata
+│   │   ├── candles
+│   │   │   ├── candle_engine.go
+│   │   │   └── open_candle.go
+│   │   ├── tickbus
+│   │   │   ├── dual.go
+│   │   │   ├── inprocess.go
+│   │   │   ├── interface.go
+│   │   │   └── redis.go
+│   │   ├── wal
+│   │   │   ├── checksum.go
+│   │   │   ├── flusher.go
+│   │   │   ├── reader.go
+│   │   │   ├── record.go
+│   │   │   ├── segment.go
+│   │   │   ├── wal_test.go
+│   │   │   └── writer.go
+│   │   ├── doc.go
+│   │   ├── tick_test.go
+│   │   └── tick.go
 │   ├── middleware
 │   │   ├── audit.go
 │   │   ├── auth.go
+│   │   ├── context.go
 │   │   ├── doc.go
 │   │   ├── logger.go
 │   │   ├── middleware_test.go
@@ -176,11 +211,26 @@ tree -I '.git|logs|data' --dirsfirst;
 │   │   └── trainer.go
 │   ├── notifications
 │   │   └── doc.go
+│   ├── observability
+│   │   ├── health.go
+│   │   ├── indicators.go
+│   │   ├── marketdata.go
+│   │   ├── metrics.go
+│   │   ├── middleware.go
+│   │   └── runtime.go
+│   ├── pool
+│   │   ├── byte_pool.go
+│   │   └── protobuf_pool.go
 │   ├── realtime
 │   │   ├── doc.go
 │   │   ├── hub.go
 │   │   ├── README.md
 │   │   └── upgrader.go
+│   ├── reliability
+│   │   ├── goroutine_guard.go
+│   │   ├── memory_guard.go
+│   │   ├── queue_guard.go
+│   │   └── resource_budget.go
 │   ├── runtime
 │   │   ├── manager.go
 │   │   └── service.go
@@ -204,18 +254,17 @@ tree -I '.git|logs|data' --dirsfirst;
 │   │   └── doc.go
 │   ├── utils
 │   │   ├── config.go
-│   │   ├── errors.go
 │   │   ├── logger.go
 │   │   ├── symbols.go
 │   │   └── validate.go
-│   └── validation
-│       ├── doc.go
-│       ├── validate.go
-│       └── validation_test.go
+│   ├── validation
+│   │   ├── doc.go
+│   │   ├── validate.go
+│   │   └── validation_test.go
+│   └── ws
+│       └── protobuf_encoder.go
 ├── models
-│   ├── README.txt
-│   ├── sentiment_optimized.onnx
-│   └── sentiment.onnx
+│   └── README.txt
 ├── notebooks
 │   └── EDA_intraday.ipynb
 ├── notes
@@ -225,6 +274,15 @@ tree -I '.git|logs|data' --dirsfirst;
 │   ├── sample_main.go.txt
 │   ├── structure.txt
 │   └── TASK_04-06-2025
+├── proto
+│   ├── depth.pb.go
+│   ├── depth.proto
+│   ├── instrument.pb.go
+│   ├── instrument.proto
+│   ├── ohlc.pb.go
+│   ├── ohlc.proto
+│   ├── tick.pb.go
+│   └── tick.proto
 ├── scripts
 │   ├── convert_to_onnx.py
 │   ├── db_migrate.sh
@@ -232,21 +290,29 @@ tree -I '.git|logs|data' --dirsfirst;
 │   ├── e2e_test.sh
 │   ├── performance_report.py
 │   ├── retrain_sentiment.py
-│   ├── smoke_test.sh
 │   ├── test.py
 │   └── tokenize_text.py
+├── wal
+│   └── ticks-20260618-0001.wal
 ├── app.log
 ├── CHANGELOG.md
 ├── Dockerfile
+├── e2e_server.log
 ├── go.mod
 ├── go.sum
+├── GRAFANA_IMPORT_GUIDE.md
 ├── instruments.csv
 ├── LICENSE
 ├── Makefile
+├── OBSERVABILITY_IMPLEMENTATION.md
+├── QUICK_TEST_REFERENCE.md
 ├── README.md
 ├── requirement.txt
 ├── requirements.txt
-├── server
-└── structure.txt
+├── structure.txt
+├── TEST_SUMMARY.txt
+├── test-integration.sh
+├── test-quick.sh
+└── TESTING_OBSERVABILITY.md
 
-59 directories, 189 files
+70 directories, 244 files
