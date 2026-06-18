@@ -13,6 +13,7 @@ import (
 
 	"github.com/Bhavik2205/ML-Bot/internal/db"
 	"github.com/Bhavik2205/ML-Bot/internal/marketdata"
+	"github.com/Bhavik2205/ML-Bot/internal/marketdata/candles"
 	"github.com/Bhavik2205/ML-Bot/internal/marketdata/tickbus"
 	"github.com/Bhavik2205/ML-Bot/internal/observability"
 	"github.com/Bhavik2205/ML-Bot/internal/utils"
@@ -24,8 +25,10 @@ import (
 const (
 	wsPingPeriod = 45 * time.Second
 	wsWriteWait  = 10 * time.Second
-	priceScale   = 100 // not used yet, but reserved for protobuf
 )
+
+// scalePrice converts a float64 price to a scaled int64 using candles.PriceScale.
+func scalePrice(p float64) int64 { return int64(p * candles.PriceScale) }
 
 // sync.Pool for JSON encoding buffers (kept for now)
 var encodePool = sync.Pool{
@@ -330,26 +333,26 @@ func (m *MarketDataIngestor) processTick(ctx context.Context, tick marketdata.No
 		InstrumentToken:    tick.InstrumentToken,
 		Timestamp:          normalizedTimestamp,
 		TickSequenceID:     currentSequenceID,
-		LastPrice:          tick.LastPrice,
+		LastPrice:          scalePrice(tick.LastPrice),
 		LastTradedQuantity: tick.LastTradedQuantity,
 		Volume:             tick.Volume,
-		AverageTradePrice:  tick.AverageTradePrice,
-		NetChange:          tick.NetChange,
-		Open:               tick.OHLC.Open,
-		High:               tick.OHLC.High,
-		Low:                tick.OHLC.Low,
-		Close:              tick.OHLC.Close,
+		AverageTradePrice:  scalePrice(tick.AverageTradePrice),
+		NetChange:          scalePrice(tick.NetChange),
+		Open:               scalePrice(tick.OHLC.Open),
+		High:               scalePrice(tick.OHLC.High),
+		Low:                scalePrice(tick.OHLC.Low),
+		Close:              scalePrice(tick.OHLC.Close),
 		OpenInterest:       tick.OpenInterest,
-		BidPrice1:          bid1Price, BidQuantity1: uint32(bid1Qty), BidOrders1: uint32(bid1Orders),
-		BidPrice2: bid2Price, BidQuantity2: uint32(bid2Qty), BidOrders2: uint32(bid2Orders),
-		BidPrice3: bid3Price, BidQuantity3: uint32(bid3Qty), BidOrders3: uint32(bid3Orders),
-		BidPrice4: bid4Price, BidQuantity4: uint32(bid4Qty), BidOrders4: uint32(bid4Orders),
-		BidPrice5: bid5Price, BidQuantity5: uint32(bid5Qty), BidOrders5: uint32(bid5Orders),
-		AskPrice1: ask1Price, AskQuantity1: uint32(ask1Qty), AskOrders1: uint32(ask1Orders),
-		AskPrice2: ask2Price, AskQuantity2: uint32(ask2Qty), AskOrders2: uint32(ask2Orders),
-		AskPrice3: ask3Price, AskQuantity3: uint32(ask3Qty), AskOrders3: uint32(ask3Orders),
-		AskPrice4: ask4Price, AskQuantity4: uint32(ask4Qty), AskOrders4: uint32(ask4Orders),
-		AskPrice5: ask5Price, AskQuantity5: uint32(ask5Qty), AskOrders5: uint32(ask5Orders),
+		BidPrice1:          scalePrice(bid1Price), BidQuantity1: uint32(bid1Qty), BidOrders1: uint32(bid1Orders),
+		BidPrice2: scalePrice(bid2Price), BidQuantity2: uint32(bid2Qty), BidOrders2: uint32(bid2Orders),
+		BidPrice3: scalePrice(bid3Price), BidQuantity3: uint32(bid3Qty), BidOrders3: uint32(bid3Orders),
+		BidPrice4: scalePrice(bid4Price), BidQuantity4: uint32(bid4Qty), BidOrders4: uint32(bid4Orders),
+		BidPrice5: scalePrice(bid5Price), BidQuantity5: uint32(bid5Qty), BidOrders5: uint32(bid5Orders),
+		AskPrice1: scalePrice(ask1Price), AskQuantity1: uint32(ask1Qty), AskOrders1: uint32(ask1Orders),
+		AskPrice2: scalePrice(ask2Price), AskQuantity2: uint32(ask2Qty), AskOrders2: uint32(ask2Orders),
+		AskPrice3: scalePrice(ask3Price), AskQuantity3: uint32(ask3Qty), AskOrders3: uint32(ask3Orders),
+		AskPrice4: scalePrice(ask4Price), AskQuantity4: uint32(ask4Qty), AskOrders4: uint32(ask4Orders),
+		AskPrice5: scalePrice(ask5Price), AskQuantity5: uint32(ask5Qty), AskOrders5: uint32(ask5Orders),
 		TotalBuyQuantity:  tick.TotalBuyQuantity,
 		TotalSellQuantity: tick.TotalSellQuantity,
 		DataSource:        dataSourceFromConfig(m.cfg),

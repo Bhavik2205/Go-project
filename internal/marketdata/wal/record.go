@@ -2,17 +2,19 @@ package wal
 
 import (
 	"encoding/binary"
-	"math"
+
+	"github.com/Bhavik2205/ML-Bot/internal/marketdata/candles"
 )
 
 // TickRecord is the on-disk representation of a single tick.
-// Only the fields needed for replay are stored — keep it small.
+// LastPrice is stored as a scaled integer (multiply by candles.PriceScale before write,
+// divide on read) — same convention as market_data and ohlcv_candles.
 type TickRecord struct {
-	Timestamp         int64   // IngestTime.UnixNano()
+	Timestamp         int64  // IngestTime.UnixNano()
 	InstrumentToken   uint32
-	LastPrice         float64
+	LastPrice         int64  // scaled: raw_float * candles.PriceScale
 	Volume            uint32
-	ExchangeTimestamp int64 // EventTime.UnixNano()
+	ExchangeTimestamp int64  // EventTime.UnixNano()
 	CRC32             uint32
 }
 
@@ -25,7 +27,7 @@ func marshalPayload(r *TickRecord) []byte {
 	buf := make([]byte, recordPayloadSize)
 	binary.LittleEndian.PutUint64(buf[0:], uint64(r.Timestamp))
 	binary.LittleEndian.PutUint32(buf[8:], r.InstrumentToken)
-	binary.LittleEndian.PutUint64(buf[12:], math.Float64bits(r.LastPrice))
+	binary.LittleEndian.PutUint64(buf[12:], uint64(r.LastPrice))
 	binary.LittleEndian.PutUint32(buf[20:], r.Volume)
 	binary.LittleEndian.PutUint64(buf[24:], uint64(r.ExchangeTimestamp))
 	return buf
@@ -44,9 +46,15 @@ func unmarshalRecord(buf []byte) TickRecord {
 	var r TickRecord
 	r.Timestamp = int64(binary.LittleEndian.Uint64(buf[0:]))
 	r.InstrumentToken = binary.LittleEndian.Uint32(buf[8:])
-	r.LastPrice = math.Float64frombits(binary.LittleEndian.Uint64(buf[12:]))
+	r.LastPrice = int64(binary.LittleEndian.Uint64(buf[12:]))
 	r.Volume = binary.LittleEndian.Uint32(buf[20:])
 	r.ExchangeTimestamp = int64(binary.LittleEndian.Uint64(buf[24:]))
 	r.CRC32 = binary.LittleEndian.Uint32(buf[recordPayloadSize:])
 	return r
 }
+
+// ScalePrice converts a float64 price to a WAL-scaled int64.
+func ScalePrice(p float64) int64 { return int64(p * candles.PriceScale) }
+
+// UnscalePrice converts a WAL-scaled int64 back to float64.
+func UnscalePrice(p int64) float64 { return float64(p) / candles.PriceScale }

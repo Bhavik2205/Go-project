@@ -272,6 +272,23 @@ var (
 		Help: "Rate of goroutine growth per minute",
 	})
 
+	// Per-worker ring buffer depth gauge (labeled by worker_id).
+	TickWorkerRingBufferDepth = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "trading_tick_worker_ring_buffer_depth",
+			Help: "Current number of ticks queued in each worker's ring buffer",
+		},
+		[]string{"worker_id"},
+	)
+
+	TickWorkerRingBufferCapacity = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "trading_tick_worker_ring_buffer_capacity",
+			Help: "Capacity of each worker's ring buffer",
+		},
+		[]string{"worker_id"},
+	)
+
 	// Reliability metrics (queue guard)
 	QueueGuardStatus = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "reliability_queue_guard_status",
@@ -314,6 +331,8 @@ var allMetrics = []prometheus.Collector{
 	GoroutineGrowthRate,
 	QueueGuardStatus,
 	ReliabilityLastCheck,
+	TickWorkerRingBufferDepth,
+	TickWorkerRingBufferCapacity,
 	HTTPRequestDuration,
 	HTTPRequestsTotal,
 }

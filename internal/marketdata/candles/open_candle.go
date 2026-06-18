@@ -12,11 +12,11 @@ type OpenCandle struct {
 	IntervalStr     string        // original string like "1m"
 	StartTime       time.Time
 	EndTime         time.Time
-	Open            float64
-	High            float64
-	Low             float64
-	Close           float64
-	Volume          float64
+	Open            int64
+	High            int64
+	Low             int64
+	Close           int64
+	Volume          int64
 	TradeCount      uint32
 	LastTickTime    time.Time
 	mu              sync.RWMutex

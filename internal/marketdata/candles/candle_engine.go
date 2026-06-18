@@ -11,6 +11,10 @@ import (
 	"go.uber.org/zap"
 )
 
+// PriceScale is the multiplier used to convert float64 prices to scaled int64.
+// 1e4 gives 4 decimal places of precision (e.g. 1234.5678 → 12345678).
+const PriceScale = 10000
+
 const (
 	marketOpenHour    = 9
 	marketOpenMinute  = 15
@@ -151,17 +155,18 @@ func (e *CandleEngine) ProcessTick(tick *marketdata.NormalizedTick) {
 				e.finalizeCandleLocked(candle)
 			}
 			// Create new candle
+			scaledPrice := int64(tick.LastPrice * PriceScale)
 			candle = &OpenCandle{
 				InstrumentToken: token,
 				Interval:        interval,
 				IntervalStr:     e.intervalStr[interval],
 				StartTime:       startTime,
 				EndTime:         endTime,
-				Open:            tick.LastPrice,
-				High:            tick.LastPrice,
-				Low:             tick.LastPrice,
-				Close:           tick.LastPrice,
-				Volume:          float64(tick.LastTradedQuantity),
+				Open:            scaledPrice,
+				High:            scaledPrice,
+				Low:             scaledPrice,
+				Close:           scaledPrice,
+				Volume:          int64(tick.LastTradedQuantity),
 				TradeCount:      1,
 				LastTickTime:    tickTime,
 			}
@@ -169,15 +174,16 @@ func (e *CandleEngine) ProcessTick(tick *marketdata.NormalizedTick) {
 			continue
 		}
 		// Update existing candle
+		scaledPrice := int64(tick.LastPrice * PriceScale)
 		candle.mu.Lock()
-		if tick.LastPrice > candle.High {
-			candle.High = tick.LastPrice
+		if scaledPrice > candle.High {
+			candle.High = scaledPrice
 		}
-		if tick.LastPrice < candle.Low {
-			candle.Low = tick.LastPrice
+		if scaledPrice < candle.Low {
+			candle.Low = scaledPrice
 		}
-		candle.Close = tick.LastPrice
-		candle.Volume += float64(tick.LastTradedQuantity)
+		candle.Close = scaledPrice
+		candle.Volume += int64(tick.LastTradedQuantity)
 		candle.TradeCount++
 		candle.LastTickTime = tickTime
 		candle.mu.Unlock()

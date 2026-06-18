@@ -118,32 +118,32 @@ func (cg *CandleGenerator) handleFinalizedCandle(candle *candles.OpenCandle) {
 		DataSource:      dataSourceFromConfig(cg.appCfg),
 	}
 
-	// Blocking send — the DB writer goroutine drains this; channel is large enough
-	// to absorb bursts. If it fills, we block here rather than lose a candle.
 	cg.candleDBFlushCh <- ohlcv
 
-	// Send to indicator manager — blocking, never drop a candle from indicator state.
+	// Unscale prices for the indicator manager (float64 domain).
+	const inv = 1.0 / candles.PriceScale
 	if cg.indicatorManagerInputCh != nil {
 		cg.indicatorManagerInputCh <- indicators.Candle{
 			InstrumentToken: candle.InstrumentToken,
 			Interval:        candle.IntervalStr,
 			Timestamp:       candle.StartTime,
-			Open:            candle.Open,
-			High:            candle.High,
-			Low:             candle.Low,
-			Close:           candle.Close,
-			Volume:          candle.Volume,
+			Open:            float64(candle.Open) * inv,
+			High:            float64(candle.High) * inv,
+			Low:             float64(candle.Low) * inv,
+			Close:           float64(candle.Close) * inv,
+			Volume:          float64(candle.Volume),
 			TradeCount:      candle.TradeCount,
 			DataSource:      dataSourceFromConfig(cg.appCfg),
 		}
 	}
 
-	// WS broadcast is best-effort — drops are acceptable for display.
 	cg.broadcastCandle(candle)
 }
 
 // broadcastCandle marshals and sends the candle data to all connected WebSocket clients.
+// Prices are unscaled back to float64 for the JSON payload.
 func (cg *CandleGenerator) broadcastCandle(candle *candles.OpenCandle) {
+	const inv = 1.0 / candles.PriceScale
 	broadcastData := struct {
 		InstrumentToken uint32    `json:"instrument_token"`
 		Interval        string    `json:"interval"`
@@ -159,11 +159,11 @@ func (cg *CandleGenerator) broadcastCandle(candle *candles.OpenCandle) {
 		InstrumentToken: candle.InstrumentToken,
 		Interval:        candle.IntervalStr,
 		Timestamp:       candle.StartTime,
-		Open:            candle.Open,
-		High:            candle.High,
-		Low:             candle.Low,
-		Close:           candle.Close,
-		Volume:          candle.Volume,
+		Open:            float64(candle.Open) * inv,
+		High:            float64(candle.High) * inv,
+		Low:             float64(candle.Low) * inv,
+		Close:           float64(candle.Close) * inv,
+		Volume:          float64(candle.Volume),
 		TradeCount:      candle.TradeCount,
 		DataSource:      dataSourceFromConfig(cg.appCfg),
 	}

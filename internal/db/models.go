@@ -62,18 +62,18 @@ type MarketData struct {
 	TickSequenceID  int       `gorm:"primaryKey;not null"`                  // Custom generated to ensure uniqueness at same timestamp
 
 	// --- Core Tick Data (from kitemodels.Tick) ---
-	LastPrice          float64 `gorm:"not null;type:numeric"`
-	LastTradedQuantity uint32  `gorm:"not null"` // Aligned to uint32 as per kitemodels.Tick.LastTradedQuantity
-	Volume             uint32  `gorm:"not null"` // Aligned to uint32 as per kitemodels.Tick.VolumeTraded
-	AverageTradePrice  float64 `gorm:"not null;type:numeric"`
-	NetChange          float64 `gorm:"not null;type:numeric"`
+	// Price fields are stored as scaled integers (multiply by PriceScale before write, divide on read).
+	LastPrice          int64  `gorm:"not null;type:bigint"`
+	LastTradedQuantity uint32 `gorm:"not null"`
+	Volume             uint32 `gorm:"not null"`
+	AverageTradePrice  int64  `gorm:"not null;type:bigint"`
+	NetChange          int64  `gorm:"not null;type:bigint"`
 
 	// Daily OHLC (from kitemodels.Tick.OHLC)
-	// These are typically the daily Open, High, Low, Close values.
-	Open  float64 `gorm:"not null;type:numeric"`
-	High  float64 `gorm:"not null;type:numeric"`
-	Low   float64 `gorm:"not null;type:numeric"`
-	Close float64 `gorm:"not null;type:numeric"`
+	Open  int64 `gorm:"not null;type:bigint"`
+	High  int64 `gorm:"not null;type:bigint"`
+	Low   int64 `gorm:"not null;type:bigint"`
+	Close int64 `gorm:"not null;type:bigint"`
 
 	// Open Interest (from kitemodels.Tick.OI - will be 0 for equities)
 	OpenInterest uint32 `gorm:"not null"` // Aligned to uint32 as per kitemodels.Tick.OI
@@ -81,47 +81,47 @@ type MarketData struct {
 	// --- Market Depth (Level 1 - Top 5 Bids and Asks, from kitemodels.Tick.Depth) ---
 	// All quantities and orders are uint32 as per kitemodels.DepthItem
 
-	// Bid Side (buyers)
-	BidPrice1    float64 `gorm:"not null;type:numeric"`
-	BidQuantity1 uint32  `gorm:"not null"`
-	BidOrders1   uint32  `gorm:"not null"`
+	// Bid Side (buyers) — prices scaled by PriceScale
+	BidPrice1    int64  `gorm:"not null;type:bigint"`
+	BidQuantity1 uint32 `gorm:"not null"`
+	BidOrders1   uint32 `gorm:"not null"`
 
-	BidPrice2    float64 `gorm:"not null;type:numeric"`
-	BidQuantity2 uint32  `gorm:"not null"`
-	BidOrders2   uint32  `gorm:"not null"`
+	BidPrice2    int64  `gorm:"not null;type:bigint"`
+	BidQuantity2 uint32 `gorm:"not null"`
+	BidOrders2   uint32 `gorm:"not null"`
 
-	BidPrice3    float64 `gorm:"not null;type:numeric"`
-	BidQuantity3 uint32  `gorm:"not null"`
-	BidOrders3   uint32  `gorm:"not null"`
+	BidPrice3    int64  `gorm:"not null;type:bigint"`
+	BidQuantity3 uint32 `gorm:"not null"`
+	BidOrders3   uint32 `gorm:"not null"`
 
-	BidPrice4    float64 `gorm:"not null;type:numeric"`
-	BidQuantity4 uint32  `gorm:"not null"`
-	BidOrders4   uint32  `gorm:"not null"`
+	BidPrice4    int64  `gorm:"not null;type:bigint"`
+	BidQuantity4 uint32 `gorm:"not null"`
+	BidOrders4   uint32 `gorm:"not null"`
 
-	BidPrice5    float64 `gorm:"not null;type:numeric"`
-	BidQuantity5 uint32  `gorm:"not null"`
-	BidOrders5   uint32  `gorm:"not null"`
+	BidPrice5    int64  `gorm:"not null;type:bigint"`
+	BidQuantity5 uint32 `gorm:"not null"`
+	BidOrders5   uint32 `gorm:"not null"`
 
-	// Ask Side (sellers)
-	AskPrice1    float64 `gorm:"not null;type:numeric"`
-	AskQuantity1 uint32  `gorm:"not null"`
-	AskOrders1   uint32  `gorm:"not null"`
+	// Ask Side (sellers) — prices scaled by PriceScale
+	AskPrice1    int64  `gorm:"not null;type:bigint"`
+	AskQuantity1 uint32 `gorm:"not null"`
+	AskOrders1   uint32 `gorm:"not null"`
 
-	AskPrice2    float64 `gorm:"not null;type:numeric"`
-	AskQuantity2 uint32  `gorm:"not null"`
-	AskOrders2   uint32  `gorm:"not null"`
+	AskPrice2    int64  `gorm:"not null;type:bigint"`
+	AskQuantity2 uint32 `gorm:"not null"`
+	AskOrders2   uint32 `gorm:"not null"`
 
-	AskPrice3    float64 `gorm:"not null;type:numeric"`
-	AskQuantity3 uint32  `gorm:"not null"`
-	AskOrders3   uint32  `gorm:"not null"`
+	AskPrice3    int64  `gorm:"not null;type:bigint"`
+	AskQuantity3 uint32 `gorm:"not null"`
+	AskOrders3   uint32 `gorm:"not null"`
 
-	AskPrice4    float64 `gorm:"not null;type:numeric"`
-	AskQuantity4 uint32  `gorm:"not null"`
-	AskOrders4   uint32  `gorm:"not null"`
+	AskPrice4    int64  `gorm:"not null;type:bigint"`
+	AskQuantity4 uint32 `gorm:"not null"`
+	AskOrders4   uint32 `gorm:"not null"`
 
-	AskPrice5    float64 `gorm:"not null;type:numeric"`
-	AskQuantity5 uint32  `gorm:"not null"`
-	AskOrders5   uint32  `gorm:"not null"`
+	AskPrice5    int64  `gorm:"not null;type:bigint"`
+	AskQuantity5 uint32 `gorm:"not null"`
+	AskOrders5   uint32 `gorm:"not null"`
 
 	// --- Other aggregated quantities (from kitemodels.Tick) ---
 	TotalBuyQuantity  uint32 `gorm:"not null"` // Total aggregated buy quantity across all price levels
@@ -143,11 +143,11 @@ type OHLCVCandle struct {
 	InstrumentToken uint32    `gorm:"primaryKey;column:instrument_token"`
 	Interval        string    `gorm:"primaryKey;column:interval"`                                // e.g., "1m", "5m", "1h", "1d"
 	Timestamp       time.Time `gorm:"primaryKey;column:timestamp;type:timestamp with time zone"` // Start time of the candle
-	Open            float64   `gorm:"not null"`
-	High            float64   `gorm:"not null"`
-	Low             float64   `gorm:"not null"`
-	Close           float64   `gorm:"not null"`
-	Volume          float64   `gorm:"not null"` // Volume for the candle duration
+	Open            int64     `gorm:"not null;type:bigint"`
+	High            int64     `gorm:"not null;type:bigint"`
+	Low             int64     `gorm:"not null;type:bigint"`
+	Close           int64     `gorm:"not null;type:bigint"`
+	Volume          int64     `gorm:"not null;type:bigint"` // Volume for the candle duration
 	TradeCount      uint32    // Number of trades in this candle (optional)
 	CreatedAt       time.Time `gorm:"autoCreateTime"`
 	UpdatedAt       time.Time `gorm:"autoUpdateTime"`

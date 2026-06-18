@@ -15,6 +15,7 @@ import (
 	"github.com/Bhavik2205/ML-Bot/internal/contracts"
 	"github.com/Bhavik2205/ML-Bot/internal/data"
 	"github.com/Bhavik2205/ML-Bot/internal/db"
+	"github.com/Bhavik2205/ML-Bot/internal/marketdata/candles"
 	"go.uber.org/zap"
 )
 
@@ -168,11 +169,11 @@ func handleV1MarketOverview(w http.ResponseWriter, r *http.Request, deps HTTPDep
 	for _, stock := range snapshot {
 		item := marketOverviewItem{
 			Symbol:        normalizeToAPISymbol(stock.Symbol),
-			LastPrice:     stock.LastPrice,
+			LastPrice:     float64(stock.LastPrice) / candles.PriceScale,
 			PercentChange: stock.PriceChangePct,
 			Volume:        stock.Volume,
-			Bid:           stock.BidPrice,
-			Ask:           stock.AskPrice,
+			Bid:           float64(stock.BidPrice) / candles.PriceScale,
+			Ask:           float64(stock.AskPrice) / candles.PriceScale,
 			UpdatedAt:     stock.LastUpdated,
 		}
 		items = append(items, item)
@@ -441,11 +442,11 @@ func fetchQuotes(symbols []string, deps HTTPDeps) []quoteItem {
 				continue
 			}
 			if stock, exists := snapshotBySymbol[symbol]; exists {
-				netChange := netChangeFromPercent(stock.LastPrice, stock.PriceChangePct)
+				netChange := netChangeFromPercent(float64(stock.LastPrice)/candles.PriceScale, stock.PriceChangePct)
 				itemsBySymbol[symbol] = quoteItem{
 					Symbol:          symbol,
 					InstrumentToken: lookupInstrumentToken(symbol, deps),
-					LastPrice:       stock.LastPrice,
+					LastPrice:       float64(stock.LastPrice) / candles.PriceScale,
 					NetChange:       netChange,
 					PercentChange:   stock.PriceChangePct,
 					VolumeTraded:    stock.Volume,

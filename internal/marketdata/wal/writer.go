@@ -46,7 +46,7 @@ func (w *walWriter) Append(tick marketdata.NormalizedTick) error {
 	rec := TickRecord{
 		Timestamp:         tick.IngestTime.UnixNano(),
 		InstrumentToken:   tick.InstrumentToken,
-		LastPrice:         tick.LastPrice,
+		LastPrice:         ScalePrice(tick.LastPrice),
 		Volume:            uint32(tick.Volume),
 		ExchangeTimestamp: tick.EventTime.UnixNano(),
 	}

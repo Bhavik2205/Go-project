@@ -22,14 +22,14 @@ func TestHeatmap_UpdateAndSnapshot(t *testing.T) {
 	if s.Symbol != "NSE:RELIANCE" {
 		t.Errorf("expected NSE:RELIANCE, got %s", s.Symbol)
 	}
-	if s.LastPrice != 3000.0 {
-		t.Errorf("expected LastPrice 3000, got %f", s.LastPrice)
+	if s.LastPrice != 30000000 {
+		t.Errorf("expected LastPrice 30000000, got %d", s.LastPrice)
 	}
-	if s.BidPrice != 2999.0 {
-		t.Errorf("expected BidPrice 2999, got %f", s.BidPrice)
+	if s.BidPrice != 29990000 {
+		t.Errorf("expected BidPrice 29990000, got %d", s.BidPrice)
 	}
-	if s.AskPrice != 3001.0 {
-		t.Errorf("expected AskPrice 3001, got %f", s.AskPrice)
+	if s.AskPrice != 30010000 {
+		t.Errorf("expected AskPrice 30010000, got %d", s.AskPrice)
 	}
 	// PriceChangePct = (3000 - 2985) / 2985 * 100 ≈ 0.502
 	if s.PriceChangePct < 0.4 || s.PriceChangePct > 0.6 {
@@ -64,15 +64,15 @@ func TestHeatmap_SnapshotIsDeepCopy(t *testing.T) {
 	hm.Update("NSE:HDFC", 1500.0, 1499.0, 1501.0, 10, 20, 5000, 1500.0, 1490.0)
 	snap := hm.Snapshot()
 	// Mutate the snapshot
-	snap[0].LastPrice = 9999.0
-	snap[0].VolumeAtPrice["mutated"] = 999
+	snap[0].LastPrice = 9999
+	snap[0].VolumeAtPrice[99990000] = 999
 
 	// Original should be unchanged
 	snap2 := hm.Snapshot()
-	if snap2[0].LastPrice == 9999.0 {
+	if snap2[0].LastPrice == 9999 {
 		t.Error("snapshot mutation affected original heatmap data")
 	}
-	if _, ok := snap2[0].VolumeAtPrice["mutated"]; ok {
+	if _, ok := snap2[0].VolumeAtPrice[99990000]; ok {
 		t.Error("snapshot VolumeAtPrice mutation affected original")
 	}
 }
@@ -162,8 +162,8 @@ func TestHeatmap_UpdateIdempotent(t *testing.T) {
 		t.Errorf("expected 1 entry for same symbol, got %d", len(snap))
 	}
 	// Last update should win
-	if snap[0].LastPrice != 304.0 {
-		t.Errorf("expected LastPrice 304, got %f", snap[0].LastPrice)
+	if snap[0].LastPrice != 3040000 {
+		t.Errorf("expected LastPrice 3040000, got %d", snap[0].LastPrice)
 	}
 }
 
@@ -171,8 +171,8 @@ func TestHeatmap_BidAskSpread(t *testing.T) {
 	hm := data.NewMarketHeatmap()
 	hm.Update("NSE:SBIN", 500.0, 499.5, 500.5, 100, 100, 10000, 500.0, 495.0)
 	snap := hm.Snapshot()
-	if snap[0].BidAskSpread != 1.0 {
-		t.Errorf("expected spread 1.0, got %f", snap[0].BidAskSpread)
+	if snap[0].BidAskSpread != 10000 {
+		t.Errorf("expected spread 10000, got %d", snap[0].BidAskSpread)
 	}
 }
 
