@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package proto;
+
+option go_package = "github.com/Bhavik2205/ML-Bot/proto";
+
+message DepthLevel {
+    int64 price = 1;
+    uint32 quantity = 2;
+    uint32 orders = 3;
+}
+
+message DepthMessage {
+    uint32 instrument_token = 1;
+    repeated DepthLevel bids = 2;
+    repeated DepthLevel asks = 3;
+    int64 timestamp_ns = 4;
+    uint64 sequence_id = 5;
+}

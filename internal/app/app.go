@@ -106,6 +106,11 @@ func New(appCfg *utils.AppConfig, dbCfg *utils.DatabaseConfig, redisCfg *utils.R
 		return nil, fmt.Errorf("wal init: %w", err)
 	}
 	app.wal = w
+	wal.StartPeriodicFlush(
+		context.Background(),
+		app.wal,
+		100*time.Millisecond,
+	)
 	if appCfg.Market.Simulate {
 		zap.L().Info("WAL initialised (simulation mode)", zap.String("dir", "wal"))
 	} else {

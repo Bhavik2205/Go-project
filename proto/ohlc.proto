@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package proto;
+
+option go_package = "github.com/Bhavik2205/ML-Bot/internal/proto";
+
+message OHLCMessage {
+
+    uint32 instrument_token = 1;
+
+    int64 open = 2;
+    int64 high = 3;
+    int64 low = 4;
+    int64 close = 5;
+
+    int64 timestamp_ns = 6;
+}

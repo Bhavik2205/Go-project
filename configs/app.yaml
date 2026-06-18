@@ -30,6 +30,7 @@ ingestion:
   redis_reconnect_max_attempts: 10
   tick_ingestion_timeout_ms: 100 # Reserved for future ingress safeguards; steady-state persistence now uses backpressure
   db_flush_timeout_ms: 5000 # Used only during bounded shutdown flushes; steady-state persistence now uses backpressure
+  tick_worker_count: 16
 
 monitor:
   broadcast_interval: 5s # e.g., 5 seconds

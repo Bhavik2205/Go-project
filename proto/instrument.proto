@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package proto;
+
+option go_package = "github.com/Bhavik2205/ML-Bot/proto";
+
+message InstrumentInfo {
+    uint32 instrument_token = 1;
+    string symbol = 2;
+}
+
+message InstrumentSnapshot {
+    repeated InstrumentInfo instruments = 1;
+}

@@ -96,7 +96,7 @@ func (s *SimulatedZerodhaClient) SimulateTicks(ctx context.Context, infos []*Ins
 
 	// Define the total simulated market duration and the interval between ticks in simulated time
 	simulatedMarketDuration := 6*time.Hour + 15*time.Minute // Mimic 9:15 AM to 3:30 PM (6 hours 15 minutes)
-	tickIntervalSimulated := 30 * time.Millisecond          // Generate a new "tick" every 300ms of simulated time
+	tickIntervalSimulated := 1 * time.Millisecond           // Generate a new "tick" every 300ms of simulated time
 
 	// Calculate the real-time delay needed between publishing ticks to achieve the desired speed multiplier
 	realTimeDelay := time.Duration(float64(tickIntervalSimulated) / simulationSpeedMultiplier)

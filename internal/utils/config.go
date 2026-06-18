@@ -36,6 +36,7 @@ type AppConfig struct {
 		RedisReconnectMaxAttempts    int `yaml:"redis_reconnect_max_attempts"`     // Max attempts for Redis reconnect
 		TickIngestionTimeoutMs       int `yaml:"tick_ingestion_timeout_ms"`        // Timeout for tick ingestion to prevent blocking
 		DBFlushTimeoutMs             int `yaml:"db_flush_timeout_ms"`              // Timeout for blocking DB send operations to prevent deadlocks
+		TickWorkerCount              int `yaml:"tick_worker_count"`
 	} `yaml:"ingestion"`
 	Monitor struct {
 		BroadcastInterval time.Duration `yaml:"broadcast_interval"`

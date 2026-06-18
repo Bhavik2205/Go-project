@@ -59,7 +59,7 @@ func (b *InProcessTickBus) maybeLogBackpressureWarning(depth, capacity int) {
 }
 
 func (b *InProcessTickBus) Subscribe(ctx context.Context) (<-chan marketdata.NormalizedTick, error) {
-	ch := make(chan marketdata.NormalizedTick, 1000)
+	ch := make(chan marketdata.NormalizedTick, 50000)
 	b.mu.Lock()
 	b.subscribers = append(b.subscribers, ch)
 	b.mu.Unlock()

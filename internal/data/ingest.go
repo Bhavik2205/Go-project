@@ -24,29 +24,28 @@ import (
 const (
 	wsPingPeriod = 45 * time.Second
 	wsWriteWait  = 10 * time.Second
+	priceScale   = 100 // not used yet, but reserved for protobuf
 )
 
-// sync.Pool for JSON encoding buffers
+// sync.Pool for JSON encoding buffers (kept for now)
 var encodePool = sync.Pool{
 	New: func() interface{} {
 		return new(bytes.Buffer)
 	},
 }
 
-// MarketDataIngestor holds dependencies for market data ingestion and broadcasting.
+// MarketDataIngestor holds dependencies.
 type MarketDataIngestor struct {
-	dbClient             *db.DBClient
-	tickBus              tickbus.TickBus
-	wsClients            *sync.Map
-	marketDataBuffer     []db.MarketData
-	bufferLock           sync.Mutex
-	lastFlushTime        time.Time
-	tickSequenceCounters map[uint]map[time.Time]int
-	sequenceMux          sync.Mutex
-	lastCleanupTime      time.Time
-	broadcastChannel     chan []byte
-	livePrices           *sync.Map
-	cfg                  *utils.AppConfig
+	dbClient         *db.DBClient
+	tickBus          tickbus.TickBus
+	wsClients        *sync.Map
+	marketDataBuffer []db.MarketData
+	bufferLock       sync.Mutex
+	lastFlushTime    time.Time
+	sequenceCounter  *SequenceCounter
+	broadcastChannel chan []byte
+	livePrices       *sync.Map
+	cfg              *utils.AppConfig
 
 	dbFlushCh              chan []db.MarketData
 	dbWorkerCount          int
@@ -58,6 +57,7 @@ type MarketDataIngestor struct {
 	wsDrops                uint64
 	wsBroadcasted          uint64
 	frontendBroadcastDrops uint64
+	workerPool             *TickWorkerPool
 
 	// Graceful shutdown
 	shuttingDown int32
@@ -65,39 +65,48 @@ type MarketDataIngestor struct {
 	closeOnce    sync.Once
 }
 
-// NewMarketDataIngestor creates and returns a new instance of MarketDataIngestor.
+// NewMarketDataIngestor creates and returns a new instance.
 func NewMarketDataIngestor(dbC *db.DBClient, tb tickbus.TickBus, wsClients *sync.Map, cfg *utils.AppConfig, _ *utils.IndicatorsConfig) *MarketDataIngestor {
 	ingestor := &MarketDataIngestor{
-		dbClient:             dbC,
-		tickBus:              tb,
-		wsClients:            wsClients,
-		marketDataBuffer:     make([]db.MarketData, 0, cfg.Ingestion.MarketDataBatchSize),
-		lastFlushTime:        time.Now(),
-		tickSequenceCounters: make(map[uint]map[time.Time]int),
-		sequenceMux:          sync.Mutex{},
-		lastCleanupTime:      time.Now(),
-		broadcastChannel:     make(chan []byte, cfg.Ingestion.WSBroadcastChannelSize),
-		livePrices:           &sync.Map{},
-		cfg:                  cfg,
+		dbClient:         dbC,
+		tickBus:          tb,
+		wsClients:        wsClients,
+		marketDataBuffer: make([]db.MarketData, 0, cfg.Ingestion.MarketDataBatchSize),
+		lastFlushTime:    time.Now(),
+		sequenceCounter:  NewSequenceCounter(),
+		broadcastChannel: make(chan []byte, cfg.Ingestion.WSBroadcastChannelSize),
+		livePrices:       &sync.Map{},
+		cfg:              cfg,
 
 		dbFlushCh:              make(chan []db.MarketData, cfg.Ingestion.DBFlushChannelSize),
 		dbWorkerCount:          cfg.Ingestion.DBWorkerCount,
 		wsBroadcastWorkerCount: cfg.Ingestion.WSBroadcastWorkerCount,
 	}
 
-	ingestor.loadInitialTickSequenceCounters()
 	return ingestor
 }
 
-// StartIngestionAndBroadcast kicks off the Redis subscription, DB ingestion, and WebSocket broadcasting.
+// StartIngestionAndBroadcast starts all components.
 func (m *MarketDataIngestor) StartIngestionAndBroadcast(ctx context.Context) {
+	// Create worker pool with configurable worker count.
+	workerCount := m.cfg.Ingestion.TickWorkerCount
+	if workerCount <= 0 {
+		workerCount = 16
+	}
+	m.workerPool = NewTickWorkerPool(
+		ctx,
+		workerCount,
+		func(ctx context.Context, tick marketdata.NormalizedTick) {
+			m.processTick(ctx, tick)
+		},
+	)
+
 	m.startDBWorkers(ctx)
 	m.startWebSocketBroadcasterWorkers(ctx)
 	go m.startMonitoring(ctx)
 	go m.startDBFlushQueueWatcher(ctx)
 	go m.startTickSubscription(ctx)
 	go m.startDBFlusher(ctx)
-	go m.startSequenceCounterCleanup(ctx)
 
 	// Graceful shutdown handler
 	go func() {
@@ -107,12 +116,17 @@ func (m *MarketDataIngestor) StartIngestionAndBroadcast(ctx context.Context) {
 	zap.L().Info("Market data ingestion and broadcasting started.")
 }
 
-// shutdown performs a graceful shutdown: flushes remaining buffer, closes DB queue, waits for workers.
+// shutdown performs a graceful shutdown.
 func (m *MarketDataIngestor) shutdown() {
+	// 1. Stop accepting new ticks.
 	atomic.StoreInt32(&m.shuttingDown, 1)
-	zap.L().Info("Shutting down market data ingestor")
 
-	// Flush any remaining data in the buffer
+	// 2. Stop worker pool (this will cause workers to finish after their current tick).
+	if m.workerPool != nil {
+		m.workerPool.Close()
+	}
+
+	// 3. Flush any remaining data in the buffer.
 	m.bufferLock.Lock()
 	if len(m.marketDataBuffer) > 0 {
 		dataToFlush := m.marketDataBuffer
@@ -129,13 +143,14 @@ func (m *MarketDataIngestor) shutdown() {
 		m.bufferLock.Unlock()
 	}
 
-	// Close the DB flush channel so workers drain and exit
+	// 4. Close the DB flush channel so workers drain and exit.
 	m.closeOnce.Do(func() {
 		close(m.dbFlushCh)
 	})
 
-	// Wait for all DB workers to finish processing queued batches
+	// 5. Wait for all DB workers to finish processing queued batches.
 	m.wgDB.Wait()
+
 	zap.L().Info("Market data ingestor shutdown complete")
 }
 
@@ -160,6 +175,11 @@ func (m *MarketDataIngestor) startMonitoring(ctx context.Context) {
 			observability.TickQueueDepth.Set(float64(len(m.broadcastChannel)))
 			observability.DBFlushQueueDepth.Set(float64(len(m.dbFlushCh)))
 
+			// Also log worker pool depth if available.
+			if m.workerPool != nil {
+				zap.L().Debug("Worker pool depth", zap.Int("queued", m.workerPool.TotalQueueDepth()))
+			}
+
 			zap.L().Info("MarketDataIngestor monitoring",
 				zap.Uint64("db_errors", dbErrs),
 				zap.Uint64("ws_drops", wsDrops),
@@ -183,7 +203,7 @@ func (m *MarketDataIngestor) CandleQueueCap() int    { return 0 }
 func (m *MarketDataIngestor) IndicatorQueueLen() int { return 0 }
 func (m *MarketDataIngestor) IndicatorQueueCap() int { return 0 }
 
-// startTickSubscription subscribes to the TickBus and processes incoming ticks.
+// startTickSubscription subscribes to the TickBus and submits to worker pool.
 func (m *MarketDataIngestor) startTickSubscription(ctx context.Context) {
 	defer observability.RecoverPanic("ingestor-tick-subscription")
 	tickCh, err := m.tickBus.Subscribe(ctx)
@@ -200,7 +220,12 @@ func (m *MarketDataIngestor) startTickSubscription(ctx context.Context) {
 			if atomic.LoadInt32(&m.shuttingDown) == 1 {
 				continue
 			}
-			m.processTick(ctx, tick)
+			if err := m.workerPool.Submit(tick); err != nil {
+				if err == context.Canceled {
+					return
+				}
+				zap.L().Error("worker pool submit failed", zap.Error(err))
+			}
 		case <-ctx.Done():
 			return
 		}
@@ -247,17 +272,16 @@ func safeDepthItem(depthArray interface{}, idx int) (price float64, quantity int
 	return 0, 0, 0
 }
 
-// processTick (unchanged except for the metric name and encoder pool)
+// processTick handles a single tick.
 func (m *MarketDataIngestor) processTick(ctx context.Context, tick marketdata.NormalizedTick) {
-	m.sequenceMux.Lock()
-	token := uint(tick.InstrumentToken)
-	if _, ok := m.tickSequenceCounters[token]; !ok {
-		m.tickSequenceCounters[token] = make(map[time.Time]int)
-	}
+	// Generate sequence ID (lock‑free)
 	normalizedTimestamp := tick.EventTime.Truncate(time.Second)
-	currentSequenceID := m.tickSequenceCounters[token][normalizedTimestamp] + 1
-	m.tickSequenceCounters[token][normalizedTimestamp] = currentSequenceID
-	m.sequenceMux.Unlock()
+	currentSequenceID := int(
+		m.sequenceCounter.Next(
+			tick.InstrumentToken,
+			normalizedTimestamp,
+		),
+	)
 
 	buyDepth := tick.Depth.Buy
 	sellDepth := tick.Depth.Sell
@@ -277,6 +301,7 @@ func (m *MarketDataIngestor) processTick(ctx context.Context, tick marketdata.No
 		zap.Float64("ask", sellDepth[0].Price),
 	)
 
+	// Update heatmap (synchronous for now; later can be made async)
 	GetMarketHeatmap().Update(
 		tick.Symbol,
 		tick.LastPrice,
@@ -330,7 +355,7 @@ func (m *MarketDataIngestor) processTick(ctx context.Context, tick marketdata.No
 		DataSource:        dataSourceFromConfig(m.cfg),
 	}
 
-	// Buffer management (swap, no copy)
+	// Buffer management
 	m.bufferLock.Lock()
 	m.marketDataBuffer = append(m.marketDataBuffer, md)
 	batchSize := m.cfg.Ingestion.MarketDataBatchSize
@@ -349,7 +374,7 @@ func (m *MarketDataIngestor) processTick(ctx context.Context, tick marketdata.No
 		m.bufferLock.Unlock()
 	}
 
-	// Broadcast to frontend using sync.Pool
+	// Broadcast to frontend (JSON for now)
 	kiteTick := convertNormalizedToKiteTick(tick)
 	buf := encodePool.Get().(*bytes.Buffer)
 	buf.Reset()
@@ -458,15 +483,13 @@ func (m *MarketDataIngestor) startDBWorkers(ctx context.Context) {
 
 			stageName := fmt.Sprintf("market_data_stage_%d", workerID)
 
-			// Acquire a dedicated connection from the pool
 			conn, err := m.dbClient.Pool.Acquire(ctx)
 			if err != nil {
 				zap.L().Fatal("Failed to acquire database connection for worker",
 					zap.Int("worker_id", workerID), zap.Error(err))
 			}
-			defer conn.Release() // Return connection to pool when worker exits
+			defer conn.Release()
 
-			// Create the temporary staging table on this connection
 			if err := m.dbClient.CreateTempStageTable(ctx, conn.Conn(), stageName); err != nil {
 				zap.L().Fatal("Failed to create temp stage table",
 					zap.Int("worker_id", workerID), zap.Error(err))
@@ -609,77 +632,6 @@ func (m *MarketDataIngestor) writePump(conn *websocket.Conn, clientWriteCh <-cha
 			}
 		}
 	}
-}
-
-// startSequenceCounterCleanup...
-func (m *MarketDataIngestor) startSequenceCounterCleanup(ctx context.Context) {
-	defer observability.RecoverPanic("ingestor-seq-cleanup")
-	cleanupInterval := time.Duration(m.cfg.Ingestion.TickSequenceCleanupInterval) * time.Second
-	if cleanupInterval <= 0 {
-		cleanupInterval = 10 * time.Minute
-	}
-	expiryDuration := time.Duration(m.cfg.Ingestion.MaxTickSequenceCacheDuration) * time.Second
-	if expiryDuration <= 0 {
-		expiryDuration = 24 * time.Hour
-	}
-	ticker := time.NewTicker(cleanupInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			m.sequenceMux.Lock()
-			now := time.Now()
-			for instrument, tsMap := range m.tickSequenceCounters {
-				for ts := range tsMap {
-					if now.Sub(ts) > expiryDuration {
-						delete(tsMap, ts)
-					}
-				}
-				if len(tsMap) == 0 {
-					delete(m.tickSequenceCounters, instrument)
-				}
-			}
-			m.sequenceMux.Unlock()
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
-// loadInitialTickSequenceCounters...
-func (m *MarketDataIngestor) loadInitialTickSequenceCounters() {
-	m.sequenceMux.Lock()
-	defer m.sequenceMux.Unlock()
-
-	type Result struct {
-		InstrumentToken uint32    `gorm:"column:instrument_token"`
-		Timestamp       time.Time `gorm:"column:timestamp"`
-		MaxSequenceID   int       `gorm:"column:max_sequence_id"`
-	}
-	var results []Result
-	loc, _ := time.LoadLocation("Asia/Kolkata")
-	now := time.Now().In(loc)
-	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
-
-	query := `
-        SELECT instrument_token, timestamp, MAX(tick_sequence_id) as max_sequence_id
-        FROM market_data
-        WHERE timestamp >= ?
-        GROUP BY instrument_token, timestamp;
-    `
-	err := m.dbClient.DB.Raw(query, todayStart).Scan(&results).Error
-	if err != nil {
-		zap.L().Error("Failed to load initial tick sequence counters", zap.Error(err))
-		return
-	}
-	for _, r := range results {
-		if _, ok := m.tickSequenceCounters[uint(r.InstrumentToken)]; !ok {
-			m.tickSequenceCounters[uint(r.InstrumentToken)] = make(map[time.Time]int)
-		}
-		m.tickSequenceCounters[uint(r.InstrumentToken)][r.Timestamp] = r.MaxSequenceID
-	}
-	zap.L().Info("Loaded initial tick sequence counters", zap.Int("count", len(results)))
 }
 
 // GetWebSocketClientCount...
