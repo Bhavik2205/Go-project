@@ -32,6 +32,8 @@ ingestion:
   db_flush_timeout_ms: 5000 # Used only during bounded shutdown flushes; steady-state persistence now uses backpressure
   tick_worker_count: 16
   ring_buffer_size: 65536 # ring buffer size for tick ingestion; must be a power of 2 for optimal performance. Good Values: 65536, 131072, 262144, 524288, 1048576
+  protobuf_queue_size: 
+  encoder_worker_count: 
 
 monitor:
   broadcast_interval: 5s # e.g., 5 seconds

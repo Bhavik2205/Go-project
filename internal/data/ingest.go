@@ -2,9 +2,7 @@
 package data
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -16,10 +14,12 @@ import (
 	"github.com/Bhavik2205/ML-Bot/internal/marketdata/candles"
 	"github.com/Bhavik2205/ML-Bot/internal/marketdata/tickbus"
 	"github.com/Bhavik2205/ML-Bot/internal/observability"
+	"github.com/Bhavik2205/ML-Bot/internal/pool"
 	"github.com/Bhavik2205/ML-Bot/internal/utils"
 	"github.com/gorilla/websocket"
 	kitemodels "github.com/zerodha/gokiteconnect/v4/models"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -30,11 +30,19 @@ const (
 // scalePrice converts a float64 price to a scaled int64 using candles.PriceScale.
 func scalePrice(p float64) int64 { return int64(p * candles.PriceScale) }
 
-// sync.Pool for JSON encoding buffers (kept for now)
-var encodePool = sync.Pool{
-	New: func() interface{} {
-		return new(bytes.Buffer)
-	},
+// safeDepthItem extracts a depth level safely.
+func safeDepthItem(depthArray interface{}, idx int) (price float64, quantity int64, orders int) {
+	switch d := depthArray.(type) {
+	case [5]kitemodels.DepthItem:
+		if idx >= 0 && idx < len(d) {
+			return d[idx].Price, int64(d[idx].Quantity), int(d[idx].Orders)
+		}
+	case []kitemodels.DepthItem:
+		if idx >= 0 && idx < len(d) {
+			return d[idx].Price, int64(d[idx].Quantity), int(d[idx].Orders)
+		}
+	}
+	return 0, 0, 0
 }
 
 // MarketDataIngestor holds dependencies.
@@ -60,7 +68,13 @@ type MarketDataIngestor struct {
 	wsDrops                uint64
 	wsBroadcasted          uint64
 	frontendBroadcastDrops uint64
+	protobufQueueDrops     uint64
 	workerPool             *TickWorkerPool
+
+	// Protobuf queue and encoder workers
+	protobufQueue chan marketdata.NormalizedTick
+	encoderCount  int
+	encoderWg     *sync.WaitGroup
 
 	// Graceful shutdown
 	shuttingDown int32
@@ -70,6 +84,15 @@ type MarketDataIngestor struct {
 
 // NewMarketDataIngestor creates and returns a new instance.
 func NewMarketDataIngestor(dbC *db.DBClient, tb tickbus.TickBus, wsClients *sync.Map, cfg *utils.AppConfig, _ *utils.IndicatorsConfig) *MarketDataIngestor {
+	protobufQueueSize := 4096
+	if cfg.Ingestion.ProtobufQueueSize > 0 {
+		protobufQueueSize = cfg.Ingestion.ProtobufQueueSize
+	}
+	encoderCount := cfg.Ingestion.EncoderWorkerCount
+	if encoderCount <= 0 {
+		encoderCount = 4
+	}
+
 	ingestor := &MarketDataIngestor{
 		dbClient:         dbC,
 		tickBus:          tb,
@@ -84,6 +107,9 @@ func NewMarketDataIngestor(dbC *db.DBClient, tb tickbus.TickBus, wsClients *sync
 		dbFlushCh:              make(chan []db.MarketData, cfg.Ingestion.DBFlushChannelSize),
 		dbWorkerCount:          cfg.Ingestion.DBWorkerCount,
 		wsBroadcastWorkerCount: cfg.Ingestion.WSBroadcastWorkerCount,
+
+		protobufQueue: make(chan marketdata.NormalizedTick, protobufQueueSize),
+		encoderCount:  encoderCount,
 	}
 
 	return ingestor
@@ -91,7 +117,6 @@ func NewMarketDataIngestor(dbC *db.DBClient, tb tickbus.TickBus, wsClients *sync
 
 // StartIngestionAndBroadcast starts all components.
 func (m *MarketDataIngestor) StartIngestionAndBroadcast(ctx context.Context) {
-	// Create worker pool with configurable worker count.
 	workerCount := m.cfg.Ingestion.TickWorkerCount
 	if workerCount <= 0 {
 		workerCount = 16
@@ -106,12 +131,13 @@ func (m *MarketDataIngestor) StartIngestionAndBroadcast(ctx context.Context) {
 
 	m.startDBWorkers(ctx)
 	m.startWebSocketBroadcasterWorkers(ctx)
+	m.startEncoderWorkers(ctx)
+
 	go m.startMonitoring(ctx)
 	go m.startDBFlushQueueWatcher(ctx)
 	go m.startTickSubscription(ctx)
 	go m.startDBFlusher(ctx)
 
-	// Graceful shutdown handler
 	go func() {
 		<-ctx.Done()
 		m.shutdown()
@@ -121,15 +147,12 @@ func (m *MarketDataIngestor) StartIngestionAndBroadcast(ctx context.Context) {
 
 // shutdown performs a graceful shutdown.
 func (m *MarketDataIngestor) shutdown() {
-	// 1. Stop accepting new ticks.
 	atomic.StoreInt32(&m.shuttingDown, 1)
 
-	// 2. Stop worker pool (this will cause workers to finish after their current tick).
 	if m.workerPool != nil {
 		m.workerPool.Close()
 	}
 
-	// 3. Flush any remaining data in the buffer.
 	m.bufferLock.Lock()
 	if len(m.marketDataBuffer) > 0 {
 		dataToFlush := m.marketDataBuffer
@@ -146,12 +169,14 @@ func (m *MarketDataIngestor) shutdown() {
 		m.bufferLock.Unlock()
 	}
 
-	// 4. Close the DB flush channel so workers drain and exit.
+	close(m.protobufQueue)
+	if m.encoderWg != nil {
+		m.encoderWg.Wait()
+	}
+
 	m.closeOnce.Do(func() {
 		close(m.dbFlushCh)
 	})
-
-	// 5. Wait for all DB workers to finish processing queued batches.
 	m.wgDB.Wait()
 
 	zap.L().Info("Market data ingestor shutdown complete")
@@ -172,13 +197,15 @@ func (m *MarketDataIngestor) startMonitoring(ctx context.Context) {
 			broadcasted := atomic.LoadUint64(&m.wsBroadcasted)
 			frontendDrops := atomic.LoadUint64(&m.frontendBroadcastDrops)
 			dbFlushDrops := atomic.LoadUint64(&m.dbFlushdrops)
+			pbDrops := atomic.LoadUint64(&m.protobufQueueDrops)
 			rate := broadcasted - lastBroadcasted
 			lastBroadcasted = broadcasted
 
 			observability.TickQueueDepth.Set(float64(len(m.broadcastChannel)))
 			observability.DBFlushQueueDepth.Set(float64(len(m.dbFlushCh)))
+			observability.ProtobufQueueDepth.Set(float64(len(m.protobufQueue)))
+			observability.ProtobufQueueCap.Set(float64(cap(m.protobufQueue)))
 
-			// Also log worker pool depth if available.
 			if m.workerPool != nil {
 				zap.L().Debug("Worker pool depth", zap.Int("queued", m.workerPool.TotalQueueDepth()))
 			}
@@ -189,6 +216,8 @@ func (m *MarketDataIngestor) startMonitoring(ctx context.Context) {
 				zap.Uint64("broadcast_rate_per_5s", rate),
 				zap.Uint64("frontend_broadcast_drops", frontendDrops),
 				zap.Uint64("db_flush_drops", dbFlushDrops),
+				zap.Uint64("protobuf_queue_drops", pbDrops),
+				zap.Int("protobuf_queue_len", len(m.protobufQueue)),
 			)
 		case <-ctx.Done():
 			return
@@ -235,49 +264,9 @@ func (m *MarketDataIngestor) startTickSubscription(ctx context.Context) {
 	}
 }
 
-// tickBroadcastMsg...
-type tickBroadcastMsg struct {
-	Symbol string          `json:"symbol"`
-	Tick   kitemodels.Tick `json:"tick"`
-}
-
-// convertNormalizedToKiteTick...
-func convertNormalizedToKiteTick(nt marketdata.NormalizedTick) kitemodels.Tick {
-	return kitemodels.Tick{
-		InstrumentToken:    nt.InstrumentToken,
-		Timestamp:          kitemodels.Time{Time: nt.EventTime},
-		LastPrice:          nt.LastPrice,
-		LastTradedQuantity: nt.LastTradedQuantity,
-		VolumeTraded:       nt.Volume,
-		AverageTradePrice:  nt.AverageTradePrice,
-		NetChange:          nt.NetChange,
-		OHLC:               nt.OHLC,
-		Depth:              nt.Depth,
-		TotalBuyQuantity:   nt.TotalBuyQuantity,
-		TotalSellQuantity:  nt.TotalSellQuantity,
-		OI:                 nt.OpenInterest,
-		Mode:               nt.Mode,
-	}
-}
-
-// safeDepthItem...
-func safeDepthItem(depthArray interface{}, idx int) (price float64, quantity int64, orders int) {
-	switch d := depthArray.(type) {
-	case [5]kitemodels.DepthItem:
-		if idx >= 0 && idx < len(d) {
-			return d[idx].Price, int64(d[idx].Quantity), int(d[idx].Orders)
-		}
-	case []kitemodels.DepthItem:
-		if idx >= 0 && idx < len(d) {
-			return d[idx].Price, int64(d[idx].Quantity), int(d[idx].Orders)
-		}
-	}
-	return 0, 0, 0
-}
-
-// processTick handles a single tick.
+// processTick handles a single tick – now only DB buffering and heatmap.
 func (m *MarketDataIngestor) processTick(ctx context.Context, tick marketdata.NormalizedTick) {
-	// Generate sequence ID (lock‑free)
+	// Generate sequence ID
 	normalizedTimestamp := tick.EventTime.Truncate(time.Second)
 	currentSequenceID := int(
 		m.sequenceCounter.Next(
@@ -289,22 +278,20 @@ func (m *MarketDataIngestor) processTick(ctx context.Context, tick marketdata.No
 	buyDepth := tick.Depth.Buy
 	sellDepth := tick.Depth.Sell
 
-	if buyDepth[0].Price == 0 && sellDepth[0].Price == 0 {
+	// SAFE access: use safeDepthItem instead of direct indexing
+	bid0, _, _ := safeDepthItem(buyDepth, 0)
+	ask0, _, _ := safeDepthItem(sellDepth, 0)
+
+	if bid0 == 0 && ask0 == 0 {
 		zap.L().Warn("Market depth appears empty; tick may be in ModeLTP/Quote",
 			zap.String("symbol", tick.Symbol))
 	}
 
+	// Get best bid/ask safely
 	bestBidPrice, bestBidQty, _ := safeDepthItem(buyDepth, 0)
 	bestAskPrice, bestAskQty, _ := safeDepthItem(sellDepth, 0)
 
-	zap.L().Debug("Tick received",
-		zap.String("symbol", tick.Symbol),
-		zap.Float64("ltp", tick.LastPrice),
-		zap.Float64("bid", buyDepth[0].Price),
-		zap.Float64("ask", sellDepth[0].Price),
-	)
-
-	// Update heatmap (synchronous for now; later can be made async)
+	// Update heatmap
 	GetMarketHeatmap().Update(
 		tick.Symbol,
 		tick.LastPrice,
@@ -317,6 +304,7 @@ func (m *MarketDataIngestor) processTick(ctx context.Context, tick marketdata.No
 		tick.OHLC.Close,
 	)
 
+	// Build MarketData for DB
 	bid1Price, bid1Qty, bid1Orders := safeDepthItem(buyDepth, 0)
 	bid2Price, bid2Qty, bid2Orders := safeDepthItem(buyDepth, 1)
 	bid3Price, bid3Qty, bid3Orders := safeDepthItem(buyDepth, 2)
@@ -358,7 +346,7 @@ func (m *MarketDataIngestor) processTick(ctx context.Context, tick marketdata.No
 		DataSource:        dataSourceFromConfig(m.cfg),
 	}
 
-	// Buffer management
+	// DB buffering
 	m.bufferLock.Lock()
 	m.marketDataBuffer = append(m.marketDataBuffer, md)
 	batchSize := m.cfg.Ingestion.MarketDataBatchSize
@@ -377,28 +365,82 @@ func (m *MarketDataIngestor) processTick(ctx context.Context, tick marketdata.No
 		m.bufferLock.Unlock()
 	}
 
-	// Broadcast to frontend (JSON for now)
-	kiteTick := convertNormalizedToKiteTick(tick)
-	buf := encodePool.Get().(*bytes.Buffer)
-	buf.Reset()
-	defer encodePool.Put(buf)
-
-	encoder := json.NewEncoder(buf)
-	if err := encoder.Encode(tickBroadcastMsg{Symbol: tick.Symbol, Tick: kiteTick}); err != nil {
-		zap.L().Error("Failed to marshal data for frontend broadcast", zap.Error(err))
-		return
-	}
-	frontendData := make([]byte, buf.Len())
-	copy(frontendData, buf.Bytes())
-
+	// Enqueue tick to protobuf queue for async marshaling
 	select {
-	case m.broadcastChannel <- frontendData:
-		atomic.AddUint64(&m.wsBroadcasted, 1)
-		observability.WebSocketBroadcasted.Inc()
-		m.livePrices.Store(tick.Symbol, frontendData)
+	case m.protobufQueue <- tick:
+		// queued
 	default:
 		atomic.AddUint64(&m.frontendBroadcastDrops, 1)
 		observability.WebSocketBroadcastDrops.Inc()
+		observability.ProtobufQueueDrops.Inc()
+		zap.L().Warn("Protobuf queue full, dropping tick", zap.String("symbol", tick.Symbol))
+	}
+}
+
+// startEncoderWorkers launches goroutines that marshal ticks to protobuf and broadcast.
+func (m *MarketDataIngestor) startEncoderWorkers(ctx context.Context) {
+	m.encoderWg = &sync.WaitGroup{}
+	for i := 0; i < m.encoderCount; i++ {
+		m.encoderWg.Add(1)
+		go func(workerID int) {
+			defer observability.RecoverPanic(fmt.Sprintf("encoder-worker-%d", workerID))
+			defer m.encoderWg.Done()
+			zap.L().Info("Encoder worker started", zap.Int("worker_id", workerID))
+
+			for {
+				select {
+				case tick, ok := <-m.protobufQueue:
+					if !ok {
+						zap.L().Info("Protobuf queue closed, encoder worker stopping", zap.Int("worker_id", workerID))
+						return
+					}
+
+					// SAFE depth access
+					bidPrice, bidQty, _ := safeDepthItem(tick.Depth.Buy, 0)
+					askPrice, askQty, _ := safeDepthItem(tick.Depth.Sell, 0)
+
+					// Get pooled protobuf message
+					msg := pool.GetTick()
+					msg.InstrumentToken = tick.InstrumentToken
+					msg.TimestampNs = tick.EventTime.UnixNano()
+					msg.LastPrice = scalePrice(tick.LastPrice)
+					msg.BidPrice = scalePrice(bidPrice)
+					msg.AskPrice = scalePrice(askPrice)
+					msg.BidQuantity = uint32(bidQty)
+					msg.AskQuantity = uint32(askQty)
+					msg.Volume = uint64(tick.Volume)
+					msg.AverageTradePrice = scalePrice(tick.AverageTradePrice)
+					msg.NetChange = scalePrice(tick.NetChange)
+					msg.LastTradedQuantity = tick.LastTradedQuantity
+					// msg.SequenceId can be set if needed
+
+					data, err := proto.Marshal(msg)
+					pool.PutTick(msg) // return to pool after marshal (Marshal copies data)
+					if err != nil {
+						zap.L().Error("Failed to marshal tick to protobuf", zap.Error(err))
+						continue
+					}
+
+					// Store latest for new clients
+					m.livePrices.Store(tick.Symbol, data)
+
+					// Send to broadcast channel
+					select {
+					case m.broadcastChannel <- data:
+						atomic.AddUint64(&m.wsBroadcasted, 1)
+						observability.WebSocketBroadcasted.Inc()
+					default:
+						atomic.AddUint64(&m.protobufQueueDrops, 1)
+						observability.WebSocketBroadcastDrops.Inc()
+						zap.L().Warn("Broadcast channel full, dropping protobuf message",
+							zap.String("symbol", tick.Symbol))
+					}
+				case <-ctx.Done():
+					zap.L().Info("Context cancelled, encoder worker stopping", zap.Int("worker_id", workerID))
+					return
+				}
+			}
+		}(i)
 	}
 }
 
@@ -608,7 +650,7 @@ func (m *MarketDataIngestor) UnregisterWebSocketClient(conn *websocket.Conn) {
 	}
 }
 
-// writePump...
+// writePump – now uses BinaryMessage
 func (m *MarketDataIngestor) writePump(conn *websocket.Conn, clientWriteCh <-chan []byte) {
 	defer zap.L().Info("WebSocket write pump stopped", zap.String("remote_addr", conn.RemoteAddr().String()))
 	pingTicker := time.NewTicker(wsPingPeriod)
@@ -622,7 +664,7 @@ func (m *MarketDataIngestor) writePump(conn *websocket.Conn, clientWriteCh <-cha
 				return
 			}
 			_ = conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
-			if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
+			if err := conn.WriteMessage(websocket.BinaryMessage, message); err != nil {
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 					zap.L().Error("WebSocket write error", zap.Error(err))
 				}

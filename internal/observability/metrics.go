@@ -299,6 +299,19 @@ var (
 		Name: "reliability_last_check_timestamp_seconds",
 		Help: "Unix timestamp of the last reliability check",
 	})
+	// Protobuf queue metrics
+	ProtobufQueueDepth = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "protobuf_queue_depth",
+		Help: "Current number of ticks waiting in protobuf encoding queue",
+	})
+	ProtobufQueueCap = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "protobuf_queue_capacity",
+		Help: "Capacity of protobuf encoding queue",
+	})
+	ProtobufQueueDrops = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "protobuf_queue_drops_total",
+		Help: "Total number of ticks dropped because protobuf queue was full",
+	})
 )
 
 var (
@@ -335,6 +348,9 @@ var allMetrics = []prometheus.Collector{
 	TickWorkerRingBufferCapacity,
 	HTTPRequestDuration,
 	HTTPRequestsTotal,
+	ProtobufQueueDepth,
+	ProtobufQueueCap,
+	ProtobufQueueDrops,
 }
 
 // InitMetrics registers all Prometheus metrics.

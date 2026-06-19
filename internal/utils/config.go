@@ -37,6 +37,8 @@ type AppConfig struct {
 		TickIngestionTimeoutMs       int `yaml:"tick_ingestion_timeout_ms"`        // Timeout for tick ingestion to prevent blocking
 		DBFlushTimeoutMs             int `yaml:"db_flush_timeout_ms"`              // Timeout for blocking DB send operations to prevent deadlocks
 		TickWorkerCount              int `yaml:"tick_worker_count"`
+		ProtobufQueueSize            int `yaml:"protobuf_queue_size"`
+		EncoderWorkerCount           int `yaml:"encoder_worker_count"`
 	} `yaml:"ingestion"`
 	Monitor struct {
 		BroadcastInterval time.Duration `yaml:"broadcast_interval"`

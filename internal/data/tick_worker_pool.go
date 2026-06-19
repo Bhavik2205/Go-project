@@ -108,26 +108,25 @@ func NewTickWorkerPoolWithCap(
 				}
 			}()
 
+			idleCount := 0
+
 			for {
-				// Try to consume a tick.
 				if tick, ok := rb.TryConsume(); ok {
+					idleCount = 0
 					processor(poolCtx, tick)
 					continue
 				}
 
-				// If the context is cancelled, double-check that the buffer is empty
-				// by attempting to consume one more time. This ensures we drain
-				// any tick that arrived between the previous TryConsume and now.
-				if poolCtx.Err() != nil {
-					if tick, ok := rb.TryConsume(); ok {
-						processor(poolCtx, tick)
-						continue
-					}
-					return // buffer is empty, safe to exit
+				if poolCtx.Err() != nil && rb.Len() == 0 {
+					return
 				}
 
-				// Buffer empty and context still active — yield CPU.
-				runtime.Gosched()
+				if idleCount < 64 {
+					idleCount++
+					runtime.Gosched()
+				} else {
+					time.Sleep(time.Microsecond)
+				}
 			}
 		}(i, rb)
 	}

@@ -1,3 +1,4 @@
+// internal/pool/protobuf_pool.go
 package pool
 
 import (
@@ -6,17 +7,21 @@ import (
 	pb "github.com/Bhavik2205/ML-Bot/proto"
 )
 
-var TickMessagePool = sync.Pool{
-	New: func() any {
+var tickMsgPool = sync.Pool{
+	New: func() interface{} {
 		return &pb.TickMessage{}
 	},
 }
 
-func GetTickMessage() *pb.TickMessage {
-	return TickMessagePool.Get().(*pb.TickMessage)
+// GetTick returns a TickMessage from the pool (reset to zero).
+func GetTick() *pb.TickMessage {
+	msg := tickMsgPool.Get().(*pb.TickMessage)
+	// Reset fields to zero to avoid carrying old data.
+	*msg = pb.TickMessage{}
+	return msg
 }
 
-func PutTickMessage(msg *pb.TickMessage) {
-	msg.Reset()
-	TickMessagePool.Put(msg)
+// PutTick returns a TickMessage to the pool.
+func PutTick(msg *pb.TickMessage) {
+	tickMsgPool.Put(msg)
 }
