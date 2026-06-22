@@ -27,9 +27,10 @@ type MemoryGuard struct {
 }
 
 type MemoryGuardConfig struct {
-	WarningPercent     float64       // 0.8 = 80%
-	CriticalPercent    float64       // 0.9
-	DegradationPercent float64       // 0.95
+	WarningPercent     float64 // 0.8 = 80%
+	CriticalPercent    float64 // 0.9
+	DegradationPercent float64 // 0.95
+	HeapBudgetBytes    uint64
 	CheckInterval      time.Duration // e.g., 5s
 	OnWarning          func(msg string)
 	OnCritical         func(msg string)
@@ -48,6 +49,9 @@ func NewMemoryGuard(cfg MemoryGuardConfig) *MemoryGuard {
 	}
 	if cfg.DegradationPercent == 0 {
 		cfg.DegradationPercent = 0.95
+	}
+	if cfg.HeapBudgetBytes == 0 {
+		cfg.HeapBudgetBytes = 512 * 1024 * 1024 // 512 MB
 	}
 	g := &MemoryGuard{
 		stopCh: make(chan struct{}),
@@ -90,10 +94,8 @@ func (g *MemoryGuard) run(cfg MemoryGuardConfig) {
 				}
 			}
 
-			heapBudget := heapSys
-			if heapBudget == 0 {
-				heapBudget = sys
-			}
+			heapBudget := cfg.HeapBudgetBytes
+
 			warning := uint64(float64(heapBudget) * cfg.WarningPercent)
 			critical := uint64(float64(heapBudget) * cfg.CriticalPercent)
 			degradation := uint64(float64(heapBudget) * cfg.DegradationPercent)
@@ -105,7 +107,8 @@ func (g *MemoryGuard) run(cfg MemoryGuardConfig) {
 			// Update reliability-specific metrics
 			var usagePct float64
 			if heapBudget > 0 {
-				usagePct = float64(heapAlloc) / float64(heapBudget) * 100
+				usagePct = float64(heapAlloc) /
+					float64(heapBudget) * 100
 			}
 			observability.MemoryUsagePercent.Set(usagePct)
 			observability.ReliabilityLastCheck.Set(float64(time.Now().Unix()))

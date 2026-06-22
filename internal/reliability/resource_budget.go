@@ -23,6 +23,7 @@ type ResourceBudget struct {
 }
 
 type ResourceBudgetConfig struct {
+	HeapBudgetBytes          uint64
 	MemoryWarningPercent     float64
 	MemoryCriticalPercent    float64
 	MemoryDegradationPercent float64
@@ -43,6 +44,7 @@ type ResourceBudgetConfig struct {
 // DefaultConfig returns sensible production defaults.
 func DefaultConfig() ResourceBudgetConfig {
 	return ResourceBudgetConfig{
+		HeapBudgetBytes:          512 * 1024 * 1024,
 		MemoryWarningPercent:     0.88,
 		MemoryCriticalPercent:    0.93,
 		MemoryDegradationPercent: 0.97,

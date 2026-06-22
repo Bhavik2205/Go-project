@@ -12,6 +12,7 @@ import (
 type GoroutineGuard struct {
 	lastCount  uint64
 	lastCheck  time.Time
+	startTime  time.Time
 	mu         sync.RWMutex
 	growthRate float64 // goroutines per minute — protected by mu
 	onSpike    func(rate float64)
@@ -21,7 +22,8 @@ type GoroutineGuard struct {
 
 type GoroutineGuardConfig struct {
 	CheckInterval time.Duration
-	MaxGrowthRate float64 // max allowed percent growth per check interval before spike fires
+	MaxGrowthRate float64       // max allowed percent growth per check interval before spike fires
+	WarmupPeriod  time.Duration // duration to ignore spikes after start
 	OnSpike       func(pctGrowth float64)
 }
 
@@ -29,14 +31,19 @@ func NewGoroutineGuard(cfg GoroutineGuardConfig) *GoroutineGuard {
 	if cfg.CheckInterval == 0 {
 		cfg.CheckInterval = 30 * time.Second
 	}
+	if cfg.WarmupPeriod == 0 {
+		cfg.WarmupPeriod = time.Minute
+	}
+	now := time.Now()
+
 	g := &GoroutineGuard{
 		lastCount: uint64(runtime.NumGoroutine()),
-		lastCheck: time.Now(),
+		lastCheck: now,
+		startTime: now, // FIXED: startTime is now initialized
 		stopCh:    make(chan struct{}),
 		onSpike:   cfg.OnSpike,
 	}
 
-	// Set guard status to running
 	observability.GoroutineGuardStatus.Set(1)
 
 	go g.run(cfg)
@@ -51,6 +58,18 @@ func (g *GoroutineGuard) run(cfg GoroutineGuardConfig) {
 		case <-ticker.C:
 			now := time.Now()
 			current := uint64(runtime.NumGoroutine())
+
+			// Update metrics regardless
+			observability.GoroutineCount.Set(float64(current))
+			observability.ReliabilityLastCheck.Set(float64(now.Unix()))
+
+			// Skip spike detection during warmup
+			if time.Since(g.startTime) < cfg.WarmupPeriod {
+				g.lastCount = current
+				g.lastCheck = now
+				continue
+			}
+
 			elapsed := now.Sub(g.lastCheck).Minutes()
 			if elapsed > 0 && g.lastCount > 0 {
 				delta := int64(current) - int64(g.lastCount)
@@ -61,9 +80,7 @@ func (g *GoroutineGuard) run(cfg GoroutineGuardConfig) {
 				g.growthRate = ratePerMin
 				g.mu.Unlock()
 
-				observability.GoroutineCount.Set(float64(current))
 				observability.GoroutineGrowthRate.Set(ratePerMin)
-				observability.ReliabilityLastCheck.Set(float64(now.Unix()))
 
 				if pctGrowth > cfg.MaxGrowthRate {
 					if g.onSpike != nil {
@@ -78,6 +95,7 @@ func (g *GoroutineGuard) run(cfg GoroutineGuardConfig) {
 			}
 			g.lastCount = current
 			g.lastCheck = now
+
 		case <-g.stopCh:
 			observability.GoroutineGuardStatus.Set(0)
 			return

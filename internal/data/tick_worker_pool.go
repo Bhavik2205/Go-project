@@ -4,7 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"runtime"
+
+	// "runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,7 +20,7 @@ var ErrTickWorkerPoolClosed = errors.New("tick worker pool closed")
 
 const (
 	DefaultWorkerCount   = 16
-	DefaultRingBufferCap = 8192 // per-worker ring buffer capacity; must be power of 2
+	DefaultRingBufferCap = 4096 // per-worker ring buffer capacity; must be power of 2
 )
 
 // TickWorkerPool distributes ticks to workers based on instrument token.
@@ -31,8 +32,9 @@ const (
 // drop counter is incremented rather than blocking the caller.  This keeps
 // the ingestion hot-path allocation-free and latency-predictable.
 type TickWorkerPool struct {
-	rings     []*ringbuffer.SPSCRingBuffer
-	workerCnt int
+	rings       []*ringbuffer.SPSCRingBuffer
+	notifyChans []chan struct{} // per‑worker notification channel (buffered 1)
+	workerCnt   int
 
 	wg sync.WaitGroup
 
@@ -48,6 +50,7 @@ type TickWorkerPool struct {
 // NewTickWorkerPool creates a worker pool backed by per-worker ring buffers.
 // ringBufCap is the capacity of each ring buffer; it must be a power of 2.
 // Pass 0 to use DefaultRingBufferCap.
+// NewTickWorkerPool creates a worker pool with the default ring buffer capacity.
 func NewTickWorkerPool(
 	ctx context.Context,
 	workerCount int,
@@ -57,14 +60,13 @@ func NewTickWorkerPool(
 }
 
 // NewTickWorkerPoolWithCap is like NewTickWorkerPool but lets the caller
-// specify the per-worker ring buffer capacity (must be a power of 2).
+// specify the per-worker ring buffer capacity (must be a power of 2).// NewTickWorkerPoolWithCap creates a worker pool with custom ring buffer capacity.
 func NewTickWorkerPoolWithCap(
 	ctx context.Context,
 	workerCount int,
 	ringBufCap int,
 	processor func(context.Context, marketdata.NormalizedTick),
 ) *TickWorkerPool {
-
 	if workerCount <= 0 {
 		workerCount = DefaultWorkerCount
 	}
@@ -75,28 +77,32 @@ func NewTickWorkerPoolWithCap(
 	poolCtx, cancel := context.WithCancel(ctx)
 
 	p := &TickWorkerPool{
-		rings:      make([]*ringbuffer.SPSCRingBuffer, workerCount),
-		workerCnt:  workerCount,
-		ctx:        poolCtx,
-		cancel:     cancel,
-		metricStop: make(chan struct{}),
+		rings:       make([]*ringbuffer.SPSCRingBuffer, workerCount),
+		notifyChans: make([]chan struct{}, workerCount),
+		workerCnt:   workerCount,
+		ctx:         poolCtx,
+		cancel:      cancel,
+		metricStop:  make(chan struct{}),
 	}
 
 	for i := 0; i < workerCount; i++ {
 		rb, err := ringbuffer.NewSPSCRingBuffer(ringBufCap)
 		if err != nil {
-			// Only fails if cap is not a power of 2 — panic is appropriate here.
 			panic(fmt.Sprintf("tick worker pool: invalid ring buffer capacity %d: %v", ringBufCap, err))
 		}
 		p.rings[i] = rb
 
-		// Seed the capacity gauge once — it never changes.
+		// Capacity gauge (set once)
 		observability.TickWorkerRingBufferCapacity.
 			WithLabelValues(fmt.Sprintf("%d", i)).
 			Set(float64(rb.Cap()))
 
+		// Notification channel with buffer of 1 (non‑blocking send)
+		notifyCh := make(chan struct{}, 1)
+		p.notifyChans[i] = notifyCh
+
 		p.wg.Add(1)
-		go func(workerID int, rb *ringbuffer.SPSCRingBuffer) {
+		go func(workerID int, rb *ringbuffer.SPSCRingBuffer, notify <-chan struct{}) {
 			defer p.wg.Done()
 			defer func() {
 				if r := recover(); r != nil {
@@ -108,30 +114,32 @@ func NewTickWorkerPoolWithCap(
 				}
 			}()
 
-			idleCount := 0
-
 			for {
-				if tick, ok := rb.TryConsume(); ok {
-					idleCount = 0
-					processor(poolCtx, tick)
-					continue
-				}
-
-				if poolCtx.Err() != nil && rb.Len() == 0 {
-					return
-				}
-
-				if idleCount < 64 {
-					idleCount++
-					runtime.Gosched()
-				} else {
-					time.Sleep(time.Microsecond)
+				select {
+				case <-notify:
+					// Consume all available ticks
+					for {
+						if tick, ok := rb.TryConsume(); ok {
+							processor(poolCtx, tick)
+						} else {
+							break
+						}
+					}
+				case <-poolCtx.Done():
+					// Drain remaining ticks before exit
+					for {
+						if tick, ok := rb.TryConsume(); ok {
+							processor(poolCtx, tick)
+						} else {
+							return
+						}
+					}
 				}
 			}
-		}(i, rb)
+		}(i, rb, notifyCh)
 	}
 
-	// Start per-worker depth reporter.
+	// Start per‑worker depth reporter
 	go p.reportMetrics()
 
 	zap.L().Info(
@@ -160,7 +168,15 @@ func (p *TickWorkerPool) Submit(tick marketdata.NormalizedTick) error {
 	idx := int(tick.InstrumentToken % uint32(p.workerCnt))
 	if !p.rings[idx].Publish(tick) {
 		observability.TicksDropped.Inc()
+		return nil
 	}
+	// Non‑blocking notification: if the channel is full, the worker is already active
+	// and will pick up the new tick after its current batch.
+	select {
+	case p.notifyChans[idx] <- struct{}{}:
+	default:
+	}
+
 	return nil
 }
 
