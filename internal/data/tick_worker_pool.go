@@ -20,7 +20,7 @@ var ErrTickWorkerPoolClosed = errors.New("tick worker pool closed")
 
 const (
 	DefaultWorkerCount   = 16
-	DefaultRingBufferCap = 4096 // per-worker ring buffer capacity; must be power of 2
+	DefaultRingBufferCap = 16384 // per-worker ring buffer capacity; must be power of 2
 )
 
 // TickWorkerPool distributes ticks to workers based on instrument token.
