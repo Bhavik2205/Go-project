@@ -353,6 +353,12 @@ var allMetrics = []prometheus.Collector{
 	ProtobufQueueDrops,
 }
 
+func init() {
+	// Strategy engine metrics live in strategy.go; fold them in here so
+	// registration stays driven by the single allMetrics list.
+	allMetrics = append(allMetrics, strategyMetrics...)
+}
+
 // InitMetrics registers all Prometheus metrics.
 // AlreadyRegisteredError is treated as success — safe to call from tests.
 func InitMetrics() error {

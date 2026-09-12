@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -20,6 +21,7 @@ import (
 	"github.com/Bhavik2205/ML-Bot/internal/realtime"
 	"github.com/Bhavik2205/ML-Bot/internal/reliability"
 	"github.com/Bhavik2205/ML-Bot/internal/runtime"
+	"github.com/Bhavik2205/ML-Bot/internal/strategy"
 	"github.com/Bhavik2205/ML-Bot/internal/utils"
 	"go.uber.org/zap"
 )
@@ -40,12 +42,20 @@ type App struct {
 	IndicatorWsClients *sync.Map
 	IndicatorInputCh   chan indicators.Candle
 
+	// StrategyEngine is nil unless configs/strategy.yaml enables it.
+	StrategyEngine *strategy.Engine
+	OrderSink      *strategy.ChannelSink
+	OrderExecutor  *monitor.OrderExecutor
+
 	rm             *runtime.RuntimeManager
 	tickBus        tickbus.TickBus
 	wal            wal.Writer
 	symbolsConfig  *utils.SymbolsConfig
 	ResourceBudget *reliability.ResourceBudget
 }
+
+// strategyConfigPath is where the engine section is read from.
+const strategyConfigPath = "configs/strategy.yaml"
 
 // New creates and initialises a new App.
 func New(appCfg *utils.AppConfig, dbCfg *utils.DatabaseConfig, redisCfg *utils.RedisConfig, indicatorsCfg *utils.IndicatorsConfig, symbolsCfg *utils.SymbolsConfig) (*App, error) {
@@ -122,6 +132,11 @@ func New(appCfg *utils.AppConfig, dbCfg *utils.DatabaseConfig, redisCfg *utils.R
 	app.CandleGenerator = data.NewCandleGenerator(app.DB, app.tickBus, appCfg, app.CandleWsClients, app.IndicatorInputCh)
 	app.IndicatorManager = data.NewIndicatorManager(app.DB, appCfg, indicatorsCfg, app.IndicatorInputCh, app.IndicatorWsClients)
 
+	// --- Strategy engine (opt-in via configs/strategy.yaml) ---
+	if err := app.initStrategyEngine(); err != nil {
+		return nil, fmt.Errorf("strategy engine init: %w", err)
+	}
+
 	// --- Zerodha (live mode only) ---
 	if !appCfg.Market.Simulate {
 		apiKey := os.Getenv("ZERODHA_API_KEY")
@@ -179,6 +194,15 @@ func New(appCfg *utils.AppConfig, dbCfg *utils.DatabaseConfig, redisCfg *utils.R
 			return nil
 		},
 	})
+	if app.OrderExecutor != nil {
+		app.rm.Register(&serviceAdapter{
+			name: "order_executor",
+			start: func(ctx context.Context) error {
+				go app.OrderExecutor.Run(ctx)
+				return nil
+			},
+		})
+	}
 	app.rm.Register(&serviceAdapter{
 		name: "system_monitor",
 		start: func(ctx context.Context) error {
@@ -220,6 +244,77 @@ func New(appCfg *utils.AppConfig, dbCfg *utils.DatabaseConfig, redisCfg *utils.R
 	}
 
 	return app, nil
+}
+
+// initStrategyEngine builds the strategy engine when configs/strategy.yaml
+// enables it. A missing file or a disabled engine is not an error: the
+// trading loop stays off until it is switched on deliberately.
+func (a *App) initStrategyEngine() error {
+	cfg, err := strategy.LoadConfig(strategyConfigPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			zap.L().Info("Strategy config absent, strategy engine disabled",
+				zap.String("path", strategyConfigPath))
+			return nil
+		}
+		return err
+	}
+	if !cfg.Enabled {
+		zap.L().Info("Strategy engine disabled in config")
+		return nil
+	}
+	if len(cfg.EnabledStrategies()) == 0 {
+		zap.L().Warn("Strategy engine enabled but no strategies are switched on")
+		return nil
+	}
+
+	sink := strategy.NewChannelSink(cfg.SignalBuffer)
+	eng, err := strategy.NewEngine(cfg, sink)
+	if err != nil {
+		return err
+	}
+
+	a.OrderSink = sink
+	a.StrategyEngine = eng
+
+	// Route finalized candles plus their freshly computed indicators into the
+	// engine. Strategies therefore reuse the indicator work already done.
+	a.IndicatorManager.SetStrategyEngine(eng)
+	a.IndicatorManager.SetSymbolResolver(a.symbolResolver())
+
+	// Paper trading is the default: enabling strategies must never place a
+	// live order without an explicit broker being wired in here.
+	a.OrderExecutor = monitor.NewOrderExecutor(sink.Orders(), monitor.NewPaperBroker(), 5*time.Second)
+
+	observability.StrategyOrderQueueCapacity.Set(float64(sink.Cap()))
+
+	names := make([]string, 0, len(cfg.EnabledStrategies()))
+	for _, s := range cfg.EnabledStrategies() {
+		names = append(names, s.Name)
+	}
+	zap.L().Info("✅ Strategy engine initialised",
+		zap.Strings("strategies", names),
+		zap.Int("signal_buffer", sink.Cap()),
+		zap.Float64("capital", cfg.Capital),
+		zap.Bool("allow_short", cfg.Risk.AllowShort),
+	)
+	return nil
+}
+
+// symbolResolver builds a token to symbol lookup from the symbols config.
+// The map is built once at startup and only read afterwards.
+func (a *App) symbolResolver() func(uint32) string {
+	if a.symbolsConfig == nil {
+		return nil
+	}
+	m := make(map[uint32]string, len(a.symbolsConfig.SimulationInstruments))
+	for _, s := range a.symbolsConfig.SimulationInstruments {
+		m[s.Token] = s.Symbol
+	}
+	if len(m) == 0 {
+		return nil
+	}
+	return func(token uint32) string { return m[token] }
 }
 
 // Start runs all services via RuntimeManager.

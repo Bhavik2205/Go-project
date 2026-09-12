@@ -16,3 +16,76 @@ swing:
 
 # General strategy settings
 market_data_timeframe: "1m" # Timeframe for OHLCV bars used by strategies
+
+# ---------------------------------------------------------------------------
+# Strategy engine
+# ---------------------------------------------------------------------------
+# Read by internal/strategy.LoadConfig. The engine is OFF by default: turning
+# it on is a deliberate act, because it starts producing order intents.
+#
+# Adding a new strategy needs no change outside this file plus one new Go file
+# that calls strategy.Register(name, factory) in its init(). List the name
+# below, give it intervals, and it runs.
+engine:
+  enabled: false
+
+  # Depth of the order queue between the engine and the executor. A full queue
+  # drops orders rather than stalling the market data pipeline.
+  signal_buffer: 4096
+
+  # Notional account size used for position sizing.
+  capital: 1000000
+
+  session:
+    timezone: "Asia/Kolkata"
+    open: "09:15"
+    close: "15:30"
+    # No new entries at or after square_off; open positions are force-closed.
+    square_off: "15:15"
+
+  risk:
+    max_trades_per_day: 5
+    max_loss_per_day_percentage: 0.02 # halt entries after a 2% daily loss
+    trade_size_percentage_of_capital: 0.05
+    max_open_positions: 3
+    # Applied when a strategy returns an entry without explicit levels.
+    default_stop_loss_percentage: 0.005
+    default_target_percentage: 0.015
+    # Shorting is off by default; cash-segment accounts cannot short.
+    allow_short: false
+
+  strategies:
+    - name: intraday_trend
+      enabled: true
+      intervals: ["5m"]
+      instruments: [] # empty means every instrument
+      params:
+        rsi_long_min: 55
+        rsi_long_max: 75
+        rsi_short_min: 25
+        rsi_short_max: 45
+        atr_stop_multiplier: 1.5
+        atr_target_multiplier: 3.0
+        min_adx: 20
+        warmup: 5
+
+    - name: scalping_mean_reversion
+      enabled: false
+      intervals: ["1m"]
+      instruments: []
+      params:
+        rsi_oversold: 30
+        rsi_overbought: 70
+        max_bars_in_trade: 10
+        min_band_width_pct: 0.002
+        warmup: 3
+
+    - name: swing_macd
+      enabled: false
+      intervals: ["1h"]
+      instruments: []
+      params:
+        min_adx: 25
+        max_bars_in_trade: 200
+        require_histogram: 1 # non-zero means true
+        warmup: 10

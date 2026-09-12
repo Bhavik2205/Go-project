@@ -11,6 +11,7 @@ import (
 	"github.com/Bhavik2205/ML-Bot/internal/db"
 	"github.com/Bhavik2205/ML-Bot/internal/indicators"
 	"github.com/Bhavik2205/ML-Bot/internal/observability"
+	"github.com/Bhavik2205/ML-Bot/internal/strategy"
 	"github.com/Bhavik2205/ML-Bot/internal/utils"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
@@ -47,11 +48,36 @@ type IndicatorManager struct {
 
 	shedding atomic.Bool
 
+	// strategyEngine is optional. When set, every finalized candle is handed
+	// to it together with the indicator values just computed, so strategies
+	// reuse this work instead of recalculating anything.
+	strategyEngine StrategyEngine
+
+	// symbolOf resolves an instrument token to a display symbol for order
+	// intents. Optional; orders carry an empty symbol when unset.
+	symbolOf func(uint32) string
+
 	// metrics
 	indicatorsProcessed uint64
 	dbErrors            uint64
 	wsDrops             uint64
 }
+
+// StrategyEngine is the subset of *strategy.Engine the indicator manager
+// needs. Keeping it an interface lets tests drive the hot path without
+// building a full engine.
+type StrategyEngine interface {
+	OnCandle(f *strategy.Frame)
+}
+
+// SetStrategyEngine attaches a strategy engine. It must be called during
+// startup, before StartIndicatorCalculations, because the field is read
+// without synchronisation on the hot path.
+func (im *IndicatorManager) SetStrategyEngine(e StrategyEngine) { im.strategyEngine = e }
+
+// SetSymbolResolver supplies a token to symbol lookup for emitted orders.
+// Like SetStrategyEngine it must be called during startup.
+func (im *IndicatorManager) SetSymbolResolver(fn func(uint32) string) { im.symbolOf = fn }
 
 // jsonBufPool avoids per-broadcast heap allocations for the WS envelope.
 var jsonBufPool = sync.Pool{New: func() interface{} { return new(bytes.Buffer) }}
@@ -210,6 +236,11 @@ func (im *IndicatorManager) processCandle(c indicators.Candle) {
 	// Pre-allocate for up to 10 indicators.
 	wsPayload := make(map[string]interface{}, 10)
 
+	// snap mirrors the values below into a flat struct for the strategy
+	// engine. It stays on the stack and costs nothing when no engine is
+	// attached, so strategies never recompute an indicator.
+	var snap strategy.IndicatorSnapshot
+
 	// --- SMA ---
 	if cfg.SMA.Enabled {
 		if val, ready := s.SMA.Update(c.Close); ready {
@@ -218,6 +249,7 @@ func (im *IndicatorManager) processCandle(c indicators.Candle) {
 				Period: cfg.SMA.Period, Timestamp: ts, Value: val, DataSource: src,
 			})
 			wsPayload["sma"] = map[string]interface{}{"period": cfg.SMA.Period, "value": val}
+			snap.SMA, snap.Present = val, snap.Present|strategy.HasSMA
 			atomic.AddUint64(&im.indicatorsProcessed, 1)
 		}
 	}
@@ -230,6 +262,7 @@ func (im *IndicatorManager) processCandle(c indicators.Candle) {
 				Period: cfg.EMA.ShortPeriod, Timestamp: ts, Value: val, DataSource: src,
 			})
 			wsPayload["ema"] = map[string]interface{}{"period": cfg.EMA.ShortPeriod, "value": val}
+			snap.EMA, snap.Present = val, snap.Present|strategy.HasEMA
 			atomic.AddUint64(&im.indicatorsProcessed, 1)
 		}
 	}
@@ -242,6 +275,7 @@ func (im *IndicatorManager) processCandle(c indicators.Candle) {
 				Period: cfg.RSI.Period, Timestamp: ts, Value: val, DataSource: src,
 			})
 			wsPayload["rsi"] = map[string]interface{}{"period": cfg.RSI.Period, "value": val}
+			snap.RSI, snap.Present = val, snap.Present|strategy.HasRSI
 			atomic.AddUint64(&im.indicatorsProcessed, 1)
 		}
 	}
@@ -255,6 +289,8 @@ func (im *IndicatorManager) processCandle(c indicators.Candle) {
 				Timestamp: ts, MACDLine: macdLine, SignalLine: sigLine, Histogram: hist, DataSource: src,
 			})
 			wsPayload["macd"] = map[string]interface{}{"macd_line": macdLine, "signal_line": sigLine, "histogram": hist}
+			snap.MACDLine, snap.MACDSignal, snap.MACDHist = macdLine, sigLine, hist
+			snap.Present |= strategy.HasMACD
 			atomic.AddUint64(&im.indicatorsProcessed, 1)
 		}
 	}
@@ -267,6 +303,7 @@ func (im *IndicatorManager) processCandle(c indicators.Candle) {
 				Period: cfg.ATR.Period, Timestamp: ts, Value: val, DataSource: src,
 			})
 			wsPayload["atr"] = map[string]interface{}{"period": cfg.ATR.Period, "value": val}
+			snap.ATR, snap.Present = val, snap.Present|strategy.HasATR
 			atomic.AddUint64(&im.indicatorsProcessed, 1)
 		}
 	}
@@ -280,6 +317,8 @@ func (im *IndicatorManager) processCandle(c indicators.Candle) {
 				Timestamp: ts, UpperBand: upper, MiddleBand: middle, LowerBand: lower, DataSource: src,
 			})
 			wsPayload["bollinger"] = map[string]interface{}{"upper": upper, "middle": middle, "lower": lower}
+			snap.BBUpper, snap.BBMiddle, snap.BBLower = upper, middle, lower
+			snap.Present |= strategy.HasBollinger
 			atomic.AddUint64(&im.indicatorsProcessed, 1)
 		}
 	}
@@ -293,6 +332,8 @@ func (im *IndicatorManager) processCandle(c indicators.Candle) {
 				Timestamp: ts, KValue: k, DValue: d, DataSource: src,
 			})
 			wsPayload["stochastic"] = map[string]interface{}{"k": k, "d": d}
+			snap.StochK, snap.StochD = k, d
+			snap.Present |= strategy.HasStochastic
 			atomic.AddUint64(&im.indicatorsProcessed, 1)
 		}
 	}
@@ -305,6 +346,7 @@ func (im *IndicatorManager) processCandle(c indicators.Candle) {
 				Timestamp: ts, Value: val, DataSource: src,
 			})
 			wsPayload["obv"] = val
+			snap.OBV, snap.Present = val, snap.Present|strategy.HasOBV
 			atomic.AddUint64(&im.indicatorsProcessed, 1)
 		}
 	}
@@ -317,6 +359,7 @@ func (im *IndicatorManager) processCandle(c indicators.Candle) {
 				Timestamp: ts, Value: val, DataSource: src,
 			})
 			wsPayload["vwap"] = val
+			snap.VWAP, snap.Present = val, snap.Present|strategy.HasVWAP
 			atomic.AddUint64(&im.indicatorsProcessed, 1)
 		}
 	}
@@ -330,6 +373,8 @@ func (im *IndicatorManager) processCandle(c indicators.Candle) {
 				ADXValue: adxVal, PlusDI: plusDI, MinusDI: minusDI, DataSource: src,
 			})
 			wsPayload["adx"] = map[string]interface{}{"adx": adxVal, "plus_di": plusDI, "minus_di": minusDI}
+			snap.ADX, snap.PlusDI, snap.MinusDI = adxVal, plusDI, minusDI
+			snap.Present |= strategy.HasADX
 			atomic.AddUint64(&im.indicatorsProcessed, 1)
 		}
 	}
@@ -337,6 +382,29 @@ func (im *IndicatorManager) processCandle(c indicators.Candle) {
 	// Single consolidated WS broadcast per candle — one marshal, one send per client.
 	if len(wsPayload) > 0 {
 		im.broadcastIndicators(c.InstrumentToken, c.Interval, ts, wsPayload)
+	}
+
+	// Strategy evaluation runs last so a strategy can never delay persistence
+	// or the WS broadcast. The frame is a stack value and OnCandle is
+	// non-blocking, so this adds no queueing to the pipeline.
+	if im.strategyEngine != nil {
+		frame := strategy.Frame{
+			Token:     c.InstrumentToken,
+			Interval:  c.Interval,
+			Timestamp: ts,
+			Open:      c.Open,
+			High:      c.High,
+			Low:       c.Low,
+			Close:     c.Close,
+			Volume:    c.Volume,
+			Ind:       snap,
+		}
+		if im.symbolOf != nil {
+			frame.Symbol = im.symbolOf(c.InstrumentToken)
+		}
+		start := time.Now()
+		im.strategyEngine.OnCandle(&frame)
+		observability.RecordStrategyLatency(float64(time.Since(start).Microseconds()))
 	}
 }
 
