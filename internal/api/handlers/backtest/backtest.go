@@ -9,6 +9,7 @@ import (
 	"github.com/Bhavik2205/ML-Bot/internal/api/handlers/httpx"
 	bt "github.com/Bhavik2205/ML-Bot/internal/backtest"
 	"github.com/Bhavik2205/ML-Bot/internal/db"
+	"github.com/Bhavik2205/ML-Bot/internal/middleware"
 )
 
 // runTimeout bounds a single replay. A backtest is a synchronous request, so
@@ -20,7 +21,9 @@ const runTimeout = 60 * time.Second
 // The run is synchronous: results come back in the response rather than via a
 // job id, which keeps the UI simple. The candle cap and timeout together bound
 // how long that can take.
-func HandleRun(runner *bt.Runner) http.HandlerFunc {
+func HandleRun(runner *bt.Runner, dbc *db.DBClient) http.HandlerFunc {
+	recorder := newJobRecorder(dbc)
+
 	return func(w http.ResponseWriter, r *http.Request) {
 		if runner == nil {
 			httpx.WriteError(w, http.StatusServiceUnavailable, r, httpx.CodeUnavailable,
@@ -38,13 +41,24 @@ func HandleRun(runner *bt.Runner) http.HandlerFunc {
 		ctx, cancel := contextWithTimeout(r, runTimeout)
 		defer cancel()
 
+		// Validate before recording, so a malformed request does not leave a
+		// FAILED row that never really ran.
+		if err := req.Validate(); err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, r, httpx.CodeBadRequest, err.Error(), nil)
+			return
+		}
+
+		jobID := recorder.start(middleware.UserIDFromContext(r.Context()), req)
+
 		res, err := runner.Run(ctx, req)
 		if err != nil {
+			recorder.fail(jobID, err.Error())
 			// Validation problems and "no data for this range" are both the
 			// caller's to fix, so they are 400 rather than 500.
 			httpx.WriteError(w, http.StatusBadRequest, r, httpx.CodeBadRequest, err.Error(), nil)
 			return
 		}
+		recorder.complete(jobID, res)
 
 		httpx.WriteSuccess(w, http.StatusOK, r, res)
 	}

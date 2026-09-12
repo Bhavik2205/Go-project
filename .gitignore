@@ -31,3 +31,6 @@ bash.exe.stackdump
 *.log
 stdout
 app.log
+# Python bytecode from scripts/
+__pycache__/
+*.pyc

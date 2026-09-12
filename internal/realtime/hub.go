@@ -19,6 +19,9 @@ type Hub struct {
 	IndicatorManager *data.IndicatorManager
 	RedisClient      *cache.RedisClient
 	heatmapClients   *sync.Map // new
+
+	// trading streams strategy, paper and execution state to /ws/trading.
+	trading tradingHub
 }
 
 // NewHub creates a new Hub.

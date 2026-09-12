@@ -210,4 +210,10 @@ type Order struct {
 	StopPrice   float64
 	TargetPrice float64
 	Timestamp   time.Time
+
+	// BarVolume is the volume of the candle that produced this order. The
+	// paper broker uses it to cap fills and to size market impact; assuming a
+	// whole bar's volume is available at its close invents liquidity that was
+	// never there.
+	BarVolume float64
 }

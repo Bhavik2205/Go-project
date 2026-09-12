@@ -58,6 +58,7 @@ func (s *Server) Start(ctx context.Context, port int) error {
 		router.HandleFunc("/ws/candles", s.deps.Hub.ServeCandles)
 		router.HandleFunc("/ws/indicators", s.deps.Hub.ServeIndicators)
 		router.HandleFunc("/ws/heatmap", s.deps.Hub.ServeHeatmap)
+		router.HandleFunc("/ws/trading", s.deps.Hub.ServeTrading)
 	}
 
 	// Instrument lookup endpoint (if Zerodha client is available)

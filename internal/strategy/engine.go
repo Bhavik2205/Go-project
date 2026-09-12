@@ -289,7 +289,7 @@ func (e *Engine) handleSignal(inst *instance, f *Frame, sig Signal) {
 			Token: f.Token, Symbol: f.Symbol, Interval: f.Interval,
 			Strategy: inst.name, Action: ActionExit, Side: p.Side,
 			Reason: sig.Reason, Price: price, Quantity: qty,
-			Timestamp: f.Timestamp,
+			Timestamp: f.Timestamp, BarVolume: f.Volume,
 		})
 		e.risk.OnExitFilled(pnl)
 		e.publishRiskGauges()
@@ -324,7 +324,7 @@ func (e *Engine) handleSignal(inst *instance, f *Frame, sig Signal) {
 			Strategy: inst.name, Action: ActionEntry, Side: sig.Side,
 			Reason: sig.Reason, Price: price, Quantity: qty,
 			StopPrice: stop, TargetPrice: target,
-			Timestamp: f.Timestamp,
+			Timestamp: f.Timestamp, BarVolume: f.Volume,
 		})
 		e.risk.OnEntryFilled()
 		e.publishRiskGauges()

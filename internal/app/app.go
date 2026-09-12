@@ -55,6 +55,7 @@ type App struct {
 	// TradingMode is "PAPER" or "LIVE".
 	TradingMode string
 
+	hub            *realtime.Hub
 	rm             *runtime.RuntimeManager
 	tickBus        tickbus.TickBus
 	wal            wal.Writer
@@ -165,6 +166,17 @@ func New(appCfg *utils.AppConfig, dbCfg *utils.DatabaseConfig, redisCfg *utils.R
 
 	// --- Create WebSocket hub and HTTP server ---
 	hub := realtime.NewHub(app.DataIngestor, app.CandleGenerator, app.IndicatorManager, app.Redis)
+
+	// Push trading state over /ws/trading so the dashboard does not have to
+	// poll four endpoints on a timer.
+	hub.SetTradingSource(realtime.TradingSource{
+		Engine:   app.StrategyEngine,
+		Paper:    app.PaperBroker,
+		Guard:    app.Guard,
+		Executor: app.OrderExecutor,
+		Mode:     app.TradingMode,
+	})
+	app.hub = hub
 
 	// Build dependencies for HTTP server
 	httpDeps := httpapi.HTTPDeps{
@@ -433,6 +445,10 @@ func (a *App) Start(ctx context.Context) error {
 				zap.L().Info("load shedding cleared")
 			},
 		)
+	}
+
+	if a.hub != nil {
+		a.hub.StartTradingBroadcast(ctx.Done())
 	}
 
 	return a.rm.StartAll(ctx)

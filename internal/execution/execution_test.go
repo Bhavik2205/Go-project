@@ -176,18 +176,21 @@ func TestIsBuyMapping(t *testing.T) {
 	}
 }
 
-func TestPaperSlippageIsAlwaysAdverse(t *testing.T) {
+func TestSlippageIsAlwaysAdverse(t *testing.T) {
+	m := SlippageModel{HalfSpreadBps: 50}
+
 	// A buy must never fill below the reference, and a sell never above.
-	if got := applySlippage(100, 50, true); got <= 100 {
-		t.Errorf("buy fill %v should be above reference 100", got)
+	// Slippage that helps the trader is how a backtest becomes unreproducible.
+	if got := m.Plan(100, 10, 0, true); got.Price <= 100 {
+		t.Errorf("buy fill %v should be above reference 100", got.Price)
 	}
-	if got := applySlippage(100, 50, false); got >= 100 {
-		t.Errorf("sell fill %v should be below reference 100", got)
+	if got := m.Plan(100, 10, 0, false); got.Price >= 100 {
+		t.Errorf("sell fill %v should be below reference 100", got.Price)
 	}
 }
 
 func TestPaperBrokerFillsAndNets(t *testing.T) {
-	b := NewPaperBroker(PaperConfig{SlippageBps: 0, FeeBps: 0}, 1, nil)
+	b := NewPaperBroker(FrictionlessPaperConfig(), 1, nil)
 	ctx := context.Background()
 
 	if _, err := b.Place(ctx, order(strategy.ActionEntry, strategy.SideLong, 100, 50)); err != nil {
@@ -211,7 +214,11 @@ func TestPaperBrokerFillsAndNets(t *testing.T) {
 }
 
 func TestPaperBrokerChargesFees(t *testing.T) {
-	b := NewPaperBroker(PaperConfig{SlippageBps: 0, FeeBps: 10}, 1, nil) // 0.1%
+	// Brokerage only, flat 0.1%, no cap and no other statutory charges, so the
+	// arithmetic below isolates a single component.
+	cfg := FrictionlessPaperConfig()
+	cfg.Costs = CostModel{BrokeragePct: 0.001}
+	b := NewPaperBroker(cfg, 1, nil)
 	ctx := context.Background()
 
 	if _, err := b.Place(ctx, order(strategy.ActionEntry, strategy.SideLong, 100, 50)); err != nil {

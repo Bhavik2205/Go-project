@@ -10,6 +10,7 @@ import (
 	executionhandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/execution"
 	markethandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/market"
 	modelshandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/models"
+	notificationshandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/notifications"
 	ordershandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/orders"
 	positionshandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/positions"
 	profilehandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/profile"
@@ -92,8 +93,15 @@ func RegisterRoutes(router *mux.Router, deps HTTPDeps) {
 	protected.HandleFunc("/models", modelshandler.HandleGet(deps.DBClient)).Methods("GET")
 
 	// --- Backtesting ---
-	protected.HandleFunc("/backtest/run", backtesthandler.HandleRun(deps.Backtest)).Methods("POST")
+	protected.HandleFunc("/backtest/run", backtesthandler.HandleRun(deps.Backtest, deps.DBClient)).Methods("POST")
 	protected.HandleFunc("/backtest/history", backtesthandler.HandleHistory(deps.DBClient)).Methods("GET")
+
+	// --- Notifications ---
+	protected.HandleFunc("/notifications/channels", notificationshandler.HandleListChannels(deps.DBClient)).Methods("GET")
+	protected.HandleFunc("/notifications/channels", notificationshandler.HandleUpsertChannel(deps.DBClient)).Methods("PUT")
+	protected.HandleFunc("/notifications/channels", notificationshandler.HandleDeleteChannel(deps.DBClient)).Methods("DELETE")
+	protected.HandleFunc("/notifications/history", notificationshandler.HandleHistory(deps.DBClient)).Methods("GET")
+	protected.HandleFunc("/notifications/test", notificationshandler.HandleTest(deps.DBClient)).Methods("POST")
 
 	// --- Watchlist ---
 	protected.HandleFunc("/watchlists/default", watchlisthandler.HandleGetDefault(deps.DBClient)).Methods("GET")

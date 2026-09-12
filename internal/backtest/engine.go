@@ -32,9 +32,14 @@ type Request struct {
 	To             time.Time       `json:"to"`
 	InitialCapital float64         `json:"initial_capital"`
 	Params         strategy.Params `json:"params"`
-	// SlippageBps and FeeBps override the paper defaults.
+	// SlippageBps overrides the half-spread crossed on every fill. Zero uses
+	// the conservative default; set Frictionless to remove costs entirely.
 	SlippageBps float64 `json:"slippage_bps"`
-	FeeBps      float64 `json:"fee_bps"`
+	// MaxParticipation caps the fraction of a bar's volume one order may take.
+	MaxParticipation float64 `json:"max_participation"`
+	// Frictionless disables slippage and all charges. Useful for isolating
+	// strategy logic; never for judging whether a strategy makes money.
+	Frictionless bool `json:"frictionless"`
 }
 
 // Validate applies defaults and rejects incoherent requests.
@@ -63,8 +68,11 @@ func (r *Request) Validate() error {
 	if !r.From.Before(r.To) {
 		return fmt.Errorf("from (%s) must be before to (%s)", r.From.Format(time.RFC3339), r.To.Format(time.RFC3339))
 	}
-	if r.SlippageBps < 0 || r.FeeBps < 0 {
-		return fmt.Errorf("slippage_bps and fee_bps must not be negative")
+	if r.SlippageBps < 0 {
+		return fmt.Errorf("slippage_bps must not be negative")
+	}
+	if r.MaxParticipation < 0 || r.MaxParticipation > 1 {
+		return fmt.Errorf("max_participation must be between 0 and 1, got %v", r.MaxParticipation)
 	}
 	if r.Params == nil {
 		r.Params = strategy.Params{}
@@ -117,6 +125,19 @@ type Result struct {
 	// Sharpe is annualised from per-bar returns. It is meaningless on a
 	// handful of trades; treat it as indicative only.
 	Sharpe float64 `json:"sharpe"`
+
+	// Costs itemises the charges, so a strategy that loses to its own
+	// transaction costs can be told apart from one that is simply wrong.
+	Costs monitor.CostBreakdown `json:"costs"`
+	// Turnover is the gross value transacted; AvgSlippageBps is
+	// turnover-weighted so one tiny fill cannot skew it.
+	Turnover       float64 `json:"turnover"`
+	AvgSlippageBps float64 `json:"avg_slippage_bps"`
+	// PartialFills and RejectedFills mean the strategy asked for more size
+	// than those bars could supply. A high count makes the rest of the result
+	// unreliable, because live you would not have got that size either.
+	PartialFills  uint64 `json:"partial_fills"`
+	RejectedFills uint64 `json:"rejected_fills"`
 
 	Trades      []TradeLog    `json:"trades"`
 	EquityCurve []EquityPoint `json:"equity_curve"`
@@ -183,10 +204,17 @@ func (rn *Runner) Run(ctx context.Context, req Request) (*Result, error) {
 		return nil, fmt.Errorf("build engine config: %w", err)
 	}
 
-	paperCfg := monitor.PaperConfig{
-		SlippageBps:       req.SlippageBps,
-		FeeBps:            req.FeeBps,
-		RejectOutsideBand: true,
+	// Costs and slippage default to the real Indian intraday schedule, so a
+	// backtest is pessimistic unless it is explicitly told not to be.
+	paperCfg := monitor.DefaultPaperConfig()
+	if req.Frictionless {
+		paperCfg = monitor.FrictionlessPaperConfig()
+	}
+	if req.SlippageBps > 0 {
+		paperCfg.Slippage.HalfSpreadBps = req.SlippageBps
+	}
+	if req.MaxParticipation > 0 {
+		paperCfg.Slippage.MaxParticipation = req.MaxParticipation
 	}
 	paper := monitor.NewPaperBroker(paperCfg, 0, nil)
 
@@ -295,6 +323,12 @@ func (rn *Runner) Run(ctx context.Context, req Request) (*Result, error) {
 		UnrealizedPnL: stats.UnrealizedPnL,
 		FeesPaid:      stats.FeesPaid,
 		NetPnL:        stats.RealizedPnL + stats.UnrealizedPnL - stats.FeesPaid,
+
+		Costs:          stats.Costs,
+		Turnover:       stats.Turnover,
+		AvgSlippageBps: stats.AvgSlippageBps,
+		PartialFills:   stats.PartialFills,
+		RejectedFills:  stats.RejectedFills,
 
 		MaxDrawdownPct: maxDD,
 		Sharpe:         sharpe(barReturns, req.Interval),

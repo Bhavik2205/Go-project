@@ -9,6 +9,7 @@
 package models
 
 import (
+	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -20,6 +21,11 @@ import (
 
 // modelDir is where ONNX assets live, relative to the working directory.
 const modelDir = "models"
+
+// manifestPath records what produced the deployed model. The ML scripts write
+// it; without it an .onnx file on disk is anonymous and a fine-tuned model
+// cannot be told apart from the stock one.
+const manifestPath = "models/manifest.json"
 
 type modelFileDTO struct {
 	Name       string    `json:"name"`
@@ -36,14 +42,24 @@ type pipelineDTO struct {
 	LastArticleAt  *time.Time `json:"last_article_at"`
 }
 
+// manifestDTO mirrors models/manifest.json. Contents are passed through
+// as-is so the scripts can add fields without a Go change.
+type manifestDTO struct {
+	Latest       json.RawMessage `json:"latest,omitempty"`
+	LatestExport json.RawMessage `json:"latest_export,omitempty"`
+	Runs         int             `json:"runs"`
+}
+
 type responseDTO struct {
 	// InferenceAvailable is false on builds without the ONNX runtime, which
 	// is the normal state on Windows where the package needs cgo.
-	InferenceAvailable bool           `json:"inference_available"`
-	InferenceNote      string         `json:"inference_note"`
-	ModelDir           string         `json:"model_dir"`
-	Files              []modelFileDTO `json:"files"`
-	Pipeline           pipelineDTO    `json:"pipeline"`
+	InferenceAvailable bool   `json:"inference_available"`
+	InferenceNote      string `json:"inference_note"`
+	ModelDir           string `json:"model_dir"`
+	// Manifest is nil when no pipeline run has been recorded yet.
+	Manifest *manifestDTO   `json:"manifest,omitempty"`
+	Files    []modelFileDTO `json:"files"`
+	Pipeline pipelineDTO    `json:"pipeline"`
 }
 
 // HandleGet reports model assets and sentiment pipeline coverage.
@@ -56,11 +72,40 @@ func HandleGet(dbc *db.DBClient) http.HandlerFunc {
 			Files:              scanModelDir(),
 		}
 
+		if m := readManifest(); m != nil {
+			resp.Manifest = m
+		}
+
 		if dbc != nil {
 			resp.Pipeline = pipelineStats(dbc)
 		}
 
 		httpx.WriteSuccess(w, http.StatusOK, r, resp)
+	}
+}
+
+// readManifest loads the pipeline provenance file. A missing or malformed
+// manifest is reported as absent rather than as an error: it only means the
+// pipeline has not been run through the scripts yet.
+func readManifest() *manifestDTO {
+	raw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return nil
+	}
+
+	var parsed struct {
+		Latest       json.RawMessage   `json:"latest"`
+		LatestExport json.RawMessage   `json:"latest_export"`
+		History      []json.RawMessage `json:"history"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return nil
+	}
+
+	return &manifestDTO{
+		Latest:       parsed.Latest,
+		LatestExport: parsed.LatestExport,
+		Runs:         len(parsed.History),
 	}
 }
 

@@ -3,6 +3,7 @@ package monitor
 import (
 	"context"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -17,25 +18,37 @@ const (
 )
 
 // PaperConfig tunes the fill simulator.
+//
+// Slippage moves the price against the order and costs are the real Indian
+// statutory schedule. Modelling either as a favour is the classic way to build
+// a backtest that cannot be reproduced live.
 type PaperConfig struct {
-	// SlippageBps is applied against the order in the adverse direction:
-	// buys fill above the reference price, sells below it. Modelling
-	// slippage as a favour is the classic way to build a backtest that
-	// cannot be reproduced live.
-	SlippageBps float64
-	// FeeBps is charged on notional per fill (brokerage plus statutory
-	// charges rolled into one figure).
-	FeeBps float64
+	// Slippage covers spread crossing and volume-dependent market impact.
+	Slippage SlippageModel `yaml:"slippage"`
+
+	// Costs is the brokerage and statutory charge schedule.
+	Costs CostModel `yaml:"costs"`
+
 	// RejectOutsideBand rejects a fill whose reference price is zero or
 	// negative, which indicates a bad or missing mark rather than a trade.
-	RejectOutsideBand bool
+	RejectOutsideBand bool `yaml:"reject_outside_band"`
 }
 
 // DefaultPaperConfig returns conservative defaults for Indian equity intraday.
 func DefaultPaperConfig() PaperConfig {
 	return PaperConfig{
-		SlippageBps:       2, // 0.02%
-		FeeBps:            3, // 0.03% all-in, deliberately pessimistic
+		Slippage:          DefaultSlippageModel(),
+		Costs:             DefaultCostModel(),
+		RejectOutsideBand: true,
+	}
+}
+
+// FrictionlessPaperConfig disables slippage and charges. Use it to isolate
+// strategy logic in tests, never to judge whether a strategy makes money.
+func FrictionlessPaperConfig() PaperConfig {
+	return PaperConfig{
+		Slippage:          SlippageModel{},
+		Costs:             ZeroCostModel(),
 		RejectOutsideBand: true,
 	}
 }
@@ -56,17 +69,29 @@ type PaperBroker struct {
 	// userID owns the simulated account, needed for the DB foreign keys.
 	userID uint
 
-	seq  atomic.Uint64
-	fees atomic.Uint64 // fees in paise, to keep the counter integral
+	seq atomic.Uint64
+
+	// costMu guards the itemised cost totals. Fills are infrequent relative
+	// to candles, so a mutex here is cheaper than atomics per component.
+	costMu    sync.Mutex
+	costs     CostBreakdown
+	slipBpsWt float64 // turnover-weighted slippage, for a meaningful average
+	turnover  float64
+	partial   uint64 // fills cut short by the participation cap
+	rejected  uint64 // orders refused outright for lack of liquidity
 }
 
 // NewPaperBroker builds a paper broker. Pass a nil sink for memory-only runs.
 func NewPaperBroker(cfg PaperConfig, userID uint, sink TradeSink) *PaperBroker {
-	if cfg.SlippageBps < 0 {
-		cfg.SlippageBps = 0
+	// Negative rates would pay the trader to trade; clamp rather than trust.
+	if cfg.Slippage.HalfSpreadBps < 0 {
+		cfg.Slippage.HalfSpreadBps = 0
 	}
-	if cfg.FeeBps < 0 {
-		cfg.FeeBps = 0
+	if cfg.Slippage.ImpactCoefficient < 0 {
+		cfg.Slippage.ImpactCoefficient = 0
+	}
+	if cfg.Slippage.MaxParticipation < 0 {
+		cfg.Slippage.MaxParticipation = 0
 	}
 	return &PaperBroker{
 		cfg:    cfg,
@@ -93,9 +118,22 @@ func (b *PaperBroker) Place(_ context.Context, o strategy.Order) (string, error)
 	}
 
 	buy := isBuy(o)
-	fillPrice := applySlippage(ref, b.cfg.SlippageBps, buy)
 
-	signed := o.Quantity
+	// Liquidity first: the bar may not support the requested size.
+	plan := b.cfg.Slippage.Plan(ref, o.Quantity, o.BarVolume, buy)
+	if plan.Quantity <= 0 {
+		b.countRejected()
+		return "", fmt.Errorf("paper: bar volume %.0f cannot support an order of %d at %.2f",
+			o.BarVolume, o.Quantity, ref)
+	}
+	if plan.Capped {
+		b.countPartial()
+	}
+
+	fillPrice := plan.Price
+	fillQty := plan.Quantity
+
+	signed := fillQty
 	if !buy {
 		signed = -signed
 	}
@@ -109,9 +147,10 @@ func (b *PaperBroker) Place(_ context.Context, o strategy.Order) (string, error)
 		Time:            now,
 	})
 
-	notional := fillPrice * float64(o.Quantity)
-	fee := notional * b.cfg.FeeBps / 10_000
-	b.fees.Add(uint64(fee * 100))
+	turnover := fillPrice * float64(fillQty)
+	charges := b.cfg.Costs.Charges(turnover, buy)
+	b.recordCosts(charges, turnover, plan.SlippageBps)
+	fee := charges.Total
 
 	id := b.nextID()
 
@@ -125,7 +164,7 @@ func (b *PaperBroker) Place(_ context.Context, o strategy.Order) (string, error)
 			Symbol:          o.Symbol,
 			StrategyName:    o.Strategy,
 			TransactionType: sideWord(buy),
-			Quantity:        o.Quantity,
+			Quantity:        fillQty,
 			Price:           fillPrice,
 			Fee:             fee,
 			RealizedPnL:     realized,
@@ -144,10 +183,42 @@ func (b *PaperBroker) Mark(token uint32, price float64, at time.Time) {
 	b.book.Mark(token, price, at)
 }
 
-// FeesPaid returns cumulative simulated fees.
-func (b *PaperBroker) FeesPaid() float64 { return float64(b.fees.Load()) / 100 }
+// recordCosts accumulates the itemised charges and turnover-weighted slippage.
+func (b *PaperBroker) recordCosts(c CostBreakdown, turnover, slipBps float64) {
+	b.costMu.Lock()
+	b.costs.Add(c)
+	b.turnover += turnover
+	b.slipBpsWt += slipBps * turnover
+	b.costMu.Unlock()
+}
 
-// Stats summarises the simulated account.
+func (b *PaperBroker) countPartial() {
+	b.costMu.Lock()
+	b.partial++
+	b.costMu.Unlock()
+}
+
+func (b *PaperBroker) countRejected() {
+	b.costMu.Lock()
+	b.rejected++
+	b.costMu.Unlock()
+}
+
+// FeesPaid returns the total of all charges.
+func (b *PaperBroker) FeesPaid() float64 {
+	b.costMu.Lock()
+	defer b.costMu.Unlock()
+	return b.costs.Total
+}
+
+// Costs returns the itemised charge breakdown.
+func (b *PaperBroker) Costs() CostBreakdown {
+	b.costMu.Lock()
+	defer b.costMu.Unlock()
+	return b.costs
+}
+
+// PaperStats summarises the simulated account.
 type PaperStats struct {
 	Mode          string          `json:"mode"`
 	Fills         uint64          `json:"fills"`
@@ -156,35 +227,57 @@ type PaperStats struct {
 	UnrealizedPnL float64         `json:"unrealized_pnl"`
 	NetPnL        float64         `json:"net_pnl"`
 	OpenPositions []PaperPosition `json:"open_positions"`
+
+	// Costs itemises where the fees went, so a losing strategy can be told
+	// apart from a strategy losing to its own transaction costs.
+	Costs CostBreakdown `json:"costs"`
+	// Turnover is the gross value transacted.
+	Turnover float64 `json:"turnover"`
+	// AvgSlippageBps is turnover-weighted, so one tiny fill cannot skew it.
+	AvgSlippageBps float64 `json:"avg_slippage_bps"`
+	// PartialFills were cut short by the volume participation cap;
+	// RejectedFills found no liquidity at all. Both mean the strategy is
+	// asking for more size than the market on those bars could give it.
+	PartialFills  uint64 `json:"partial_fills"`
+	RejectedFills uint64 `json:"rejected_fills"`
 }
 
 // Stats returns a snapshot for the monitoring API.
 func (b *PaperBroker) Stats() PaperStats {
 	realized, unrealized := b.book.Totals()
-	fees := b.FeesPaid()
+
+	b.costMu.Lock()
+	costs := b.costs
+	turnover := b.turnover
+	slipWt := b.slipBpsWt
+	partial := b.partial
+	rejected := b.rejected
+	b.costMu.Unlock()
+
+	avgSlip := 0.0
+	if turnover > 0 {
+		avgSlip = slipWt / turnover
+	}
+
 	return PaperStats{
-		Mode:          TradeTypePaper,
-		Fills:         b.seq.Load(),
-		FeesPaid:      fees,
-		RealizedPnL:   realized,
-		UnrealizedPnL: unrealized,
-		NetPnL:        realized + unrealized - fees,
-		OpenPositions: b.book.OpenPositions(),
+		Mode:           TradeTypePaper,
+		Fills:          b.seq.Load(),
+		FeesPaid:       costs.Total,
+		RealizedPnL:    realized,
+		UnrealizedPnL:  unrealized,
+		NetPnL:         realized + unrealized - costs.Total,
+		OpenPositions:  b.book.OpenPositions(),
+		Costs:          costs,
+		Turnover:       turnover,
+		AvgSlippageBps: avgSlip,
+		PartialFills:   partial,
+		RejectedFills:  rejected,
 	}
 }
 
 func (b *PaperBroker) nextID() string {
 	n := b.seq.Add(1)
 	return "PAPER-" + string(appendUint(make([]byte, 0, 20), n))
-}
-
-// applySlippage moves the price against the taker.
-func applySlippage(ref, bps float64, buy bool) float64 {
-	adj := ref * bps / 10_000
-	if buy {
-		return ref + adj
-	}
-	return ref - adj
 }
 
 // isBuy maps a strategy order onto a market side.
