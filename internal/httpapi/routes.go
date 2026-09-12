@@ -6,9 +6,14 @@ import (
 	_ "net/http/pprof"
 
 	authhandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/auth"
+	executionhandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/execution"
+	markethandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/market"
+	ordershandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/orders"
+	positionshandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/positions"
 	profilehandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/profile"
 	runtimehandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/runtime"
 	"github.com/Bhavik2205/ML-Bot/internal/api/handlers/settings"
+	strategieshandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/strategies"
 	"github.com/Bhavik2205/ML-Bot/internal/middleware"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -23,10 +28,10 @@ func RegisterRoutes(router *mux.Router, deps HTTPDeps) {
 		handleV1Health(w, r, deps)
 	}).Methods("GET")
 	apiV1.Handle("/metrics", promhttp.Handler()).Methods("GET")
-	
+
 	// pprof profiling — preserve full path so DefaultServeMux matches /debug/pprof/*
 	router.PathPrefix("/debug/pprof").Handler(http.StripPrefix("", http.DefaultServeMux))
-	
+
 	apiV1.HandleFunc("/openapi.json", handleV1OpenAPISpec).Methods("GET")
 	apiV1.HandleFunc("/auth/signup", authhandler.HandleSignup(deps.DBClient)).Methods("POST")
 	apiV1.HandleFunc("/auth/login", authhandler.HandleLogin(deps.DBClient)).Methods("POST")
@@ -58,4 +63,23 @@ func RegisterRoutes(router *mux.Router, deps HTTPDeps) {
 	protected.HandleFunc("/market/overview", func(w http.ResponseWriter, r *http.Request) {
 		handleV1MarketOverview(w, r, deps)
 	}).Methods("GET")
+
+	// --- Market data for charting ---
+	protected.HandleFunc("/market/candles", markethandler.HandleCandles(deps.DBClient)).Methods("GET")
+	protected.HandleFunc("/market/instruments", markethandler.HandleInstruments(deps.DBClient)).Methods("GET")
+
+	// --- Strategy engine ---
+	protected.HandleFunc("/strategies", strategieshandler.HandleList(deps.Trading)).Methods("GET")
+	protected.HandleFunc("/strategies/stats", strategieshandler.HandleStats(deps.Trading)).Methods("GET")
+
+	// --- Trading: positions, PnL, order and trade history ---
+	protected.HandleFunc("/positions", positionshandler.HandleList(deps.Trading)).Methods("GET")
+	protected.HandleFunc("/pnl", positionshandler.HandlePnL(deps.Trading)).Methods("GET")
+	protected.HandleFunc("/orders", ordershandler.HandleListOrders(deps.DBClient, deps.Trading)).Methods("GET")
+	protected.HandleFunc("/trades", ordershandler.HandleListTrades(deps.DBClient)).Methods("GET")
+
+	// --- Execution control, including the kill switch ---
+	protected.HandleFunc("/execution/status", executionhandler.HandleStatus(deps.Trading)).Methods("GET")
+	protected.HandleFunc("/execution/kill", executionhandler.HandleKill(deps.Trading)).Methods("POST")
+	protected.HandleFunc("/execution/resume", executionhandler.HandleResume(deps.Trading)).Methods("POST")
 }

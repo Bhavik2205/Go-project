@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/Bhavik2205/ML-Bot/internal/api"
+	"github.com/Bhavik2205/ML-Bot/internal/api/handlers/httpx"
 	"github.com/Bhavik2205/ML-Bot/internal/cache"
 	"github.com/Bhavik2205/ML-Bot/internal/data"
 	"github.com/Bhavik2205/ML-Bot/internal/db"
@@ -46,6 +48,11 @@ type App struct {
 	StrategyEngine *strategy.Engine
 	OrderSink      *strategy.ChannelSink
 	OrderExecutor  *monitor.OrderExecutor
+	PaperBroker    *monitor.PaperBroker
+	Guard          *monitor.Guard
+	TradeSink      *monitor.DBTradeSink
+	// TradingMode is "PAPER" or "LIVE".
+	TradingMode string
 
 	rm             *runtime.RuntimeManager
 	tickBus        tickbus.TickBus
@@ -132,12 +139,10 @@ func New(appCfg *utils.AppConfig, dbCfg *utils.DatabaseConfig, redisCfg *utils.R
 	app.CandleGenerator = data.NewCandleGenerator(app.DB, app.tickBus, appCfg, app.CandleWsClients, app.IndicatorInputCh)
 	app.IndicatorManager = data.NewIndicatorManager(app.DB, appCfg, indicatorsCfg, app.IndicatorInputCh, app.IndicatorWsClients)
 
-	// --- Strategy engine (opt-in via configs/strategy.yaml) ---
-	if err := app.initStrategyEngine(); err != nil {
-		return nil, fmt.Errorf("strategy engine init: %w", err)
-	}
-
 	// --- Zerodha (live mode only) ---
+	// This must precede the strategy engine: a live broker needs the Kite
+	// client, and building the engine first would leave it nil and silently
+	// fall back to paper even when live trading was requested.
 	if !appCfg.Market.Simulate {
 		apiKey := os.Getenv("ZERODHA_API_KEY")
 		apiSecret := os.Getenv("ZERODHA_API_SECRET")
@@ -152,6 +157,11 @@ func New(appCfg *utils.AppConfig, dbCfg *utils.DatabaseConfig, redisCfg *utils.R
 		}
 	}
 
+	// --- Strategy engine (opt-in via configs/strategy.yaml) ---
+	if err := app.initStrategyEngine(); err != nil {
+		return nil, fmt.Errorf("strategy engine init: %w", err)
+	}
+
 	// --- Create WebSocket hub and HTTP server ---
 	hub := realtime.NewHub(app.DataIngestor, app.CandleGenerator, app.IndicatorManager, app.Redis)
 
@@ -163,6 +173,15 @@ func New(appCfg *utils.AppConfig, dbCfg *utils.DatabaseConfig, redisCfg *utils.R
 		AppConfig:     appCfg,
 		StartupTime:   time.Now(),
 		Hub:           hub,
+		Trading: &httpx.Trading{
+			Engine:   app.StrategyEngine,
+			Paper:    app.PaperBroker,
+			Guard:    app.Guard,
+			Executor: app.OrderExecutor,
+			Sink:     app.TradeSink,
+			Mode:     app.TradingMode,
+			UserID:   tradingUserID(),
+		},
 	}
 
 	// Create HTTP server instance
@@ -194,6 +213,15 @@ func New(appCfg *utils.AppConfig, dbCfg *utils.DatabaseConfig, redisCfg *utils.R
 			return nil
 		},
 	})
+	if app.TradeSink != nil {
+		app.rm.Register(&serviceAdapter{
+			name: "trade_persistence",
+			start: func(ctx context.Context) error {
+				go app.TradeSink.Run(ctx)
+				return nil
+			},
+		})
+	}
 	if app.OrderExecutor != nil {
 		app.rm.Register(&serviceAdapter{
 			name: "order_executor",
@@ -282,9 +310,24 @@ func (a *App) initStrategyEngine() error {
 	a.IndicatorManager.SetStrategyEngine(eng)
 	a.IndicatorManager.SetSymbolResolver(a.symbolResolver())
 
-	// Paper trading is the default: enabling strategies must never place a
-	// live order without an explicit broker being wired in here.
-	a.OrderExecutor = monitor.NewOrderExecutor(sink.Orders(), monitor.NewPaperBroker(), 5*time.Second)
+	// --- Execution: paper by default, live only when explicitly confirmed ---
+	a.TradeSink = monitor.NewDBTradeSink(a.DB, 8192)
+	a.PaperBroker = monitor.NewPaperBroker(monitor.DefaultPaperConfig(), tradingUserID(), a.TradeSink)
+
+	var kite monitor.KiteOrderPlacer
+	if a.Zerodha != nil {
+		kite = a.Zerodha.Kite
+	}
+	guard, mode := monitor.NewBrokerForMode(
+		kite,
+		a.exchangeSymbolResolver(),
+		a.PaperBroker,
+		monitor.DefaultGuardConfig(cfg.Session.Location()),
+		tradingUserID(),
+	)
+	a.Guard = guard
+	a.TradingMode = mode
+	a.OrderExecutor = monitor.NewOrderExecutor(sink.Orders(), guard, 5*time.Second)
 
 	observability.StrategyOrderQueueCapacity.Set(float64(sink.Cap()))
 
@@ -294,11 +337,44 @@ func (a *App) initStrategyEngine() error {
 	}
 	zap.L().Info("✅ Strategy engine initialised",
 		zap.Strings("strategies", names),
+		zap.String("trading_mode", mode),
 		zap.Int("signal_buffer", sink.Cap()),
 		zap.Float64("capital", cfg.Capital),
 		zap.Bool("allow_short", cfg.Risk.AllowShort),
 	)
 	return nil
+}
+
+// tradingUserID is the account that owns simulated and live orders. The DB
+// foreign keys require a real user row, so this must point at one.
+func tradingUserID() uint {
+	if v := os.Getenv("TRADING_USER_ID"); v != "" {
+		if n, err := strconv.ParseUint(v, 10, 64); err == nil && n > 0 {
+			return uint(n)
+		}
+		zap.L().Warn("TRADING_USER_ID is not a positive integer, defaulting to 1",
+			zap.String("value", v))
+	}
+	return 1
+}
+
+// exchangeSymbolResolver maps an instrument token to (exchange, symbol) for
+// the live broker. Live orders are addressed by trading symbol, not token.
+func (a *App) exchangeSymbolResolver() monitor.SymbolResolver {
+	type pair struct{ exchange, symbol string }
+	m := make(map[uint32]pair)
+	if a.symbolsConfig != nil {
+		for _, s := range a.symbolsConfig.SimulationInstruments {
+			m[s.Token] = pair{exchange: s.Exchange, symbol: s.Symbol}
+		}
+	}
+	return func(token uint32) (string, string, bool) {
+		p, ok := m[token]
+		if !ok || p.symbol == "" {
+			return "", "", false
+		}
+		return p.exchange, p.symbol, true
+	}
 }
 
 // symbolResolver builds a token to symbol lookup from the symbols config.

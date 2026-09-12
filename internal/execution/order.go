@@ -11,70 +11,21 @@ import (
 	"go.uber.org/zap"
 )
 
-// Broker places orders with an upstream venue. Implementations must be
-// safe for concurrent use.
+// Broker places orders with an execution venue. Implementations must be safe
+// for concurrent use.
+//
+// Both PaperBroker and LiveBroker implement it, so the executor is identical
+// in simulation and in production and there is no untested code path that
+// only runs with real money.
 type Broker interface {
-	// Place submits an order and returns the broker's order id.
 	Place(ctx context.Context, o strategy.Order) (string, error)
-}
-
-// PaperBroker records orders without sending them anywhere. It is the
-// default so that enabling the strategy engine cannot place a live order by
-// accident — switching to a real broker is an explicit wiring decision.
-type PaperBroker struct {
-	placed atomic.Uint64
-}
-
-// NewPaperBroker builds a paper broker.
-func NewPaperBroker() *PaperBroker { return &PaperBroker{} }
-
-// Place logs the intent and returns a synthetic order id.
-func (b *PaperBroker) Place(_ context.Context, o strategy.Order) (string, error) {
-	n := b.placed.Add(1)
-	zap.L().Info("paper order",
-		zap.String("strategy", o.Strategy),
-		zap.Uint32("token", o.Token),
-		zap.String("symbol", o.Symbol),
-		zap.String("interval", o.Interval),
-		zap.String("action", o.Action.String()),
-		zap.String("side", o.Side.String()),
-		zap.String("reason", o.Reason.String()),
-		zap.Float64("price", o.Price),
-		zap.Int64("quantity", o.Quantity),
-		zap.Float64("stop", o.StopPrice),
-		zap.Float64("target", o.TargetPrice),
-		zap.Time("candle_time", o.Timestamp),
-	)
-	return paperOrderID(n), nil
-}
-
-// Placed is the number of orders this broker has accepted.
-func (b *PaperBroker) Placed() uint64 { return b.placed.Load() }
-
-func paperOrderID(n uint64) string {
-	const prefix = "PAPER-"
-	buf := make([]byte, 0, len(prefix)+20)
-	buf = append(buf, prefix...)
-	return string(appendUint(buf, n))
-}
-
-func appendUint(dst []byte, v uint64) []byte {
-	if v == 0 {
-		return append(dst, '0')
-	}
-	var tmp [20]byte
-	i := len(tmp)
-	for v > 0 {
-		i--
-		tmp[i] = byte('0' + v%10)
-		v /= 10
-	}
-	return append(dst, tmp[i:]...)
+	// Mode reports the trade type recorded for fills: PAPER or LIVE.
+	Mode() string
 }
 
 // OrderExecutor drains the strategy engine's order queue and forwards each
-// intent to a Broker. It runs on its own goroutine so that broker latency
-// never propagates back into the market data pipeline.
+// intent to a Broker. It runs on its own goroutine so broker latency never
+// propagates back into the market data pipeline.
 type OrderExecutor struct {
 	orders <-chan strategy.Order
 	broker Broker
@@ -97,7 +48,7 @@ func NewOrderExecutor(orders <-chan strategy.Order, broker Broker, timeout time.
 // Run consumes orders until ctx is cancelled or the channel closes.
 func (x *OrderExecutor) Run(ctx context.Context) {
 	defer observability.RecoverPanic("order-executor")
-	zap.L().Info("✅ Order executor started")
+	zap.L().Info("✅ Order executor started", zap.String("mode", x.broker.Mode()))
 
 	for {
 		select {
@@ -118,22 +69,50 @@ func (x *OrderExecutor) place(ctx context.Context, o strategy.Order) {
 	callCtx, cancel := context.WithTimeout(ctx, x.timeout)
 	defer cancel()
 
+	start := time.Now()
 	id, err := x.broker.Place(callCtx, o)
+	observability.RecordExecutionLatency(float64(time.Since(start).Microseconds()))
+
 	if err != nil {
 		x.failed.Add(1)
+		observability.ExecutionOrdersFailed.Inc()
 		zap.L().Error("order placement failed",
 			zap.String("strategy", o.Strategy),
 			zap.Uint32("token", o.Token),
 			zap.String("action", o.Action.String()),
 			zap.String("side", o.Side.String()),
+			zap.Int64("quantity", o.Quantity),
 			zap.Error(err),
 		)
 		return
 	}
+
 	x.placed.Add(1)
-	zap.L().Debug("order placed", zap.String("order_id", id), zap.String("strategy", o.Strategy))
+	observability.ExecutionOrdersPlaced.WithLabelValues(x.broker.Mode()).Inc()
+	zap.L().Info("order placed",
+		zap.String("order_id", id),
+		zap.String("mode", x.broker.Mode()),
+		zap.String("strategy", o.Strategy),
+		zap.String("symbol", o.Symbol),
+		zap.String("action", o.Action.String()),
+		zap.String("side", o.Side.String()),
+		zap.Int64("quantity", o.Quantity),
+		zap.Float64("price", o.Price),
+	)
 }
 
-// Placed and Failed expose executor counters for the runtime endpoint.
-func (x *OrderExecutor) Placed() uint64 { return x.placed.Load() }
-func (x *OrderExecutor) Failed() uint64 { return x.failed.Load() }
+// ExecutorStats reports executor counters.
+type ExecutorStats struct {
+	Mode   string `json:"mode"`
+	Placed uint64 `json:"placed"`
+	Failed uint64 `json:"failed"`
+}
+
+// Stats returns executor counters for the monitoring API.
+func (x *OrderExecutor) Stats() ExecutorStats {
+	return ExecutorStats{
+		Mode:   x.broker.Mode(),
+		Placed: x.placed.Load(),
+		Failed: x.failed.Load(),
+	}
+}

@@ -354,9 +354,11 @@ var allMetrics = []prometheus.Collector{
 }
 
 func init() {
-	// Strategy engine metrics live in strategy.go; fold them in here so
-	// registration stays driven by the single allMetrics list.
+	// Strategy and execution metrics live in strategy.go and execution.go;
+	// fold them in here so registration stays driven by the single
+	// allMetrics list.
 	allMetrics = append(allMetrics, strategyMetrics...)
+	allMetrics = append(allMetrics, executionMetrics...)
 }
 
 // InitMetrics registers all Prometheus metrics.
