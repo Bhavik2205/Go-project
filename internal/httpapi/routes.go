@@ -6,14 +6,18 @@ import (
 	_ "net/http/pprof"
 
 	authhandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/auth"
+	backtesthandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/backtest"
 	executionhandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/execution"
 	markethandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/market"
+	modelshandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/models"
 	ordershandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/orders"
 	positionshandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/positions"
 	profilehandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/profile"
 	runtimehandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/runtime"
+	sentimenthandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/sentiment"
 	"github.com/Bhavik2205/ML-Bot/internal/api/handlers/settings"
 	strategieshandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/strategies"
+	watchlisthandler "github.com/Bhavik2205/ML-Bot/internal/api/handlers/watchlist"
 	"github.com/Bhavik2205/ML-Bot/internal/middleware"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -82,4 +86,17 @@ func RegisterRoutes(router *mux.Router, deps HTTPDeps) {
 	protected.HandleFunc("/execution/status", executionhandler.HandleStatus(deps.Trading)).Methods("GET")
 	protected.HandleFunc("/execution/kill", executionhandler.HandleKill(deps.Trading)).Methods("POST")
 	protected.HandleFunc("/execution/resume", executionhandler.HandleResume(deps.Trading)).Methods("POST")
+
+	// --- News sentiment and ML model status ---
+	protected.HandleFunc("/sentiment", sentimenthandler.HandleGet(deps.DBClient)).Methods("GET")
+	protected.HandleFunc("/models", modelshandler.HandleGet(deps.DBClient)).Methods("GET")
+
+	// --- Backtesting ---
+	protected.HandleFunc("/backtest/run", backtesthandler.HandleRun(deps.Backtest)).Methods("POST")
+	protected.HandleFunc("/backtest/history", backtesthandler.HandleHistory(deps.DBClient)).Methods("GET")
+
+	// --- Watchlist ---
+	protected.HandleFunc("/watchlists/default", watchlisthandler.HandleGetDefault(deps.DBClient)).Methods("GET")
+	protected.HandleFunc("/watchlists/default/items", watchlisthandler.HandleAddItem(deps.DBClient)).Methods("POST")
+	protected.HandleFunc("/watchlists/default/items", watchlisthandler.HandleDeleteItem(deps.DBClient)).Methods("DELETE")
 }

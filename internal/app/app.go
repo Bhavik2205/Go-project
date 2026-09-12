@@ -11,6 +11,7 @@ import (
 
 	"github.com/Bhavik2205/ML-Bot/internal/api"
 	"github.com/Bhavik2205/ML-Bot/internal/api/handlers/httpx"
+	"github.com/Bhavik2205/ML-Bot/internal/backtest"
 	"github.com/Bhavik2205/ML-Bot/internal/cache"
 	"github.com/Bhavik2205/ML-Bot/internal/data"
 	"github.com/Bhavik2205/ML-Bot/internal/db"
@@ -182,6 +183,9 @@ func New(appCfg *utils.AppConfig, dbCfg *utils.DatabaseConfig, redisCfg *utils.R
 			Mode:     app.TradingMode,
 			UserID:   tradingUserID(),
 		},
+		// Backtesting replays stored candles through the same strategy engine
+		// the live pipeline uses, so it needs no separate configuration.
+		Backtest: backtest.NewRunner(app.DB, indicatorsCfg),
 	}
 
 	// Create HTTP server instance

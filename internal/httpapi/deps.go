@@ -5,6 +5,7 @@ import (
 
 	"github.com/Bhavik2205/ML-Bot/internal/api"
 	"github.com/Bhavik2205/ML-Bot/internal/api/handlers/httpx"
+	"github.com/Bhavik2205/ML-Bot/internal/backtest"
 	"github.com/Bhavik2205/ML-Bot/internal/cache"
 	"github.com/Bhavik2205/ML-Bot/internal/db"
 	"github.com/Bhavik2205/ML-Bot/internal/realtime"
@@ -23,4 +24,8 @@ type HTTPDeps struct {
 	// Trading should never be nil, but its fields are nil when the strategy
 	// engine is disabled. Handlers check and answer 503 rather than panicking.
 	Trading *httpx.Trading
+
+	// Backtest replays history through the live strategy engine. Nil when the
+	// database is unavailable.
+	Backtest *backtest.Runner
 }
