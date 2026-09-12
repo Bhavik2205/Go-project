@@ -20,10 +20,12 @@ import (
 	"github.com/Bhavik2205/ML-Bot/internal/indicators"
 	"github.com/Bhavik2205/ML-Bot/internal/marketdata/tickbus"
 	"github.com/Bhavik2205/ML-Bot/internal/marketdata/wal"
+	notify "github.com/Bhavik2205/ML-Bot/internal/notifications"
 	"github.com/Bhavik2205/ML-Bot/internal/observability"
 	"github.com/Bhavik2205/ML-Bot/internal/realtime"
 	"github.com/Bhavik2205/ML-Bot/internal/reliability"
 	"github.com/Bhavik2205/ML-Bot/internal/runtime"
+	"github.com/Bhavik2205/ML-Bot/internal/security"
 	"github.com/Bhavik2205/ML-Bot/internal/strategy"
 	"github.com/Bhavik2205/ML-Bot/internal/utils"
 	"go.uber.org/zap"
@@ -52,6 +54,8 @@ type App struct {
 	PaperBroker    *monitor.PaperBroker
 	Guard          *monitor.Guard
 	TradeSink      *monitor.DBTradeSink
+	Notifier       *notify.Dispatcher
+	NotifyWorker   *notify.Worker
 	// TradingMode is "PAPER" or "LIVE".
 	TradingMode string
 
@@ -102,6 +106,17 @@ func New(appCfg *utils.AppConfig, dbCfg *utils.DatabaseConfig, redisCfg *utils.R
 		return nil, fmt.Errorf("redis init: %w", err)
 	}
 	app.Redis = redisClient
+
+	// --- Notifications ---
+	// Built early so later startup problems can raise an alert. Delivery runs
+	// on its own goroutine, so the trading path never waits on Telegram.
+	app.Notifier = notify.NewDispatcher(app.DB, tradingUserID())
+	enc, encErr := security.NewEncryptorFromEnv()
+	if encErr != nil {
+		zap.L().Warn("notification credentials are stored UNENCRYPTED",
+			zap.String("fix", "set "+security.EncryptionKeyEnv))
+	}
+	app.NotifyWorker = notify.NewWorker(app.DB, enc, notify.DefaultWorkerConfig())
 
 	// --- Tick Bus (in‑process or Redis) ---
 	var tb tickbus.TickBus
@@ -229,6 +244,15 @@ func New(appCfg *utils.AppConfig, dbCfg *utils.DatabaseConfig, redisCfg *utils.R
 			return nil
 		},
 	})
+	if app.NotifyWorker != nil {
+		app.rm.Register(&serviceAdapter{
+			name: "notification_worker",
+			start: func(ctx context.Context) error {
+				go app.NotifyWorker.Run(ctx)
+				return nil
+			},
+		})
+	}
 	if app.TradeSink != nil {
 		app.rm.Register(&serviceAdapter{
 			name: "trade_persistence",
@@ -344,6 +368,13 @@ func (a *App) initStrategyEngine() error {
 	a.Guard = guard
 	a.TradingMode = mode
 	a.OrderExecutor = monitor.NewOrderExecutor(sink.Orders(), guard, 5*time.Second)
+
+	// Route fills and kill-switch trips to the alert channels. Both are
+	// fire-and-forget: the dispatcher only inserts a row.
+	if a.Notifier != nil {
+		a.OrderExecutor.SetAlerter(a.Notifier)
+		guard.SetAlerter(a.Notifier)
+	}
 
 	observability.StrategyOrderQueueCapacity.Set(float64(sink.Cap()))
 

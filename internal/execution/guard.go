@@ -69,6 +69,15 @@ type Guard struct {
 
 	placed  atomic.Uint64
 	refused atomic.Uint64
+
+	// alerter is optional; nil means a trip is logged but not notified.
+	alerter TripAlerter
+}
+
+// TripAlerter is notified when the kill switch trips. Halting trading is
+// exactly the event an operator needs pushed to their phone.
+type TripAlerter interface {
+	KillSwitchTripped(reason string)
 }
 
 // NewGuard wraps a broker.
@@ -82,12 +91,21 @@ func NewGuard(inner Broker, cfg GuardConfig) *Guard {
 	return g
 }
 
+// SetAlerter attaches a trip notifier. Call during startup, before any
+// placement, because the field is read without synchronisation.
+func (g *Guard) SetAlerter(a TripAlerter) { g.alerter = a }
+
 // Trip halts all order placement. Safe to call from an HTTP handler.
 func (g *Guard) Trip(reason TripReason) {
+	// CompareAndSwap keeps this to one alert per trip even when several
+	// goroutines breach a cap at the same moment.
 	if g.tripped.CompareAndSwap(false, true) {
 		g.reason.Store(reason)
 		g.trippedAt.Store(time.Now())
 		zap.L().Error("🛑 TRADING KILL SWITCH TRIPPED", zap.String("reason", string(reason)))
+		if g.alerter != nil {
+			g.alerter.KillSwitchTripped(string(reason))
+		}
 	}
 }
 
